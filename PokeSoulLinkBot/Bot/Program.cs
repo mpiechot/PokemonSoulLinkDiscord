@@ -54,6 +54,7 @@ var commands = new List<ISlashCommand>
     new TeamCommand(runService, embedFactory, embedImageFactory),
     new UseCommand(runService, embedFactory, embedImageFactory),
     new PokedexCommand(pokedexService, pokedexPresenter),
+    new ArenaCommand(),
 };
 
 var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);
