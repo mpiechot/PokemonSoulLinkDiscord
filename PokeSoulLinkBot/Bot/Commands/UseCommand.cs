@@ -1,0 +1,83 @@
+﻿using Discord;
+using Discord.WebSocket;
+using PokeSoulLinkBot.Application.Interfaces;
+using PokeSoulLinkBot.Bot.Factories;
+using PokeSoulLinkBot.Bot.Helpers;
+using PokeSoulLinkBot.Core.Models;
+
+namespace PokeSoulLinkBot.Bot.Commands;
+
+/// <summary>
+/// Handles the "use" slash command.
+/// </summary>
+public class UseCommand : ISlashCommand
+{
+    private readonly IRunService runService;
+    private readonly EmbedFactory embedFactory;
+    private readonly EmbedImageFactory embedImageFactory;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="UseCommand"/> class.
+    /// </summary>
+    /// <param name="runService">The run service.</param>
+    /// <param name="embedFactory">The embed factory.</param>
+    /// <param name="embedImageFactory">The embed image factory.</param>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when one of the parameters is <see langword="null"/>.
+    /// </exception>
+    public UseCommand(
+        IRunService runService,
+        EmbedFactory embedFactory,
+        EmbedImageFactory embedImageFactory)
+    {
+        this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
+        this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
+    }
+
+    /// <inheritdoc />
+    public string CommandName => "use";
+
+    /// <inheritdoc />
+    public ApplicationCommandProperties BuildDefinition()
+    {
+        return new SlashCommandBuilder()
+            .WithName(CommandName)
+            .WithDescription("Sets one route for every player as an active pokemon.")
+            .AddOption("route", ApplicationCommandOptionType.String, "The number of the route to use.", isRequired: true)
+            .AddOption("position", ApplicationCommandOptionType.Integer, "The position in the active team [1 - 6].", isRequired: true)
+            .Build();
+    }
+
+    /// <inheritdoc />
+    public async Task HandleAsync(SocketSlashCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        var guildId = CommandOptionHelper.GetGuildId(command);
+
+        var routeId = CommandOptionHelper.GetRequiredStringOption(command, "route").ToLowerInvariant().Trim();
+        var position = CommandOptionHelper.GetRequiredIntegerOption(command, "position");
+
+        if (position < 1 || position > 6)
+        {
+            await command.RespondAsync("Position must be between 1 and 6.");
+            return;
+        }
+
+        var activeRun = this.runService.GetActiveRun(guildId);
+        var route = activeRun.LinkGroups.FirstOrDefault(g => g.Route == routeId);
+
+        if (route == null)
+        {
+            await command.RespondAsync($"Route '{routeId}' not found in the active run.");
+            return;
+        }
+
+        activeRun.activeLinks[position - 1] = route;
+
+        var image = this.embedImageFactory.CreateStatusImage();
+        var message = this.embedFactory.CreateUseMessage(activeRun);
+        await command.RespondAsync(message);
+    }
+}
