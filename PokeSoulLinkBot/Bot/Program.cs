@@ -35,8 +35,9 @@ var httpClient = new HttpClient
     BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
 };
 
-var pokemonLookupService = new PokeApiPokemonLookupService(httpClient);
-var pokedexService = new PokeApiPokedexService(httpClient);
+var pokemonNameResolver = new PokeApiPokemonNameResolver(httpClient);
+var pokemonLookupService = new PokeApiPokemonLookupService(httpClient, pokemonNameResolver);
+var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver);
 var pokedexPresenter = new PokedexPresenter();
 
 var runStore = new RunStore(filePath);
