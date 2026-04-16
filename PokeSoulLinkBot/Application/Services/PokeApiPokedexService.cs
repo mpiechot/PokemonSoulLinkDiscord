@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
 using PokeSoulLinkBot.Core.Models;
 
@@ -9,23 +10,26 @@ namespace PokeSoulLinkBot.Application.Services;
 /// </summary>
 public sealed class PokeApiPokedexService : IPokedexService
 {
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonSerializerOptions =
+        new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private readonly HttpClient httpClient;
-
-    private readonly Dictionary<string, string> germanToEnglish =
-        new(StringComparer.OrdinalIgnoreCase);
+    private readonly IPokemonNameResolver pokemonNameResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokedexService"/> class.
     /// </summary>
     /// <param name="httpClient">The HTTP client.</param>
+    /// <param name="pokemonNameResolver">The Pokémon name resolver.</param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="httpClient"/> is <see langword="null"/>.
+    /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
-    public PokeApiPokedexService(HttpClient httpClient)
+    public PokeApiPokedexService(
+        HttpClient httpClient,
+        IPokemonNameResolver pokemonNameResolver)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.pokemonNameResolver = pokemonNameResolver ?? throw new ArgumentNullException(nameof(pokemonNameResolver));
     }
 
     /// <inheritdoc />
@@ -33,7 +37,7 @@ public sealed class PokeApiPokedexService : IPokedexService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
-        var normalizedPokemonName = NormalizePokemonName(pokemonName);
+        var normalizedPokemonName = await this.pokemonNameResolver.ResolvePokemonNameAsync(pokemonName);
 
         var requestedPokemon = await this.GetPokemonAsync(normalizedPokemonName)
             ?? throw new InvalidOperationException($"Pokémon '{pokemonName}' was not found.");
@@ -56,10 +60,17 @@ public sealed class PokeApiPokedexService : IPokedexService
 
         await this.AddEvolutionRowsAsync(evolutionChain.Chain, "Basis", rows);
 
+        var imageUrl = requestedPokemon.Sprites?.Other?.OfficialArtwork?.FrontDefault;
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            Console.WriteLine($"Pokédex image lookup found no image for '{pokemonName}' using '{normalizedPokemonName}'.");
+        }
+
         return new PokedexEntry
         {
             PokemonName = FormatResourceName(requestedPokemon.Name ?? normalizedPokemonName),
-            ImageUrl = requestedPokemon.Sprites?.Other?.OfficialArtwork?.FrontDefault,
+            ImageUrl = imageUrl,
             Rows = rows,
         };
     }
@@ -124,15 +135,22 @@ public sealed class PokeApiPokedexService : IPokedexService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
 
-        using var response = await this.httpClient.GetAsync(requestUri);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            return default;
-        }
+            using var response = await this.httpClient.GetAsync(requestUri);
 
-        await using var responseStream = await response.Content.ReadAsStreamAsync();
-        return await JsonSerializer.DeserializeAsync<T>(responseStream, JsonSerializerOptions);
+            if (!response.IsSuccessStatusCode)
+            {
+                return default;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync();
+            return await JsonSerializer.DeserializeAsync<T>(responseStream, JsonSerializerOptions);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            throw new InvalidOperationException($"PokéAPI request '{requestUri}' failed: {exception.Message}", exception);
+        }
     }
 
     private static IReadOnlyList<string> GetFormattedTypes(PokemonDto pokemon)

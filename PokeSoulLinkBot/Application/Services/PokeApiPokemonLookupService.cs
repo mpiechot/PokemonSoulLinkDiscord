@@ -1,7 +1,7 @@
-﻿using PokeSoulLinkBot.Application.Interfaces;
+using System.Text.Json;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
 using PokeSoulLinkBot.Core.Models;
-using System.Text.Json;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -10,20 +10,26 @@ namespace PokeSoulLinkBot.Application.Services;
 /// </summary>
 public sealed class PokeApiPokemonLookupService : IPokemonLookupService
 {
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonSerializerOptions =
+        new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private readonly HttpClient httpClient;
+    private readonly IPokemonNameResolver pokemonNameResolver;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokemonLookupService"/> class.
     /// </summary>
     /// <param name="httpClient">The HTTP client.</param>
+    /// <param name="pokemonNameResolver">The Pokémon name resolver.</param>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="httpClient"/> is <see langword="null"/>.
+    /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
-    public PokeApiPokemonLookupService(HttpClient httpClient)
+    public PokeApiPokemonLookupService(
+        HttpClient httpClient,
+        IPokemonNameResolver pokemonNameResolver)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.pokemonNameResolver = pokemonNameResolver ?? throw new ArgumentNullException(nameof(pokemonNameResolver));
     }
 
     /// <inheritdoc />
@@ -31,21 +37,43 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
-        var normalizedName = pokemonName.Trim().ToLowerInvariant();
-        var requestUri = $"pokemon/{Uri.EscapeDataString(normalizedName)}";
+        string resolvedName;
 
-        using var response = await this.httpClient.GetAsync(requestUri);
-
-        if (!response.IsSuccessStatusCode)
+        try
         {
+            resolvedName = await this.pokemonNameResolver.ResolvePokemonNameAsync(pokemonName);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Console.WriteLine($"Pokémon name lookup failed for '{pokemonName}': {exception.Message}");
             return null;
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync();
-        var dto = await JsonSerializer.DeserializeAsync<PokemonDto>(stream, JsonSerializerOptions);
+        var requestUri = $"pokemon/{Uri.EscapeDataString(resolvedName)}";
+        PokemonDto? dto;
+
+        try
+        {
+            using var response = await this.httpClient.GetAsync(requestUri);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Pokémon image lookup failed for '{pokemonName}' using '{resolvedName}': {response.StatusCode}");
+                return null;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            dto = await JsonSerializer.DeserializeAsync<PokemonDto>(stream, JsonSerializerOptions);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            Console.WriteLine($"Pokémon image lookup failed for '{pokemonName}' using '{resolvedName}': {exception.Message}");
+            return null;
+        }
 
         if (dto == null)
         {
+            Console.WriteLine($"Pokémon image lookup returned no data for '{pokemonName}' using '{resolvedName}'.");
             return null;
         }
 
@@ -55,10 +83,17 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
             .ToList()
             ?? new List<string>();
 
+        var imageUrl = dto.Sprites?.Other?.OfficialArtwork?.FrontDefault;
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            Console.WriteLine($"Pokémon image lookup found no image for '{pokemonName}' using '{resolvedName}'.");
+        }
+
         return new PokemonInfo
         {
-            ImageUrl = dto.Sprites?.Other?.OfficialArtwork?.FrontDefault,
-            Types = types
+            ImageUrl = imageUrl,
+            Types = types,
         };
     }
 }
