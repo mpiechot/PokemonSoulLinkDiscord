@@ -35,7 +35,7 @@ public sealed class RunService : IRunService
             throw new ArgumentException("At least one player must be provided.", nameof(players));
         }
 
-        if (runStore.GetActiveRun(guildId) is not null)
+        if (this.runStore.GetActiveRun(guildId) is not null)
         {
             throw new InvalidOperationException("An active run already exists for this guild.");
         }
@@ -50,7 +50,7 @@ public sealed class RunService : IRunService
             Players = players.ToList(),
         };
 
-        runStore.AddRun(run);
+        this.runStore.AddRun(run);
 
         return run;
     }
@@ -67,18 +67,25 @@ public sealed class RunService : IRunService
             ? "No reason given."
             : reason;
 
-        runStore.Save();
+        this.runStore.Save();
 
         return activeRun;
     }
 
     /// <inheritdoc />
-    public LinkGroup RegisterCatch(string guildId, string route, ulong playerId, string playerName, string pokemon)
+    public LinkGroup RegisterCatch(
+        string guildId,
+        string route,
+        ulong playerId,
+        string playerName,
+        string pokemon,
+        IReadOnlyList<string> pokemonTypes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
         ArgumentException.ThrowIfNullOrWhiteSpace(route);
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemon);
+        ArgumentNullException.ThrowIfNull(pokemonTypes);
 
         SoulLinkRun activeRun = this.GetActiveRun(guildId);
 
@@ -104,13 +111,69 @@ public sealed class RunService : IRunService
             PlayerUserId = playerId,
             PlayerName = playerName,
             PokemonName = pokemon,
+            Types = pokemonTypes.ToList(),
             IsAlive = true,
             CaughtAtUtc = DateTime.UtcNow,
         });
 
-        runStore.Save();
+        activeRun.TryAddToActive(linkGroup);
+        this.runStore.Save();
 
         return linkGroup;
+    }
+
+    /// <inheritdoc />
+    public SoulLinkRun UseRoute(string guildId, string route, int position)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+
+        if (position < 1 || position > 6)
+        {
+            throw new ArgumentOutOfRangeException(nameof(position), "Position must be between 1 and 6.");
+        }
+
+        SoulLinkRun activeRun = this.GetActiveRun(guildId);
+        LinkGroup linkGroup = this.GetAliveLinkGroup(activeRun, route);
+
+        activeRun.ActiveLinks[position - 1] = linkGroup;
+        this.runStore.Save();
+
+        return activeRun;
+    }
+
+    /// <inheritdoc />
+    public SoulLinkRun SwapRoute(string guildId, string teamRoute, string boxRoute)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(teamRoute);
+        ArgumentException.ThrowIfNullOrWhiteSpace(boxRoute);
+
+        SoulLinkRun activeRun = this.GetActiveRun(guildId);
+        var normalizedTeamRoute = this.NormalizeRoute(teamRoute);
+        LinkGroup boxLinkGroup = this.GetAliveLinkGroup(activeRun, boxRoute);
+
+        var activeIndex = Array.FindIndex(
+            activeRun.ActiveLinks,
+            activeLink => activeLink != null &&
+                string.Equals(activeLink.Route, normalizedTeamRoute, StringComparison.OrdinalIgnoreCase));
+
+        if (activeIndex < 0)
+        {
+            throw new InvalidOperationException($"Route '{normalizedTeamRoute}' is not in the current team.");
+        }
+
+        if (activeRun.ActiveLinks.Any(activeLink =>
+            activeLink != null &&
+            string.Equals(activeLink.Route, boxLinkGroup.Route, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Route '{boxLinkGroup.Route}' is already in the current team.");
+        }
+
+        activeRun.ActiveLinks[activeIndex] = boxLinkGroup;
+        this.runStore.Save();
+
+        return activeRun;
     }
 
     /// <inheritdoc />
@@ -135,7 +198,7 @@ public sealed class RunService : IRunService
             entry.DiedAtUtc = DateTime.UtcNow;
         }
 
-        runStore.Save();
+        this.runStore.Save();
 
         return linkGroup;
     }
@@ -145,7 +208,7 @@ public sealed class RunService : IRunService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
 
-        return runStore.GetActiveRun(guildId)
+        return this.runStore.GetActiveRun(guildId)
             ?? throw new InvalidOperationException("There is no active run for this guild.");
     }
 
@@ -154,7 +217,7 @@ public sealed class RunService : IRunService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
 
-        return runStore.GetRunsForGuild(guildId);
+        return this.runStore.GetRunsForGuild(guildId);
     }
 
     private LinkGroup CreateLinkGroup(SoulLinkRun run, string route)
@@ -168,5 +231,31 @@ public sealed class RunService : IRunService
         run.LinkGroups.Add(linkGroup);
 
         return linkGroup;
+    }
+
+    private LinkGroup GetAliveLinkGroup(SoulLinkRun run, string route)
+    {
+        var normalizedRoute = this.NormalizeRoute(route);
+        var linkGroup = run.LinkGroups.FirstOrDefault(group =>
+            string.Equals(group.Route, normalizedRoute, StringComparison.OrdinalIgnoreCase));
+
+        if (linkGroup is null)
+        {
+            throw new InvalidOperationException($"Route '{normalizedRoute}' was not found in the active run.");
+        }
+
+        if (!linkGroup.IsAlive)
+        {
+            throw new InvalidOperationException($"Route '{normalizedRoute}' is dead and cannot be used.");
+        }
+
+        return linkGroup;
+    }
+
+    private string NormalizeRoute(string route)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+
+        return route.ToLowerInvariant().Trim();
     }
 }

@@ -40,7 +40,7 @@ public sealed class PokeApiPokedexService : IPokedexService
         var normalizedPokemonName = await this.pokemonNameResolver.ResolvePokemonNameAsync(pokemonName);
 
         var requestedPokemon = await this.GetPokemonAsync(normalizedPokemonName)
-            ?? throw new InvalidOperationException($"Pokémon '{pokemonName}' was not found.");
+            ?? throw CreatePokemonNotFoundException(pokemonName, normalizedPokemonName);
 
         var species = await this.GetPokemonSpeciesAsync(normalizedPokemonName)
             ?? throw new InvalidOperationException($"Species data for '{pokemonName}' was not found.");
@@ -329,7 +329,21 @@ public sealed class PokeApiPokedexService : IPokedexService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
-        return pokemonName.Trim().ToLowerInvariant();
+        return pokemonName.Trim().ToLowerInvariant().Replace(' ', '-');
+    }
+
+    private static InvalidOperationException CreatePokemonNotFoundException(
+        string requestedPokemonName,
+        string normalizedPokemonName)
+    {
+        if (string.Equals(requestedPokemonName, normalizedPokemonName, StringComparison.OrdinalIgnoreCase))
+        {
+            return new InvalidOperationException(
+                $"Pokémon '{requestedPokemonName}' wurde nicht gefunden. Prüfe Schreibweise oder Namenszuordnung.");
+        }
+
+        return new InvalidOperationException(
+            $"Pokémon '{requestedPokemonName}' wurde als '{normalizedPokemonName}' gesucht, aber nicht gefunden.");
     }
 
     private static string FormatResourceName(string value)

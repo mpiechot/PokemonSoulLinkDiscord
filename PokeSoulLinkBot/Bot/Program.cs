@@ -52,10 +52,11 @@ var commands = new List<ISlashCommand>
     new RunEndCommand(runService, embedFactory, embedImageFactory),
     new CatchCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),
     new DeathCommand(runService, embedFactory, embedImageFactory),
-    new StatusCommand(runService, embedFactory, embedImageFactory),
+    new StatusCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),
     new StatsCommand(runService, embedFactory, embedImageFactory),
     new TeamCommand(runService, embedFactory, embedImageFactory),
     new UseCommand(runService, embedFactory, embedImageFactory),
+    new SwapCommand(runService, embedFactory),
     new PokedexCommand(pokedexService, pokedexPresenter),
     new ArenaCommand(arenaLevelsByEdition),
 };

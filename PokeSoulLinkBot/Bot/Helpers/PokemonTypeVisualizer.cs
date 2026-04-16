@@ -6,6 +6,7 @@ public static class PokemonTypeVisualizer
     {
         return type.ToLowerInvariant() switch
         {
+            "normal" => "⚪",
             "fire" => "🔥",
             "water" => "💧",
             "grass" => "🌿",
@@ -23,7 +24,7 @@ public static class PokemonTypeVisualizer
             "dark" => "🌑",
             "steel" => "⚙️",
             "fairy" => "✨",
-            _ => type
+            _ => type,
         };
     }
 }

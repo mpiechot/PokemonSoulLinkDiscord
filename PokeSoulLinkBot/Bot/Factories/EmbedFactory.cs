@@ -1,7 +1,7 @@
-﻿using Discord;
+﻿using System.Text;
+using Discord;
 using PokeSoulLinkBot.Bot.Helpers;
 using PokeSoulLinkBot.Core.Models;
-using System.Text;
 
 namespace PokeSoulLinkBot.Bot.Factories;
 
@@ -159,20 +159,26 @@ public sealed class EmbedFactory
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        var aliveTable = this.BuildStringTable(run.LinkGroups.Where(group => group.IsAlive), run.Players.Select(player => player.UserName).ToList());
+        var currentTeam = run.ActiveLinks.Where(group => group != null && group.IsAlive).ToList();
+        var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
+        var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
         var deadTable = this.BuildStringTable(run.LinkGroups.Where(group => !group.IsAlive), run.Players.Select(player => player.UserName).ToList());
+        var currentTeamTable = this.BuildStringTable(currentTeam, run.Players.Select(player => player.UserName).ToList());
+        var boxTable = this.BuildStringTable(box, run.Players.Select(player => player.UserName).ToList());
 
         return
             $"**Run Status: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**💚 Alive**{Environment.NewLine}" +
-            $"```{aliveTable}```{Environment.NewLine}{Environment.NewLine}" +
+            $"**📜 Current Team**{Environment.NewLine}" +
+            $"```{currentTeamTable}```{Environment.NewLine}{Environment.NewLine}" +
+            $"**📦 Box**{Environment.NewLine}" +
+            $"```{boxTable}```{Environment.NewLine}{Environment.NewLine}" +
             $"**💀 Dead**{Environment.NewLine}" +
             $"```{deadTable}```";
     }
 
     public string CreateUseMessage(SoulLinkRun run)
     {
-        var activeTeam = BuildStringTable(run.activeLinks, run.Players.Select(player => player.UserName).ToList());
+        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
 
         return
             $"**New Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
@@ -182,7 +188,7 @@ public sealed class EmbedFactory
 
     public string CreateTeamMessage(SoulLinkRun run)
     {
-        var activeTeam = BuildStringTable(run.activeLinks, run.Players.Select(player => player.UserName).ToList());
+        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
 
         return
             $"**Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
@@ -258,13 +264,13 @@ public sealed class EmbedFactory
             .Build();
     }
 
-    private string BuildStringTable(IEnumerable<LinkGroup> linkedGroups, IReadOnlyList<string> playerNames)
+    private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)
     {
         const int routeWidth = 14;
-        const int playerColumnWidth = 14;
+        const int playerColumnWidth = 24;
 
-        var header = $"{PadRight("Route", routeWidth)}" +
-                     string.Concat(playerNames.Select(player => PadRight(player, playerColumnWidth)));
+        var header = $"{this.PadRight("Route", routeWidth)}" +
+                     string.Concat(playerNames.Select(player => this.PadRight(player, playerColumnWidth)));
 
         var separator = new string('-', routeWidth + (playerNames.Count * playerColumnWidth));
 
@@ -274,17 +280,17 @@ public sealed class EmbedFactory
             separator,
         };
 
-        foreach (var group in linkedGroups.Where(group => group != null).OrderBy(group => group.Route))
+        foreach (var group in linkedGroups.Where(group => group != null).OrderBy(group => group!.Route))
         {
-            var row = PadRight(group.Route, routeWidth);
+            var row = this.PadRight(group!.Route, routeWidth);
 
             foreach (var player in playerNames)
             {
                 var entry = group.Entries.FirstOrDefault(linkedPokemon =>
                     linkedPokemon.PlayerName == player);
 
-                var value = entry?.PokemonName ?? "-";
-                row += PadRight(value, playerColumnWidth);
+                var value = entry is null ? "-" : this.FormatPokemonWithTypes(entry);
+                row += this.PadRight(value, playerColumnWidth);
             }
 
             lines.Add(row);
@@ -293,10 +299,21 @@ public sealed class EmbedFactory
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string PadRight(string value, int totalWidth)
+    private string PadRight(string value, int totalWidth)
     {
         return value.Length >= totalWidth
-            ? value[..(totalWidth - 1)] + " "
+            ? value[.. (totalWidth - 1)] + " "
             : value.PadRight(totalWidth);
+    }
+
+    private string FormatPokemonWithTypes(LinkedPokemon pokemon)
+    {
+        if (pokemon.Types.Count == 0)
+        {
+            return pokemon.PokemonName;
+        }
+
+        var typeIcons = string.Join(string.Empty, pokemon.Types.Select(PokemonTypeVisualizer.FormatType));
+        return $"{pokemon.PokemonName} ({typeIcons})";
     }
 }

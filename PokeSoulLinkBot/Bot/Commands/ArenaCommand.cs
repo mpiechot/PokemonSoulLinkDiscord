@@ -9,6 +9,22 @@ namespace PokeSoulLinkBot.Bot.Commands;
 /// </summary>
 public sealed class ArenaCommand : ISlashCommand
 {
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>> ArenaLeadersByEdition =
+        new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["ruby"] = new Dictionary<int, string>
+            {
+                [1] = "Felizia",
+                [2] = "Kamillo",
+                [3] = "Walter",
+                [4] = "Flavia",
+                [5] = "Norman",
+                [6] = "Wibke",
+                [7] = "Ben und Svenja",
+                [8] = "Wassili",
+            },
+        };
+
     private readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> arenaLevelsByEdition;
 
     /// <summary>
@@ -55,6 +71,21 @@ public sealed class ArenaCommand : ISlashCommand
         }
 
         var joinedLevels = string.Join(", ", levels);
-        await command.RespondAsync($"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
+        var leaderName = GetArenaLeaderName(edition, arenaNumber);
+
+        await command.RespondAsync(
+            $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({leaderName}).{Environment.NewLine}" +
+            $"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
+    }
+
+    private static string GetArenaLeaderName(string edition, int arenaNumber)
+    {
+        if (ArenaLeadersByEdition.TryGetValue(edition, out var leadersByArena) &&
+            leadersByArena.TryGetValue(arenaNumber, out var leaderName))
+        {
+            return leaderName;
+        }
+
+        return "Arenaleiter unbekannt";
     }
 }

@@ -45,7 +45,7 @@ public class CatchCommand : ISlashCommand
     public ApplicationCommandProperties BuildDefinition()
     {
         return new SlashCommandBuilder()
-            .WithName(CommandName)
+            .WithName(this.CommandName)
             .WithDescription("Register a caught Pokémon for a route.")
             .AddOption("route", ApplicationCommandOptionType.String, "The route or area.", isRequired: true)
             .AddOption("player", ApplicationCommandOptionType.User, "The player.", isRequired: true)
@@ -63,13 +63,11 @@ public class CatchCommand : ISlashCommand
         var route = CommandOptionHelper.GetRequiredStringOption(command, "route").ToLowerInvariant().Trim();
         var player = CommandOptionHelper.GetRequiredUserOption(command, "player");
         var pokemon = CommandOptionHelper.GetRequiredStringOption(command, "pokemon");
-
-        var linkGroup = this.runService.RegisterCatch(guildId, route, player.Id, player.Username, pokemon);
-        var activeRun = this.runService.GetActiveRun(guildId);
-
-        activeRun.TryAddToActive(linkGroup);
-
         var pokemonInfo = await this.pokemonLookupService.GetPokemonInfoAsync(pokemon);
+        var pokemonTypes = pokemonInfo?.Types ?? Array.Empty<string>();
+
+        var linkGroup = this.runService.RegisterCatch(guildId, route, player.Id, player.Username, pokemon, pokemonTypes);
+        var activeRun = this.runService.GetActiveRun(guildId);
 
         var image = this.embedImageFactory.CreateCatchImage();
         var catchEmbed = this.embedFactory.CreateCatchRegisteredEmbed(
@@ -79,8 +77,10 @@ public class CatchCommand : ISlashCommand
             linkGroup.Entries.Count,
             activeRun.Players.Count,
             pokemonInfo);
-        var statusMessage = this.embedFactory.CreateStatusMessage(activeRun);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: catchEmbed, text: statusMessage);
+        await command.RespondWithFileAsync(image.FileAttachment, embed: catchEmbed);
+
+        var statusMessage = this.embedFactory.CreateStatusMessage(activeRun);
+        await command.FollowupAsync(statusMessage);
     }
 }

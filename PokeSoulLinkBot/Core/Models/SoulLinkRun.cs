@@ -1,4 +1,6 @@
-﻿namespace PokeSoulLinkBot.Core.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace PokeSoulLinkBot.Core.Models;
 
 /// <summary>
 /// Represents a Soul Link run for a specific Discord guild.
@@ -43,27 +45,47 @@ public sealed class SoulLinkRun
     /// <summary>
     /// Gets or sets the participating players.
     /// </summary>
-    public List<RunPlayer> Players { get; set; } = new();
+    public List<RunPlayer> Players { get; set; } = new ();
 
     /// <summary>
     /// Gets or sets the linked Pokémon groups for this run.
     /// </summary>
-    public List<LinkGroup> LinkGroups { get; set; } = new();
+    public List<LinkGroup> LinkGroups { get; set; } = new ();
 
     /// <summary>
     /// Gets or sets the collection of active link groups.
     /// </summary>
-    public LinkGroup[] activeLinks { get; } = new LinkGroup[6];
+    [JsonPropertyName("activeLinks")]
+    public LinkGroup?[] ActiveLinks { get; set; } = new LinkGroup?[6];
 
     public void TryAddToActive(LinkGroup linkGroup)
     {
-        for (var i = 0; i < activeLinks.Length; i++)
+        ArgumentNullException.ThrowIfNull(linkGroup);
+
+        if (this.ActiveLinks.Any(activeLink => IsSameLinkGroup(activeLink, linkGroup)))
         {
-            if (activeLinks[i] == null)
+            return;
+        }
+
+        for (var i = 0; i < this.ActiveLinks.Length; i++)
+        {
+            if (this.ActiveLinks[i] == null)
             {
-                activeLinks[i] = linkGroup;
+                this.ActiveLinks[i] = linkGroup;
                 return;
             }
         }
+    }
+
+    private static bool IsSameLinkGroup(LinkGroup? activeLink, LinkGroup linkGroup)
+    {
+        if (activeLink is null)
+        {
+            return false;
+        }
+
+        return ReferenceEquals(activeLink, linkGroup) ||
+            (activeLink.Id != Guid.Empty && activeLink.Id == linkGroup.Id) ||
+            string.Equals(activeLink.Route, linkGroup.Route, StringComparison.OrdinalIgnoreCase);
     }
 }
