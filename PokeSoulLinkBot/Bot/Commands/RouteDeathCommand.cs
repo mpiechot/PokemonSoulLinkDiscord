@@ -1,7 +1,3 @@
-// <copyright file="RouteDeathCommand.cs" company="PlaceholderCompany">
-// Copyright (c) PlaceholderCompany. All rights reserved.
-// </copyright>
-
 using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;

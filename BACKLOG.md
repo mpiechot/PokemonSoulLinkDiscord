@@ -102,15 +102,15 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
 
 ### BL-009 StyleCop-Dateikopf-Regel deaktivieren
 
-- Status: offen
-- Branch: noch keiner
+- Status: erledigt
+- Branch: `codex/disable-stylecop-file-header`
 - Hintergrund: StyleCop meldet aktuell `The file header is missing or not located at the top of the file.`
 - Ziel: Die File-Header-Warnung wird in der StyleCop-Konfiguration deaktiviert, weil dieses Repository keine verpflichtenden Dateikoepfe verwendet.
 - Akzeptanzkriterien:
-  - Die betroffene StyleCop-Regel fuer fehlende Dateikoepfe ist zentral deaktiviert.
-  - Neue und bestehende Dateien muessen keinen File Header enthalten.
-  - StyleCop-Analyse oder Build laeuft ohne diese Warnung durch.
-  - Andere StyleCop-Regeln bleiben unveraendert aktiv.
+  - [x] Die betroffene StyleCop-Regel fuer fehlende Dateikoepfe ist zentral deaktiviert.
+  - [x] Neue und bestehende Dateien muessen keinen File Header enthalten.
+  - [x] StyleCop-Analyse oder Build laeuft ohne diese Warnung durch.
+  - [x] Andere StyleCop-Regeln bleiben unveraendert aktiv.
 
 ### BL-010 Command fuer Fangbarkeits-Check
 
