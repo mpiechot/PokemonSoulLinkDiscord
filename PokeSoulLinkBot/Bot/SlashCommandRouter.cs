@@ -1,8 +1,9 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Bot.Commands;
 using PokeSoulLinkBot.Bot.Factories;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Handlers;
 
@@ -49,22 +50,38 @@ public sealed class SlashCommandRouter
     {
         ArgumentNullException.ThrowIfNull(command);
 
+        var startedAt = DateTimeOffset.UtcNow;
+        var parameterText = FormatCommandOptions(command);
+
         try
         {
-            Console.WriteLine($"Executing /{command.CommandName} with parameters: {FormatCommandOptions(command)}");
+            Log.Information(
+                "Executing slash command /{CommandName} with parameters: {Parameters}.",
+                command.CommandName,
+                parameterText);
 
             if (!this.commands.TryGetValue(command.CommandName, out var slashCommand))
             {
+                Log.Warning("Unknown slash command /{CommandName}.", command.CommandName);
                 await command.RespondAsync("Unknown command.", ephemeral: true);
                 return;
             }
 
             await slashCommand.HandleAsync(command);
+
+            Log.Information(
+                "Slash command /{CommandName} completed in {ElapsedMilliseconds} ms.",
+                command.CommandName,
+                GetElapsedMilliseconds(startedAt));
         }
         catch (Exception exception)
         {
-            Console.WriteLine($"Command /{command.CommandName} failed with parameters: {FormatCommandOptions(command)}");
-            Console.WriteLine(exception);
+            Log.Error(
+                exception,
+                "Slash command /{CommandName} failed after {ElapsedMilliseconds} ms with parameters: {Parameters}.",
+                command.CommandName,
+                GetElapsedMilliseconds(startedAt),
+                parameterText);
 
             var errorMessage = CreateUserFacingErrorMessage(command, exception);
             var errorEmbed = this.embedFactory.CreateErrorEmbed(errorMessage);
@@ -77,6 +94,64 @@ public sealed class SlashCommandRouter
 
             await command.RespondAsync(embed: errorEmbed, ephemeral: true);
         }
+    }
+
+    /// <summary>
+    /// Routes the incoming autocomplete interaction to the matching command handler.
+    /// </summary>
+    /// <param name="interaction">The incoming autocomplete interaction.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var startedAt = DateTimeOffset.UtcNow;
+        var currentOptionName = interaction.Data.Current.Name;
+        var currentValue = interaction.Data.Current.Value?.ToString() ?? string.Empty;
+
+        try
+        {
+            Log.Debug(
+                "Handling autocomplete for /{CommandName}, option {OptionName}, value '{CurrentValue}'.",
+                interaction.Data.CommandName,
+                currentOptionName,
+                currentValue);
+
+            if (!this.commands.TryGetValue(interaction.Data.CommandName, out var slashCommand))
+            {
+                Log.Warning("Unknown autocomplete command /{CommandName}.", interaction.Data.CommandName);
+                await interaction.RespondAsync(Array.Empty<AutocompleteResult>());
+                return;
+            }
+
+            await slashCommand.HandleAutocompleteAsync(interaction);
+
+            Log.Debug(
+                "Autocomplete for /{CommandName}, option {OptionName} completed in {ElapsedMilliseconds} ms.",
+                interaction.Data.CommandName,
+                currentOptionName,
+                GetElapsedMilliseconds(startedAt));
+        }
+        catch (Exception exception)
+        {
+            Log.Error(
+                exception,
+                "Autocomplete for /{CommandName}, option {OptionName}, value '{CurrentValue}' failed after {ElapsedMilliseconds} ms.",
+                interaction.Data.CommandName,
+                currentOptionName,
+                currentValue,
+                GetElapsedMilliseconds(startedAt));
+
+            if (!interaction.HasResponded)
+            {
+                await interaction.RespondAsync(Array.Empty<AutocompleteResult>());
+            }
+        }
+    }
+
+    private static long GetElapsedMilliseconds(DateTimeOffset startedAt)
+    {
+        return (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
     }
 
     private static string FormatCommandOptions(SocketSlashCommand command)

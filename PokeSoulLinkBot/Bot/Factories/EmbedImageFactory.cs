@@ -1,4 +1,4 @@
-﻿using PokeSoulLinkBot.Bot.Assets;
+using PokeSoulLinkBot.Bot.Assets;
 
 namespace PokeSoulLinkBot.Bot.Factories;
 

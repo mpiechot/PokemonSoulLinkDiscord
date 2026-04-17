@@ -34,16 +34,45 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
     private static readonly IReadOnlyDictionary<string, string> SourceSlugsByEdition =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
+            ["red"] = "red-blue",
+            ["blue"] = "red-blue",
+            ["yellow"] = "yellow",
+            ["gold"] = "gold-silver",
+            ["silver"] = "gold-silver",
+            ["crystal"] = "crystal",
             ["ruby"] = "ruby-sapphire",
             ["rubin"] = "ruby-sapphire",
             ["sapphire"] = "ruby-sapphire",
             ["saphir"] = "ruby-sapphire",
             ["emerald"] = "emerald",
             ["smaragd"] = "emerald",
+            ["firered"] = "firered-leafgreen",
+            ["fire-red"] = "firered-leafgreen",
+            ["leafgreen"] = "firered-leafgreen",
+            ["leaf-green"] = "firered-leafgreen",
+            ["diamond"] = "diamond-pearl",
+            ["pearl"] = "diamond-pearl",
+            ["platinum"] = "platinum",
+            ["heartgold"] = "heartgold-soulsilver",
+            ["heart-gold"] = "heartgold-soulsilver",
+            ["soulsilver"] = "heartgold-soulsilver",
+            ["soul-silver"] = "heartgold-soulsilver",
+            ["black"] = "black-white",
+            ["white"] = "black-white",
+            ["black-2"] = "black-2-white-2",
+            ["white-2"] = "black-2-white-2",
+            ["x"] = "x-y",
+            ["y"] = "x-y",
             ["omega-ruby"] = "omega-ruby-alpha-sapphire",
             ["omega ruby"] = "omega-ruby-alpha-sapphire",
             ["alpha-sapphire"] = "omega-ruby-alpha-sapphire",
             ["alpha sapphire"] = "omega-ruby-alpha-sapphire",
+            ["sun"] = "sun-moon",
+            ["moon"] = "sun-moon",
+            ["ultra-sun"] = "ultra-sun-ultra-moon",
+            ["ultra-moon"] = "ultra-sun-ultra-moon",
+            ["sword"] = "sword-shield",
+            ["shield"] = "sword-shield",
         };
 
     private readonly Dictionary<string, IReadOnlyDictionary<int, ArenaInfo>> cachedArenaInfosBySlug =
@@ -79,6 +108,30 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
         }
 
         return arenaInfo;
+    }
+
+    /// <summary>
+    /// Warms the in-memory cache for known Pokemon Database gym leader pages.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public async Task WarmUpKnownEditionsAsync()
+    {
+        var representativeEditions = SourceSlugsByEdition
+            .GroupBy(pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+
+        foreach (var representativeEdition in representativeEditions)
+        {
+            try
+            {
+                await this.GetArenaInfosByNumberAsync(representativeEdition.Value, representativeEdition.Key);
+            }
+            catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException)
+            {
+                Console.WriteLine($"Arena data warm-up failed for '{representativeEdition.Key}': {exception.Message}");
+            }
+        }
     }
 
     private static string ResolveSourceSlug(string edition)

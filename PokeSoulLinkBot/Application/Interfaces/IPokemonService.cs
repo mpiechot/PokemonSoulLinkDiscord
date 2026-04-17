@@ -1,4 +1,4 @@
-﻿using PokeSoulLinkBot.Core.Models;
+using PokeSoulLinkBot.Core.Models;
 
 namespace PokeSoulLinkBot.Application.Interfaces;
 

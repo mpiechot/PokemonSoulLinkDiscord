@@ -1,4 +1,4 @@
-﻿namespace PokeSoulLinkBot.Core.Models;
+namespace PokeSoulLinkBot.Core.Models;
 
 /// <summary>
 /// Represents a linked encounter group for a specific route or area.

@@ -14,16 +14,15 @@ public sealed class CommandDefinitionTests
     public static TheoryData<ISlashCommand, string, string[]> Commands =>
         new()
         {
-            { new ArenaCommand(new StubArenaInfoService()), "arena", new[] { "edition", "number" } },
-            { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "catch", new[] { "route", "player", "pokemon" } },
+            { new ArenaCommand(new StubArenaInfoService(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
+            { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
-            { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
+            { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
             { new StatsCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "stats", Array.Empty<string>() },
             { new StatusCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "status", Array.Empty<string>() },
             { new TeamCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "team", Array.Empty<string>() },
-            { new UseCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "use", new[] { "route", "position" } },
             { new SwapCommand(new StubRunService(), new EmbedFactory()), "swap", new[] { "team-route", "box-route" } },
         };
 
@@ -44,6 +43,21 @@ public sealed class CommandDefinitionTests
             : Array.Empty<string>();
 
         Assert.Equal(expectedOptions, optionNames);
+    }
+
+    [Fact]
+    public void ArenaCommandDefinition_ShouldEnableAutocompleteForEditionOption()
+    {
+        var command = new ArenaCommand(new StubArenaInfoService(), new StubGameDataCatalogService(), new StubRunService());
+
+        var definition = command.BuildDefinition();
+
+        var slashDefinition = Assert.IsType<SlashCommandProperties>(definition);
+        var editionOption = Assert.Single(
+            slashDefinition.Options.Value,
+            option => option.Name == "edition");
+
+        Assert.True(editionOption.IsAutocomplete);
     }
 
     private static EmbedImageFactory CreateImageFactory()
@@ -121,6 +135,24 @@ public sealed class CommandDefinitionTests
         public Task<ArenaInfo> GetArenaInfoAsync(string edition, int arenaNumber)
         {
             throw new NotSupportedException();
+        }
+    }
+
+    private sealed class StubGameDataCatalogService : IGameDataCatalogService
+    {
+        public Task InitializeAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyCollection<GameEditionInfo>> GetEditionsAsync()
+        {
+            return Task.FromResult<IReadOnlyCollection<GameEditionInfo>>(Array.Empty<GameEditionInfo>());
+        }
+
+        public Task<IReadOnlyCollection<string>> GetRoutesAsync(string edition)
+        {
+            return Task.FromResult<IReadOnlyCollection<string>>(Array.Empty<string>());
         }
     }
 }

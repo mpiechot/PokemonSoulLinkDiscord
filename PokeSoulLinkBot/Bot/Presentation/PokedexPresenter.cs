@@ -1,4 +1,4 @@
-﻿using Discord;
+using Discord;
 using PokeSoulLinkBot.Core.Models;
 
 namespace PokeSoulLinkBot.Bot.Presentation;

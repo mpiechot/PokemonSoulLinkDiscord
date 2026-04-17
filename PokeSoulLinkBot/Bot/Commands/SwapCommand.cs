@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -37,8 +38,8 @@ public sealed class SwapCommand : ISlashCommand
         return new SlashCommandBuilder()
             .WithName(this.CommandName)
             .WithDescription("Tauscht eine Team-Route gegen eine Box-Route.")
-            .AddOption("team-route", ApplicationCommandOptionType.String, "Die Route, die aktuell im Team ist.", isRequired: true)
-            .AddOption("box-route", ApplicationCommandOptionType.String, "Die Route, die aus der Box ins Team soll.", isRequired: true)
+            .AddOption("team-route", ApplicationCommandOptionType.String, "Die Route, die aktuell im Team ist.", isRequired: true, isAutocomplete: true)
+            .AddOption("box-route", ApplicationCommandOptionType.String, "Die Route, die aus der Box ins Team soll.", isRequired: true, isAutocomplete: true)
             .Build();
     }
 
@@ -55,5 +56,45 @@ public sealed class SwapCommand : ISlashCommand
         var message = this.embedFactory.CreateTeamMessage(activeRun);
 
         await command.RespondAsync(message);
+    }
+
+    /// <inheritdoc />
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var guildId = interaction.GuildId?.ToString();
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            Log.Warning("Swap autocomplete received without guild id.");
+            await interaction.RespondAsync(Array.Empty<AutocompleteResult>());
+            return;
+        }
+
+        var activeRun = this.runService.GetActiveRun(guildId);
+        var activeRoutes = activeRun.ActiveLinks
+            .Where(linkGroup => linkGroup is not null)
+            .Select(linkGroup => linkGroup!.Route)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var routes = string.Equals(interaction.Data.Current.Name, "team-route", StringComparison.OrdinalIgnoreCase)
+            ? activeRoutes
+            : activeRun.LinkGroups
+                .Where(linkGroup => linkGroup.IsAlive && !activeRoutes.Contains(linkGroup.Route))
+                .Select(linkGroup => linkGroup.Route);
+
+        var results = AutocompleteHelper.CreateResults(
+            routes,
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        Log.Debug(
+            "Swap autocomplete returned {ResultCount} route suggestions for option {OptionName} and value '{CurrentValue}'. ActiveRoutes={ActiveRouteCount}, LinkGroups={LinkGroupCount}.",
+            results.Count,
+            interaction.Data.Current.Name,
+            AutocompleteHelper.GetCurrentValue(interaction),
+            activeRoutes.Count,
+            activeRun.LinkGroups.Count);
+
+        await interaction.RespondAsync(results);
     }
 }

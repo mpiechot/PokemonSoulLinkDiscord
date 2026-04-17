@@ -1,4 +1,4 @@
-﻿namespace PokeSoulLinkBot.Bot.Helpers;
+namespace PokeSoulLinkBot.Bot.Helpers;
 
 public static class PokemonTypeVisualizer
 {

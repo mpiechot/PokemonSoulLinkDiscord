@@ -2,6 +2,7 @@ using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Helpers;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -11,14 +12,23 @@ namespace PokeSoulLinkBot.Bot.Commands;
 public sealed class ArenaCommand : ISlashCommand
 {
     private readonly IArenaInfoService arenaInfoService;
+    private readonly IGameDataCatalogService gameDataCatalogService;
+    private readonly IRunService runService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ArenaCommand"/> class.
     /// </summary>
     /// <param name="arenaInfoService">The arena info service.</param>
-    public ArenaCommand(IArenaInfoService arenaInfoService)
+    /// <param name="gameDataCatalogService">The game data catalog service.</param>
+    /// <param name="runService">The run service.</param>
+    public ArenaCommand(
+        IArenaInfoService arenaInfoService,
+        IGameDataCatalogService gameDataCatalogService,
+        IRunService runService)
     {
         this.arenaInfoService = arenaInfoService ?? throw new ArgumentNullException(nameof(arenaInfoService));
+        this.gameDataCatalogService = gameDataCatalogService ?? throw new ArgumentNullException(nameof(gameDataCatalogService));
+        this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
     }
 
     /// <inheritdoc />
@@ -30,8 +40,8 @@ public sealed class ArenaCommand : ISlashCommand
         return new SlashCommandBuilder()
             .WithName(this.CommandName)
             .WithDescription("Zeigt die Level der Pokémon in einer Arena.")
-            .AddOption("edition", ApplicationCommandOptionType.String, "Die Edition (z. B. ruby).", isRequired: true)
             .AddOption("number", ApplicationCommandOptionType.Integer, "Die Arena-Nummer (1-8).", isRequired: true)
+            .AddOption("edition", ApplicationCommandOptionType.String, "Die Edition, falls sie vom aktuellen Run abweicht.", isRequired: false, isAutocomplete: true)
             .Build();
     }
 
@@ -40,7 +50,10 @@ public sealed class ArenaCommand : ISlashCommand
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var edition = CommandOptionHelper.GetRequiredStringOption(command, "edition").Trim();
+        var guildId = CommandOptionHelper.GetGuildId(command);
+        var edition = CommandOptionHelper.GetOptionalStringOption(command, "edition")?.Trim()
+            ?? this.runService.GetActiveRun(guildId).Game;
+
         var arenaNumber = CommandOptionHelper.GetRequiredIntegerOption(command, "number");
 
         var arenaInfo = await this.arenaInfoService.GetArenaInfoAsync(edition, arenaNumber);
@@ -49,5 +62,23 @@ public sealed class ArenaCommand : ISlashCommand
         await command.RespondAsync(
             $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({arenaInfo.LeaderName}, {arenaInfo.Location}).{Environment.NewLine}" +
             $"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
+    }
+
+    /// <inheritdoc />
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var editions = await this.gameDataCatalogService.GetEditionsAsync();
+        var results = AutocompleteHelper.CreateResults(
+            editions.Select(edition => edition.DisplayName),
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        Log.Debug(
+            "Arena autocomplete returned {ResultCount} edition suggestions for value '{CurrentValue}'.",
+            results.Count,
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        await interaction.RespondAsync(results);
     }
 }

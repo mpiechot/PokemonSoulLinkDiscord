@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Models;
 

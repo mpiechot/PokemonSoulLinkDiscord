@@ -1,9 +1,10 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
 using PokeSoulLinkBot.Core.Models;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -44,7 +45,7 @@ public class DeathCommand : ISlashCommand
         return new SlashCommandBuilder()
             .WithName(CommandName)
             .WithDescription("Register the death of a linked Pokémon group.")
-            .AddOption("route", ApplicationCommandOptionType.String, "The route that is now dead.", isRequired: true)
+            .AddOption("route", ApplicationCommandOptionType.String, "The route that is now dead.", isRequired: true, isAutocomplete: true)
             .Build();
     }
 
@@ -62,5 +63,32 @@ public class DeathCommand : ISlashCommand
         var embed = this.embedFactory.CreateDeathRegisteredEmbed(linkGroup, image.AttachmentUrl);
 
         await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+    }
+
+    /// <inheritdoc />
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var guildId = interaction.GuildId?.ToString();
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            Log.Warning("Death autocomplete received without guild id.");
+            await interaction.RespondAsync(Array.Empty<AutocompleteResult>());
+            return;
+        }
+
+        var activeRun = this.runService.GetActiveRun(guildId);
+        var results = AutocompleteHelper.CreateResults(
+            activeRun.LinkGroups.Select(group => group.Route),
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        Log.Debug(
+            "Death autocomplete returned {ResultCount} route suggestions for value '{CurrentValue}'. ExistingRoutes={ExistingRouteCount}.",
+            results.Count,
+            AutocompleteHelper.GetCurrentValue(interaction),
+            activeRun.LinkGroups.Count);
+
+        await interaction.RespondAsync(results);
     }
 }

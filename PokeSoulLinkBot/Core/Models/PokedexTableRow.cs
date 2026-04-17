@@ -1,4 +1,4 @@
-﻿namespace PokeSoulLinkBot.Core.Models;
+namespace PokeSoulLinkBot.Core.Models;
 
 /// <summary>
 /// Represents a single row in the Pokédex evolution table.

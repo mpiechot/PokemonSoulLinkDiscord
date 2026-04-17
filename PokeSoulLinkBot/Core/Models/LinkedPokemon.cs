@@ -1,4 +1,4 @@
-﻿namespace PokeSoulLinkBot.Core.Models;
+namespace PokeSoulLinkBot.Core.Models;
 
 /// <summary>
 /// Represents a Pokémon entry linked to a player within a Soul Link group.
