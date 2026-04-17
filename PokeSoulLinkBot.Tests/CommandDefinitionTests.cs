@@ -18,6 +18,7 @@ public sealed class CommandDefinitionTests
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
+            { new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "route-death", new[] { "route", "reason", "player" } },
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
             { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
             { new StatsCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "stats", Array.Empty<string>() },
@@ -89,6 +90,16 @@ public sealed class CommandDefinitionTests
         }
 
         public LinkGroup RegisterDeath(string guildId, string pokemon)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkGroup MarkRouteLost(
+            string guildId,
+            string route,
+            string? reason,
+            ulong? playerId,
+            string? playerName)
         {
             throw new NotSupportedException();
         }

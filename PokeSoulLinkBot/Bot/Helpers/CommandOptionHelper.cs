@@ -1,6 +1,5 @@
 using Discord.WebSocket;
 using PokeSoulLinkBot.Core.Models;
-using System.Numerics;
 
 namespace PokeSoulLinkBot.Bot.Helpers;
 
@@ -100,6 +99,34 @@ public static class CommandOptionHelper
 
         var option = command.Data.Options.FirstOrDefault(x => x.Name == optionName)
             ?? throw new InvalidOperationException($"The option '{optionName}' is missing.");
+
+        if (option.Value is not SocketGuildUser user)
+        {
+            throw new InvalidOperationException($"The option '{optionName}' is not a valid guild user.");
+        }
+
+        return user;
+    }
+
+    /// <summary>
+    /// Gets an optional user option value.
+    /// </summary>
+    /// <param name="command">The slash command.</param>
+    /// <param name="optionName">The option name.</param>
+    /// <returns>The selected guild user if present; otherwise, <see langword="null"/>.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the option value is not a guild user.
+    /// </exception>
+    public static SocketGuildUser? GetOptionalUserOption(SocketSlashCommand command, string optionName)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentException.ThrowIfNullOrWhiteSpace(optionName);
+
+        var option = command.Data.Options.FirstOrDefault(x => x.Name == optionName);
+        if (option is null)
+        {
+            return null;
+        }
 
         if (option.Value is not SocketGuildUser user)
         {

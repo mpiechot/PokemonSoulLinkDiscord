@@ -94,6 +94,71 @@ public sealed class RunServiceCatchTests
     }
 
     [Fact]
+    public void MarkRouteLost_ShouldCreateDeadRouteWithoutPokemon()
+    {
+        var store = new InMemoryRunStore();
+        var service = new RunService(store);
+        service.StartRun(GuildId, "Ruby", "ruby", CreatePlayers());
+
+        var linkGroup = service.MarkRouteLost(GuildId, "101", "Encounter fled.", 1, "marpie1");
+
+        Assert.Equal("101", linkGroup.Route);
+        Assert.Empty(linkGroup.Entries);
+        Assert.False(linkGroup.IsAlive);
+        Assert.True(linkGroup.IsLostWithoutEncounter);
+        Assert.Equal("Encounter fled.", linkGroup.LossReason);
+        Assert.Equal(1UL, linkGroup.FailedEncounterPlayerUserId);
+        Assert.Equal("marpie1", linkGroup.FailedEncounterPlayerName);
+        Assert.NotNull(linkGroup.LostAtUtc);
+        Assert.True(store.SaveCount > 0);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldUseDefaultReason()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var linkGroup = service.MarkRouteLost(GuildId, "101", null, null, null);
+
+        Assert.Equal("First encounter was not caught.", linkGroup.LossReason);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldRejectPlayerOutsideRun()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.MarkRouteLost(GuildId, "101", "Encounter fled.", 99, "outsider"));
+
+        Assert.Equal("The specified player is not part of the active run.", exception.Message);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldRejectRouteWithRegisteredCatches()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.MarkRouteLost(GuildId, "101", "Encounter fled.", null, null));
+
+        Assert.Equal("The route already has registered catches and must be marked dead with /death.", exception.Message);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldRejectAlreadyLostRoute()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.MarkRouteLost(GuildId, "101", "Encounter fled.", null, null);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.MarkRouteLost(GuildId, "101", "Encounter fled again.", null, null));
+
+        Assert.Equal("The route has already been marked as lost.", exception.Message);
+    }
+
+    [Fact]
     public void TryAddToActive_ShouldAddGroupToFirstFreeTeamSlot()
     {
         var run = CreateRun();

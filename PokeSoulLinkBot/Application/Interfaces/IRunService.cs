@@ -44,6 +44,22 @@ public interface IRunService
         IReadOnlyList<string> pokemonTypes);
 
     /// <summary>
+    /// Marks a route as lost before any Pokémon was caught there.
+    /// </summary>
+    /// <param name="guildId">The Discord guild identifier.</param>
+    /// <param name="route">The route or area name.</param>
+    /// <param name="reason">The reason why the encounter was lost.</param>
+    /// <param name="playerId">The optional Discord user identifier of the player who missed the encounter.</param>
+    /// <param name="playerName">The optional display name of the player who missed the encounter.</param>
+    /// <returns>The lost link group for the route.</returns>
+    LinkGroup MarkRouteLost(
+        string guildId,
+        string route,
+        string? reason,
+        ulong? playerId,
+        string? playerName);
+
+    /// <summary>
     /// Sets a route as active at the specified team position.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>
