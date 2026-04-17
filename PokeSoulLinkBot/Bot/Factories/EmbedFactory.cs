@@ -148,6 +148,38 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates an embed for a route lost before any catch was registered.
+    /// </summary>
+    /// <param name="linkGroup">The affected link group.</param>
+    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <returns>The created embed.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="linkGroup"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// </exception>
+    public Embed CreateRouteLostEmbed(LinkGroup linkGroup, string imageUrl)
+    {
+        ArgumentNullException.ThrowIfNull(linkGroup);
+        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+
+        var builder = new EmbedBuilder()
+            .WithTitle("Route Lost")
+            .WithColor(new Color(128, 0, 128))
+            .WithDescription($"Route **{linkGroup.Route}** has been marked as lost.")
+            .AddField("Reason", linkGroup.LossReason ?? "First encounter was not caught.")
+            .WithImageUrl(imageUrl);
+
+        if (!string.IsNullOrWhiteSpace(linkGroup.FailedEncounterPlayerName))
+        {
+            builder.AddField("Player", linkGroup.FailedEncounterPlayerName, true);
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Creates the status message for the active run.
     /// </summary>
     /// <param name="run">The active run.</param>

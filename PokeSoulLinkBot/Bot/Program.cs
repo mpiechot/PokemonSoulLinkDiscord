@@ -64,6 +64,7 @@ var commands = new List<ISlashCommand>
     new RunEndCommand(runService, embedFactory, embedImageFactory),
     new CatchCommand(runService, embedFactory, embedImageFactory, pokemonLookupService, gameDataCatalogService),
     new DeathCommand(runService, embedFactory, embedImageFactory),
+    new RouteDeathCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
     new StatusCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),
     new StatsCommand(runService, embedFactory, embedImageFactory),
     new TeamCommand(runService, embedFactory, embedImageFactory),

@@ -4,9 +4,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
 
 ## Offen
 
-### Arena-Fortschritt im Run speichern
+### BL-001 Arena-Fortschritt im Run speichern
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Einen Command erstellen, mit dem festgehalten wird, dass eine Arena im laufenden Run erledigt ist.
 - Akzeptanzkriterien:
   - Der Command verwendet den aktiven Run der Discord-Guild.
@@ -14,9 +15,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Der erledigte Arena-Status wird persistiert.
   - Status-, Stats- oder Run-Ausgaben koennen den Arena-Fortschritt anzeigen.
 
-### Einheitliche Command-Ausgaben
+### BL-002 Einheitliche Command-Ausgaben
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Den Output aller Commands normalisieren, damit Antworten ein einheitliches Bild haben und Daten uebersichtlich angezeigt werden.
 - Akzeptanzkriterien:
   - Einheitliche Embed- oder Textstruktur fuer Erfolg, Status, Fehler und Zusammenfassungen.
@@ -24,9 +26,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Lange Listen bleiben lesbar und Discord-kompatibel.
   - Bestehende Tests werden angepasst oder ergaenzt.
 
-### DeathCommand um Reason und verursachenden Spieler erweitern
+### BL-003 DeathCommand um Reason und verursachenden Spieler erweitern
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Der DeathCommand bekommt eine Reason und optional einen Spieler, der Schuld war.
 - Akzeptanzkriterien:
   - `reason` ist als Command-Parameter verfuegbar.
@@ -34,20 +37,22 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Reason und Spieler werden persistiert.
   - Ausgabe zeigt Route, betroffene Pokemon, Reason und optionalen Spieler.
 
-### Route direkt als verloren markieren
+### BL-004 Route direkt als verloren markieren
 
-- Status: offen
+- Status: erledigt
+- Branch: `codex/route-direkt-verloren`
 - Ziel: Einen leichten Command fuer Situationen erstellen, in denen eine Route direkt verloren ist, weil das erste Encounter-Pokemon nicht gefangen wurde.
 - Vorschlag: `/route-death`
 - Akzeptanzkriterien:
-  - Route kann direkt als tot/verloren markiert werden, ohne alle Pokemon einzeln zu erfassen.
-  - Reason ist verpflichtend oder sinnvoll vorbelegt.
-  - Optional kann angegeben werden, welcher Spieler das Encounter nicht gefangen hat.
-  - Der Command verhindert widerspruechliche Team-/Box-Zustaende.
+  - [x] Route kann direkt als tot/verloren markiert werden, ohne alle Pokemon einzeln zu erfassen.
+  - [x] Reason ist verpflichtend oder sinnvoll vorbelegt.
+  - [x] Optional kann angegeben werden, welcher Spieler das Encounter nicht gefangen hat.
+  - [x] Der Command verhindert widerspruechliche Team-/Box-Zustaende.
 
-### StatsCommand ausbauen
+### BL-005 StatsCommand ausbauen
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Den StatsCommand so implementieren, dass er basierend auf den gesammelten Daten weitere Statistiken ausgibt.
 - Moegliche Statistiken:
   - Anzahl gefangener, lebender und toter Routen.
@@ -60,9 +65,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Leere oder neue Runs werden sauber behandelt.
   - Tests decken typische und leere Runs ab.
 
-### Workflow fuer Ticket-Bearbeitung definieren
+### BL-006 Workflow fuer Ticket-Bearbeitung definieren
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Einen klaren Workflow fuer das Bearbeiten von Tickets definieren.
 - Akzeptanzkriterien:
   - Ticket-Lifecycle ist beschrieben: Backlog, Analyse, Umsetzung, Tests, Review, Done.
@@ -70,9 +76,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Erwartete Test- und Build-Kommandos sind dokumentiert.
   - Umgang mit StyleCop-Warnungen und Line-Endings ist beschrieben.
 
-### Build der Konsolen-App erstellen
+### BL-007 Build der Konsolen-App erstellen
 
 - Status: offen
+- Branch: noch keiner
 - Ziel: Einen Build der Konsolen-App bereitstellen, damit Visual Studio nicht vom Nutzer blockiert wird.
 - Akzeptanzkriterien:
   - Es gibt einen dokumentierten Build-/Publish-Befehl fuer die Konsolen-App.
@@ -80,9 +87,10 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Startanleitung fuer den gebauten Bot ist dokumentiert.
   - Der Build enthaelt alle benoetigten Ressourcen und Konfigurationsdateien.
 
-### Game-Data-Katalog-Fetch beschleunigen und stabilisieren
+### BL-008 Game-Data-Katalog-Fetch beschleunigen und stabilisieren
 
 - Status: offen
+- Branch: noch keiner
 - Hintergrund: Der erste Fetch der PokeAPI Location Areas ist langsam, weil fuer viele Location Areas einzelne Detail-Requests ausgefuehrt werden.
 - Ziel: Startup und Autocomplete duerfen nicht davon abhaengen, dass alle Location Areas frisch geladen werden.
 - Akzeptanzkriterien:

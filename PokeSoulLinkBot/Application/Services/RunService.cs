@@ -8,6 +8,8 @@ namespace PokeSoulLinkBot.Application.Services;
 /// </summary>
 public sealed class RunService : IRunService
 {
+    private const string DefaultRouteLossReason = "First encounter was not caught.";
+
     private readonly IRunStore runStore;
 
     /// <summary>
@@ -123,6 +125,55 @@ public sealed class RunService : IRunService
     }
 
     /// <inheritdoc />
+    public LinkGroup MarkRouteLost(
+        string guildId,
+        string route,
+        string? reason,
+        ulong? playerId,
+        string? playerName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+
+        SoulLinkRun activeRun = this.GetActiveRun(guildId);
+        var normalizedRoute = this.NormalizeRoute(route);
+
+        if (playerId.HasValue && activeRun.Players.All(player => player.UserId != playerId.Value))
+        {
+            throw new InvalidOperationException("The specified player is not part of the active run.");
+        }
+
+        LinkGroup? existingGroup = activeRun.LinkGroups.FirstOrDefault(group =>
+            string.Equals(group.Route, normalizedRoute, StringComparison.OrdinalIgnoreCase));
+
+        if (existingGroup?.Entries.Count > 0)
+        {
+            throw new InvalidOperationException("The route already has registered catches and must be marked dead with /death.");
+        }
+
+        if (existingGroup?.IsLostWithoutEncounter == true)
+        {
+            throw new InvalidOperationException("The route has already been marked as lost.");
+        }
+
+        LinkGroup linkGroup = existingGroup ?? this.CreateLinkGroup(activeRun, normalizedRoute);
+        linkGroup.IsLostWithoutEncounter = true;
+        linkGroup.LossReason = string.IsNullOrWhiteSpace(reason)
+            ? DefaultRouteLossReason
+            : reason.Trim();
+        linkGroup.FailedEncounterPlayerUserId = playerId;
+        linkGroup.FailedEncounterPlayerName = string.IsNullOrWhiteSpace(playerName)
+            ? null
+            : playerName.Trim();
+        linkGroup.LostAtUtc = DateTime.UtcNow;
+
+        this.RemoveFromActiveLinks(activeRun, linkGroup);
+        this.runStore.Save();
+
+        return linkGroup;
+    }
+
+    /// <inheritdoc />
     public SoulLinkRun UseRoute(string guildId, string route, int position)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
@@ -231,6 +282,19 @@ public sealed class RunService : IRunService
         run.LinkGroups.Add(linkGroup);
 
         return linkGroup;
+    }
+
+    private void RemoveFromActiveLinks(SoulLinkRun run, LinkGroup linkGroup)
+    {
+        for (var index = 0; index < run.ActiveLinks.Length; index++)
+        {
+            LinkGroup? activeLink = run.ActiveLinks[index];
+            if (activeLink != null &&
+                string.Equals(activeLink.Route, linkGroup.Route, StringComparison.OrdinalIgnoreCase))
+            {
+                run.ActiveLinks[index] = null;
+            }
+        }
     }
 
     private LinkGroup GetAliveLinkGroup(SoulLinkRun run, string route)
