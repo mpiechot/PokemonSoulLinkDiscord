@@ -128,3 +128,19 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Die Ausgabe nennt bei einem Treffer das passende bereits gefangene Pokemon inklusive Route, Spieler und Status, soweit vorhanden.
   - Unbekannte oder mehrdeutige Pokemon-Namen werden mit einer klaren Fehlermeldung behandelt.
   - Tests decken deutsche und englische Namen, lebende und tote Pokemon, Evolutionslinien und den erlaubten Fall ohne Treffer ab.
+ 
+### BL-011 Bugfix für WebSocket Anfragen
+
+- Status: offen
+- Branch: noch keiner
+- Ziel: Folgender Fehler ist behoben: [17:24:25 ERR] Slash command /status failed after 5876 ms with parameters: none.
+System.TimeoutException: Cannot respond to an interaction after 3 seconds!
+   at Discord.WebSocket.SocketCommandBase.RespondAsync(String text, Embed[] embeds, Boolean isTTS, Boolean ephemeral, AllowedMentions allowedMentions, MessageComponent components, Embed embed, RequestOptions options, PollProperties poll, MessageFlags flags)
+   at PokeSoulLinkBot.Bot.Commands.StatusCommand.HandleAsync(SocketSlashCommand command) in C:\MARPIE\Projekte\CSharp\PokemonSoulLinkDiscord\PokeSoulLinkBot\Bot\Commands\StatusCommand.cs:line 66
+   at PokeSoulLinkBot.Bot.Handlers.SlashCommandRouter.HandleAsync(SocketSlashCommand command) in C:\MARPIE\Projekte\CSharp\PokemonSoulLinkDiscord\PokeSoulLinkBot\Bot\SlashCommandRouter.cs:line 70
+[17:24:37 WRN] Discord Gateway: A SlashCommandExecuted handler has thrown an unhandled exception.
+System.TimeoutException: Cannot respond to an interaction after 3 seconds!
+   at Discord.WebSocket.SocketCommandBase.RespondAsync(String text, Embed[] embeds, Boolean isTTS, Boolean ephemeral, AllowedMentions allowedMentions, MessageComponent components, Embed embed, RequestOptions options, PollProperties poll, MessageFlags flags)
+   at PokeSoulLinkBot.Bot.Handlers.SlashCommandRouter.HandleAsync(SocketSlashCommand command) in C:\MARPIE\Projekte\CSharp\PokemonSoulLinkDiscord\PokeSoulLinkBot\Bot\SlashCommandRouter.cs:line 95
+   at Discord.EventExtensions.InvokeAsync[T](AsyncEvent`1 eventHandler, T arg)
+   at Discord.WebSocket.DiscordSocketClient.TimeoutWrap(String name, Func`1 action)
