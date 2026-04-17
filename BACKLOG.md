@@ -99,3 +99,32 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Location-Area-Details werden begrenzt parallelisiert oder anderweitig schneller geladen.
   - Bei API-Fehlern bleiben Edition-Autocomplete und bestehende Route-Daten nutzbar.
   - Optional: Ein vorbefuellter JSON-Katalog wird ins Repository aufgenommen.
+
+### BL-009 StyleCop-Dateikopf-Regel deaktivieren
+
+- Status: offen
+- Branch: noch keiner
+- Hintergrund: StyleCop meldet aktuell `The file header is missing or not located at the top of the file.`
+- Ziel: Die File-Header-Warnung wird in der StyleCop-Konfiguration deaktiviert, weil dieses Repository keine verpflichtenden Dateikoepfe verwendet.
+- Akzeptanzkriterien:
+  - Die betroffene StyleCop-Regel fuer fehlende Dateikoepfe ist zentral deaktiviert.
+  - Neue und bestehende Dateien muessen keinen File Header enthalten.
+  - StyleCop-Analyse oder Build laeuft ohne diese Warnung durch.
+  - Andere StyleCop-Regeln bleiben unveraendert aktiv.
+
+### BL-010 Command fuer Fangbarkeits-Check
+
+- Status: offen
+- Branch: noch keiner
+- Ziel: Einen Command erstellen, mit dem geprueft werden kann, ob ein Pokemon im aktiven Run noch gefangen werden darf.
+- Vorschlag: `/catch-check`
+- Akzeptanzkriterien:
+  - Der Command akzeptiert einen Pokemon-Namen auf Deutsch oder Englisch.
+  - Der Name wird auf eine eindeutige Pokemon-Spezies aufgeloest.
+  - Der Check betrachtet alle bereits gefangenen Pokemon des aktiven Runs, unabhaengig davon, ob sie leben oder tot sind.
+  - Fuer jedes bereits gefangene Pokemon wird auch dessen Evolutionslinie beruecksichtigt.
+  - Wenn das angefragte Pokemon selbst oder ein Pokemon derselben Evolutionslinie bereits im Run vorkommt, meldet der Command, dass es nicht gefangen werden darf.
+  - Wenn kein Treffer gefunden wird, meldet der Command, dass das Pokemon gefangen werden darf.
+  - Die Ausgabe nennt bei einem Treffer das passende bereits gefangene Pokemon inklusive Route, Spieler und Status, soweit vorhanden.
+  - Unbekannte oder mehrdeutige Pokemon-Namen werden mit einer klaren Fehlermeldung behandelt.
+  - Tests decken deutsche und englische Namen, lebende und tote Pokemon, Evolutionslinien und den erlaubten Fall ohne Treffer ab.
