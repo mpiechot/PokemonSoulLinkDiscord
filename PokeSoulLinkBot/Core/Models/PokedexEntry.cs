@@ -18,5 +18,5 @@ public sealed class PokedexEntry
     /// <summary>
     /// Gets or sets the rows shown in the evolution table.
     /// </summary>
-    public List<PokedexTableRow> Rows { get; set; } = new();
+    public List<PokedexTableRow> Rows { get; set; } = new ();
 }

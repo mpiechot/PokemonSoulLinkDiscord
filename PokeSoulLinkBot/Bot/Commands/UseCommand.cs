@@ -42,7 +42,7 @@ public class UseCommand : ISlashCommand
     public ApplicationCommandProperties BuildDefinition()
     {
         return new SlashCommandBuilder()
-            .WithName(CommandName)
+            .WithName(this.CommandName)
             .WithDescription("Sets one route for every player as an active pokemon.")
             .AddOption("route", ApplicationCommandOptionType.String, "The number of the route to use.", isRequired: true)
             .AddOption("position", ApplicationCommandOptionType.Integer, "The position in the active team [1 - 6].", isRequired: true)

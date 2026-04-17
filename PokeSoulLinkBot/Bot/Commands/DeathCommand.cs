@@ -43,7 +43,7 @@ public class DeathCommand : ISlashCommand
     public ApplicationCommandProperties BuildDefinition()
     {
         return new SlashCommandBuilder()
-            .WithName(CommandName)
+            .WithName(this.CommandName)
             .WithDescription("Register the death of a linked Pokémon group.")
             .AddOption("route", ApplicationCommandOptionType.String, "The route that is now dead.", isRequired: true, isAutocomplete: true)
             .Build();

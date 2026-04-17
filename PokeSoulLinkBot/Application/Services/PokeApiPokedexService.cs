@@ -75,84 +75,6 @@ public sealed class PokeApiPokedexService : IPokedexService
         };
     }
 
-    private async Task AddEvolutionRowsAsync(
-        EvolutionChainLinkDto chainLink,
-        string requirementText,
-        List<PokedexTableRow> rows)
-    {
-        ArgumentNullException.ThrowIfNull(chainLink);
-        ArgumentNullException.ThrowIfNull(rows);
-
-        var pokemonName = chainLink.Species?.Name
-            ?? throw new InvalidOperationException("Evolution chain contains an invalid species entry.");
-
-        var pokemon = await this.GetPokemonAsync(pokemonName)
-            ?? throw new InvalidOperationException($"Pokémon '{pokemonName}' could not be loaded.");
-
-        rows.Add(new PokedexTableRow
-        {
-            PokemonName = FormatResourceName(pokemonName),
-            RequirementText = requirementText,
-            Types = GetFormattedTypes(pokemon),
-        });
-
-        if (chainLink.EvolvesTo is null || chainLink.EvolvesTo.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var nextEvolution in chainLink.EvolvesTo)
-        {
-            var nextRequirement = FormatEvolutionRequirements(nextEvolution.EvolutionDetails);
-            await this.AddEvolutionRowsAsync(nextEvolution, nextRequirement, rows);
-        }
-    }
-
-    private async Task<PokemonDto?> GetPokemonAsync(string pokemonName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
-
-        var requestUri = $"pokemon/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
-        return await this.GetFromApiAsync<PokemonDto>(requestUri);
-    }
-
-    private async Task<PokemonSpeciesDto?> GetPokemonSpeciesAsync(string pokemonName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
-
-        var requestUri = $"pokemon-species/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
-        return await this.GetFromApiAsync<PokemonSpeciesDto>(requestUri);
-    }
-
-    private async Task<EvolutionChainDto?> GetEvolutionChainAsync(string requestUri)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
-
-        return await this.GetFromApiAsync<EvolutionChainDto>(requestUri);
-    }
-
-    private async Task<T?> GetFromApiAsync<T>(string requestUri)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
-
-        try
-        {
-            using var response = await this.httpClient.GetAsync(requestUri);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return default;
-            }
-
-            await using var responseStream = await response.Content.ReadAsStreamAsync();
-            return await JsonSerializer.DeserializeAsync<T>(responseStream, JsonSerializerOptions);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
-        {
-            throw new InvalidOperationException($"PokéAPI request '{requestUri}' failed: {exception.Message}", exception);
-        }
-    }
-
     private static IReadOnlyList<string> GetFormattedTypes(PokemonDto pokemon)
     {
         ArgumentNullException.ThrowIfNull(pokemon);
@@ -354,5 +276,83 @@ public sealed class PokeApiPokedexService : IPokedexService
             ' ',
             value.Split('-', StringSplitOptions.RemoveEmptyEntries)
                 .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
+    }
+
+    private async Task AddEvolutionRowsAsync(
+        EvolutionChainLinkDto chainLink,
+        string requirementText,
+        List<PokedexTableRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(chainLink);
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var pokemonName = chainLink.Species?.Name
+            ?? throw new InvalidOperationException("Evolution chain contains an invalid species entry.");
+
+        var pokemon = await this.GetPokemonAsync(pokemonName)
+            ?? throw new InvalidOperationException($"Pokémon '{pokemonName}' could not be loaded.");
+
+        rows.Add(new PokedexTableRow
+        {
+            PokemonName = FormatResourceName(pokemonName),
+            RequirementText = requirementText,
+            Types = GetFormattedTypes(pokemon),
+        });
+
+        if (chainLink.EvolvesTo is null || chainLink.EvolvesTo.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var nextEvolution in chainLink.EvolvesTo)
+        {
+            var nextRequirement = FormatEvolutionRequirements(nextEvolution.EvolutionDetails);
+            await this.AddEvolutionRowsAsync(nextEvolution, nextRequirement, rows);
+        }
+    }
+
+    private async Task<PokemonDto?> GetPokemonAsync(string pokemonName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
+
+        var requestUri = $"pokemon/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
+        return await this.GetFromApiAsync<PokemonDto>(requestUri);
+    }
+
+    private async Task<PokemonSpeciesDto?> GetPokemonSpeciesAsync(string pokemonName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
+
+        var requestUri = $"pokemon-species/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
+        return await this.GetFromApiAsync<PokemonSpeciesDto>(requestUri);
+    }
+
+    private async Task<EvolutionChainDto?> GetEvolutionChainAsync(string requestUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
+
+        return await this.GetFromApiAsync<EvolutionChainDto>(requestUri);
+    }
+
+    private async Task<T?> GetFromApiAsync<T>(string requestUri)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
+
+        try
+        {
+            using var response = await this.httpClient.GetAsync(requestUri);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return default;
+            }
+
+            await using var responseStream = await response.Content.ReadAsStreamAsync();
+            return await JsonSerializer.DeserializeAsync<T>(responseStream, JsonSerializerOptions);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            throw new InvalidOperationException($"PokéAPI request '{requestUri}' failed: {exception.Message}", exception);
+        }
     }
 }

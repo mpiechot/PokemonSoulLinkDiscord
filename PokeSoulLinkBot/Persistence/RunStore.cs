@@ -20,24 +20,24 @@ public sealed class RunStore : IRunStore
     public RunStore(string filePath)
     {
         this.filePath = filePath;
-        jsonSerializerOptions = new JsonSerializerOptions
+        this.jsonSerializerOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
         };
 
-        runs = this.LoadRuns();
+        this.runs = this.LoadRuns();
     }
 
     /// <inheritdoc />
     public SoulLinkRun? GetActiveRun(string guildId)
     {
-        return runs.LastOrDefault(run => run.GuildId == guildId && run.EndedAtUtc is null);
+        return this.runs.LastOrDefault(run => run.GuildId == guildId && run.EndedAtUtc is null);
     }
 
     /// <inheritdoc />
     public IReadOnlyList<SoulLinkRun> GetRunsForGuild(string guildId)
     {
-        return runs
+        return this.runs
             .Where(run => run.GuildId == guildId)
             .OrderByDescending(run => run.StartedAtUtc)
             .ToList();
@@ -46,32 +46,32 @@ public sealed class RunStore : IRunStore
     /// <inheritdoc />
     public void AddRun(SoulLinkRun run)
     {
-        runs.Add(run);
+        this.runs.Add(run);
         this.Save();
     }
 
     /// <inheritdoc />
     public void Save()
     {
-        string directoryPath = Path.GetDirectoryName(filePath) ?? string.Empty;
+        string directoryPath = Path.GetDirectoryName(this.filePath) ?? string.Empty;
 
         if (!string.IsNullOrWhiteSpace(directoryPath) && !Directory.Exists(directoryPath))
         {
             Directory.CreateDirectory(directoryPath);
         }
 
-        string json = JsonSerializer.Serialize(runs, jsonSerializerOptions);
-        File.WriteAllText(filePath, json);
+        string json = JsonSerializer.Serialize(this.runs, this.jsonSerializerOptions);
+        File.WriteAllText(this.filePath, json);
     }
 
     private List<SoulLinkRun> LoadRuns()
     {
-        if (!File.Exists(filePath))
+        if (!File.Exists(this.filePath))
         {
             return new List<SoulLinkRun>();
         }
 
-        string json = File.ReadAllText(filePath);
+        string json = File.ReadAllText(this.filePath);
 
         if (string.IsNullOrWhiteSpace(json))
         {

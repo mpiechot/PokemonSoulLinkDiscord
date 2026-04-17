@@ -9,5 +9,6 @@ namespace PokeSoulLinkBot.Core.Models;
 public sealed class PokemonNameEntry
 {
     public string EnglishName { get; set; } = string.Empty;
+
     public string GermanName { get; set; } = string.Empty;
 }

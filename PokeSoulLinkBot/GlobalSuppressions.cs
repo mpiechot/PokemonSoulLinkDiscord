@@ -5,7 +5,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-[assembly: SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1633:File should have header", Justification = "<Ausstehend>", Scope = "namespace", Target = "~N:PokeSoulLinkBot.Core.Models")]
-[assembly: SuppressMessage("StyleCop.CSharp.ReadabilityRules", "SA1101:Prefix local calls with this", Justification = "<Ausstehend>", Scope = "member", Target = "~M:PokeSoulLinkBot.Infrastructure.Persistence.RunStore.#ctor(System.String)")]
 [assembly: SuppressMessage("StyleCop.CSharp.OrderingRules", "SA1200:Using directives should be placed correctly", Justification = "<Ausstehend>")]
+
 [assembly: SuppressMessage("StyleCop.CSharp.ReadabilityRules", "SA1101:Prefix local calls with this", Justification = "<Ausstehend>", Scope = "member", Target = "~M:PokeSoulLinkBot.Core.Models.SoulLinkRun.TryAddToActive(PokeSoulLinkBot.Core.Models.LinkGroup)")]
