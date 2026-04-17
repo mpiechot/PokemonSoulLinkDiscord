@@ -1,4 +1,4 @@
-﻿using Discord.WebSocket;
+using Discord.WebSocket;
 using PokeSoulLinkBot.Core.Models;
 using System.Numerics;
 

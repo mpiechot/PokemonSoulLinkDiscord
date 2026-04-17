@@ -1,4 +1,4 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
 
 namespace PokeSoulLinkBot.Bot.Commands;
@@ -25,4 +25,16 @@ public interface ISlashCommand
     /// <param name="command">The incoming slash command.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     Task HandleAsync(SocketSlashCommand command);
+
+    /// <summary>
+    /// Handles autocomplete interactions for this slash command.
+    /// </summary>
+    /// <param name="interaction">The incoming autocomplete interaction.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        return interaction.RespondAsync(Array.Empty<AutocompleteResult>());
+    }
 }

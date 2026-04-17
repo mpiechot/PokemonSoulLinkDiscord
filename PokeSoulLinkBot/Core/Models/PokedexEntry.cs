@@ -1,4 +1,4 @@
-﻿namespace PokeSoulLinkBot.Core.Models;
+namespace PokeSoulLinkBot.Core.Models;
 
 /// <summary>
 /// Represents Pokédex information for a Pokémon.

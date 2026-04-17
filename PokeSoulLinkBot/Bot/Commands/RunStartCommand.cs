@@ -1,9 +1,10 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
 using PokeSoulLinkBot.Core.Models;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -15,6 +16,7 @@ public class RunStartCommand : ISlashCommand
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
     private readonly EmbedImageFactory embedImageFactory;
+    private readonly IGameDataCatalogService gameDataCatalogService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RunStartCommand"/> class.
@@ -22,17 +24,20 @@ public class RunStartCommand : ISlashCommand
     /// <param name="runService">The run service.</param>
     /// <param name="embedFactory">The embed factory.</param>
     /// <param name="embedImageFactory">The embed image factory.</param>
+    /// <param name="gameDataCatalogService">The game data catalog service.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
     public RunStartCommand(
         IRunService runService,
         EmbedFactory embedFactory,
-        EmbedImageFactory embedImageFactory)
+        EmbedImageFactory embedImageFactory,
+        IGameDataCatalogService gameDataCatalogService)
     {
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
         this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
+        this.gameDataCatalogService = gameDataCatalogService ?? throw new ArgumentNullException(nameof(gameDataCatalogService));
     }
 
     /// <inheritdoc />
@@ -45,7 +50,7 @@ public class RunStartCommand : ISlashCommand
             .WithName("run-start")
             .WithDescription("Start a new Soul Link run.")
             .AddOption("name", ApplicationCommandOptionType.String, "The run name.", isRequired: true)
-            .AddOption("edition", ApplicationCommandOptionType.String, "The name of the played edition.", isRequired: true)
+            .AddOption("edition", ApplicationCommandOptionType.String, "The name of the played edition.", isRequired: true, isAutocomplete: true)
             .AddOption("player1", ApplicationCommandOptionType.User, "The first player.", isRequired: true)
             .AddOption("player2", ApplicationCommandOptionType.User, "The second player.", isRequired: true)
             .AddOption("player3", ApplicationCommandOptionType.User, "The third player.", isRequired: true)
@@ -72,5 +77,23 @@ public class RunStartCommand : ISlashCommand
         var embed = this.embedFactory.CreateRunStartedEmbed(run, image.AttachmentUrl);
 
         await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+    }
+
+    /// <inheritdoc />
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var editions = await this.gameDataCatalogService.GetEditionsAsync();
+        var results = AutocompleteHelper.CreateResults(
+            editions.Select(edition => edition.DisplayName),
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        Log.Debug(
+            "Run-start autocomplete returned {ResultCount} edition suggestions for value '{CurrentValue}'.",
+            results.Count,
+            AutocompleteHelper.GetCurrentValue(interaction));
+
+        await interaction.RespondAsync(results);
     }
 }

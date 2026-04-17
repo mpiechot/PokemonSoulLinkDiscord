@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Discord;
 using PokeSoulLinkBot.Bot.Helpers;
 using PokeSoulLinkBot.Core.Models;
