@@ -1,5 +1,6 @@
 using Discord;
 using Discord.WebSocket;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Helpers;
 
 namespace PokeSoulLinkBot.Bot.Commands;
@@ -9,15 +10,15 @@ namespace PokeSoulLinkBot.Bot.Commands;
 /// </summary>
 public sealed class ArenaCommand : ISlashCommand
 {
-    private readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> arenaLevelsByEdition;
+    private readonly IArenaInfoService arenaInfoService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ArenaCommand"/> class.
     /// </summary>
-    /// <param name="arenaLevelsByEdition">Arena levels grouped by edition and arena number.</param>
-    public ArenaCommand(IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> arenaLevelsByEdition)
+    /// <param name="arenaInfoService">The arena info service.</param>
+    public ArenaCommand(IArenaInfoService arenaInfoService)
     {
-        this.arenaLevelsByEdition = arenaLevelsByEdition ?? throw new ArgumentNullException(nameof(arenaLevelsByEdition));
+        this.arenaInfoService = arenaInfoService ?? throw new ArgumentNullException(nameof(arenaInfoService));
     }
 
     /// <inheritdoc />
@@ -39,22 +40,14 @@ public sealed class ArenaCommand : ISlashCommand
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var edition = CommandOptionHelper.GetRequiredStringOption(command, "edition").Trim().ToLowerInvariant();
+        var edition = CommandOptionHelper.GetRequiredStringOption(command, "edition").Trim();
         var arenaNumber = CommandOptionHelper.GetRequiredIntegerOption(command, "number");
 
-        if (!this.arenaLevelsByEdition.TryGetValue(edition, out var arenaLevels))
-        {
-            await command.RespondAsync($"Für die Edition '{edition}' sind keine Arenadaten vorhanden.", ephemeral: true);
-            return;
-        }
+        var arenaInfo = await this.arenaInfoService.GetArenaInfoAsync(edition, arenaNumber);
+        var joinedLevels = string.Join(", ", arenaInfo.Levels);
 
-        if (!arenaLevels.TryGetValue(arenaNumber, out var levels))
-        {
-            await command.RespondAsync($"Für die Arena '{arenaNumber}' gibt es in '{edition}' keine Daten.", ephemeral: true);
-            return;
-        }
-
-        var joinedLevels = string.Join(", ", levels);
-        await command.RespondAsync($"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
+        await command.RespondAsync(
+            $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({arenaInfo.LeaderName}, {arenaInfo.Location}).{Environment.NewLine}" +
+            $"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
     }
 }

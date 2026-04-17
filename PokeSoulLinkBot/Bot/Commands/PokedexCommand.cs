@@ -48,7 +48,7 @@ public sealed class PokedexCommand : ISlashCommand
         var pokemonName = CommandOptionHelper.GetRequiredStringOption(command, "name");
         var entry = await this.pokedexService.GetPokedexEntryAsync(pokemonName);
 
-        var embed = this.pokedexPresenter.CreateEmbed(entry);
+        var embed = this.pokedexPresenter.CreateEmbed(entry, pokemonName);
         var tableMessage = this.pokedexPresenter.CreateTableMessage(entry);
 
         await command.RespondAsync(tableMessage, embed: embed);

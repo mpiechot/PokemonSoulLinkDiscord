@@ -12,13 +12,16 @@ public sealed class PokedexPresenter
     /// Creates the Pokédex embed.
     /// </summary>
     /// <param name="entry">The Pokédex entry.</param>
+    /// <param name="requestedPokemonName">The requested Pokémon name.</param>
     /// <returns>The created embed.</returns>
-    public Embed CreateEmbed(PokedexEntry entry)
+    public Embed CreateEmbed(PokedexEntry entry, string requestedPokemonName)
     {
         ArgumentNullException.ThrowIfNull(entry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestedPokemonName);
 
         var builder = new EmbedBuilder()
-            .WithTitle($"Pokédex: {entry.PokemonName}");
+            .WithTitle($"Pokédex: {entry.PokemonName}")
+            .WithDescription($"Angefragt: **{requestedPokemonName}**");
 
         if (!string.IsNullOrWhiteSpace(entry.ImageUrl))
         {
@@ -67,7 +70,7 @@ public sealed class PokedexPresenter
         var normalizedValue = string.IsNullOrWhiteSpace(value) ? "-" : value;
 
         return normalizedValue.Length >= width
-            ? normalizedValue[..(width - 1)] + " "
+            ? normalizedValue[.. (width - 1)] + " "
             : normalizedValue.PadRight(width);
     }
 }

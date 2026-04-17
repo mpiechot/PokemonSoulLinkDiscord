@@ -65,16 +65,7 @@ public class UseCommand : ISlashCommand
             return;
         }
 
-        var activeRun = this.runService.GetActiveRun(guildId);
-        var route = activeRun.LinkGroups.FirstOrDefault(g => g.Route == routeId);
-
-        if (route == null)
-        {
-            await command.RespondAsync($"Route '{routeId}' not found in the active run.");
-            return;
-        }
-
-        activeRun.activeLinks[position - 1] = route;
+        var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
         var image = this.embedImageFactory.CreateStatusImage();
         var message = this.embedFactory.CreateUseMessage(activeRun);

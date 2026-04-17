@@ -21,6 +21,11 @@ public sealed class LinkedPokemon
     public string PokemonName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the Pokémon types.
+    /// </summary>
+    public List<string> Types { get; set; } = new ();
+
+    /// <summary>
     /// Gets or sets a value indicating whether the Pokémon is alive.
     /// </summary>
     public bool IsAlive { get; set; }
