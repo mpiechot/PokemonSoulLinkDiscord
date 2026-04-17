@@ -1,5 +1,6 @@
 using Discord;
 using Discord.WebSocket;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Helpers;
 
 namespace PokeSoulLinkBot.Bot.Commands;
@@ -9,31 +10,15 @@ namespace PokeSoulLinkBot.Bot.Commands;
 /// </summary>
 public sealed class ArenaCommand : ISlashCommand
 {
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>> ArenaLeadersByEdition =
-        new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["ruby"] = new Dictionary<int, string>
-            {
-                [1] = "Felizia",
-                [2] = "Kamillo",
-                [3] = "Walter",
-                [4] = "Flavia",
-                [5] = "Norman",
-                [6] = "Wibke",
-                [7] = "Ben und Svenja",
-                [8] = "Wassili",
-            },
-        };
-
-    private readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> arenaLevelsByEdition;
+    private readonly IArenaInfoService arenaInfoService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ArenaCommand"/> class.
     /// </summary>
-    /// <param name="arenaLevelsByEdition">Arena levels grouped by edition and arena number.</param>
-    public ArenaCommand(IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> arenaLevelsByEdition)
+    /// <param name="arenaInfoService">The arena info service.</param>
+    public ArenaCommand(IArenaInfoService arenaInfoService)
     {
-        this.arenaLevelsByEdition = arenaLevelsByEdition ?? throw new ArgumentNullException(nameof(arenaLevelsByEdition));
+        this.arenaInfoService = arenaInfoService ?? throw new ArgumentNullException(nameof(arenaInfoService));
     }
 
     /// <inheritdoc />
@@ -55,37 +40,14 @@ public sealed class ArenaCommand : ISlashCommand
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var edition = CommandOptionHelper.GetRequiredStringOption(command, "edition").Trim().ToLowerInvariant();
+        var edition = CommandOptionHelper.GetRequiredStringOption(command, "edition").Trim();
         var arenaNumber = CommandOptionHelper.GetRequiredIntegerOption(command, "number");
 
-        if (!this.arenaLevelsByEdition.TryGetValue(edition, out var arenaLevels))
-        {
-            await command.RespondAsync($"Für die Edition '{edition}' sind keine Arenadaten vorhanden.", ephemeral: true);
-            return;
-        }
-
-        if (!arenaLevels.TryGetValue(arenaNumber, out var levels))
-        {
-            await command.RespondAsync($"Für die Arena '{arenaNumber}' gibt es in '{edition}' keine Daten.", ephemeral: true);
-            return;
-        }
-
-        var joinedLevels = string.Join(", ", levels);
-        var leaderName = GetArenaLeaderName(edition, arenaNumber);
+        var arenaInfo = await this.arenaInfoService.GetArenaInfoAsync(edition, arenaNumber);
+        var joinedLevels = string.Join(", ", arenaInfo.Levels);
 
         await command.RespondAsync(
-            $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({leaderName}).{Environment.NewLine}" +
+            $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({arenaInfo.LeaderName}, {arenaInfo.Location}).{Environment.NewLine}" +
             $"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
-    }
-
-    private static string GetArenaLeaderName(string edition, int arenaNumber)
-    {
-        if (ArenaLeadersByEdition.TryGetValue(edition, out var leadersByArena) &&
-            leadersByArena.TryGetValue(arenaNumber, out var leaderName))
-        {
-            return leaderName;
-        }
-
-        return "Arenaleiter unbekannt";
     }
 }

@@ -14,7 +14,7 @@ public sealed class CommandDefinitionTests
     public static TheoryData<ISlashCommand, string, string[]> Commands =>
         new()
         {
-            { new ArenaCommand(CreateArenaLevels()), "arena", new[] { "edition", "number" } },
+            { new ArenaCommand(new StubArenaInfoService()), "arena", new[] { "edition", "number" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "catch", new[] { "route", "player", "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
@@ -49,17 +49,6 @@ public sealed class CommandDefinitionTests
     private static EmbedImageFactory CreateImageFactory()
     {
         return new EmbedImageFactory(AppContext.BaseDirectory);
-    }
-
-    private static IReadOnlyDictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>> CreateArenaLevels()
-    {
-        return new Dictionary<string, IReadOnlyDictionary<int, IReadOnlyList<int>>>
-        {
-            ["ruby"] = new Dictionary<int, IReadOnlyList<int>>
-            {
-                [1] = new[] { 14, 15 },
-            },
-        };
     }
 
     private sealed class StubRunService : IRunService
@@ -122,6 +111,14 @@ public sealed class CommandDefinitionTests
     private sealed class StubPokedexService : IPokedexService
     {
         public Task<PokedexEntry> GetPokedexEntryAsync(string pokemonName)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class StubArenaInfoService : IArenaInfoService
+    {
+        public Task<ArenaInfo> GetArenaInfoAsync(string edition, int arenaNumber)
         {
             throw new NotSupportedException();
         }

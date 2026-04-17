@@ -29,7 +29,6 @@ var client = new DiscordSocketClient(socketConfig);
 
 var filePath = Path.Combine(AppContext.BaseDirectory, "Data", "runs.json");
 var resourcesDirectoryPath = Path.Combine(AppContext.BaseDirectory, "Resources");
-var arenaLevelsFilePath = Path.Combine(AppContext.BaseDirectory, "Data", "arena-levels.json");
 var httpClient = new HttpClient
 {
     BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
@@ -39,12 +38,12 @@ var pokemonNameResolver = new PokeApiPokemonNameResolver(httpClient);
 var pokemonLookupService = new PokeApiPokemonLookupService(httpClient, pokemonNameResolver);
 var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver);
 var pokedexPresenter = new PokedexPresenter();
+var arenaInfoService = new PokemonDbArenaInfoService(httpClient);
 
 var runStore = new RunStore(filePath);
 var runService = new RunService(runStore);
 var embedFactory = new EmbedFactory();
 var embedImageFactory = new EmbedImageFactory(resourcesDirectoryPath);
-var arenaLevelsByEdition = ArenaLevelDataLoader.Load(arenaLevelsFilePath);
 
 var commands = new List<ISlashCommand>
 {
@@ -58,7 +57,7 @@ var commands = new List<ISlashCommand>
     new UseCommand(runService, embedFactory, embedImageFactory),
     new SwapCommand(runService, embedFactory),
     new PokedexCommand(pokedexService, pokedexPresenter),
-    new ArenaCommand(arenaLevelsByEdition),
+    new ArenaCommand(arenaInfoService),
 };
 
 var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);
