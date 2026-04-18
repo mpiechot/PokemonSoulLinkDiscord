@@ -64,7 +64,7 @@ public class UseCommand : ISlashCommand
 
         var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
-        var embed = this.embedFactory.CreateUseEmbed(activeRun);
-        await command.RespondAsync(embed: embed);
+        var message = this.embedFactory.CreateUseMessage(activeRun);
+        await command.RespondAsync(message);
     }
 }

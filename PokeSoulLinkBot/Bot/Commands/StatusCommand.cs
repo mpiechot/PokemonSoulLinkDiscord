@@ -57,8 +57,8 @@ public class StatusCommand : ISlashCommand
         var activeRun = this.runService.GetActiveRun(guildId);
         await this.EnrichMissingPokemonTypesAsync(activeRun);
 
-        var embed = this.embedFactory.CreateStatusEmbed(activeRun);
-        await command.RespondAsync(embed: embed);
+        var message = this.embedFactory.CreateStatusMessage(activeRun);
+        await command.RespondAsync(message);
     }
 
     private async Task EnrichMissingPokemonTypesAsync(SoulLinkRun run)

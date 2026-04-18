@@ -10,9 +10,9 @@ namespace PokeSoulLinkBot.Bot.Factories;
 /// </summary>
 public sealed class EmbedFactory
 {
-    private const int DiscordFieldValueMaxLength = 1024;
+    private const int StatusTableContentMaxLength = 480;
 
-    private const int CodeBlockOverheadLength = 6;
+    private const int TeamTableContentMaxLength = 1600;
 
     private const string TruncatedTableSuffix = "...";
 
@@ -203,7 +203,7 @@ public sealed class EmbedFactory
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> is <see langword="null"/>.
     /// </exception>
-    public Embed CreateStatusEmbed(SoulLinkRun run)
+    public string CreateStatusMessage(SoulLinkRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
 
@@ -211,36 +211,16 @@ public sealed class EmbedFactory
         var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
         var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
         var playerNames = run.Players.Select(player => player.UserName).ToList();
-        var builder = this.CreateRunOutputBuilder("Run Status", run)
-            .WithColor(Color.Blue);
 
-        this.AddTableField(builder, "Current Team", currentTeam, playerNames);
-        this.AddTableField(builder, "Box", box, playerNames);
-        this.AddTableField(builder, "Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames);
-
-        return builder.Build();
-    }
-
-    /// <summary>
-    /// Creates the status message for the active run.
-    /// </summary>
-    /// <param name="run">The active run.</param>
-    /// <returns>The formatted status message.</returns>
-    public string CreateStatusMessage(SoulLinkRun run)
-    {
-        return this.CreateRunOverviewMessage(this.CreateStatusEmbed(run));
-    }
-
-    /// <summary>
-    /// Creates an embed for a newly selected active team.
-    /// </summary>
-    /// <param name="run">The active run.</param>
-    /// <returns>The created embed.</returns>
-    public Embed CreateUseEmbed(SoulLinkRun run)
-    {
-        ArgumentNullException.ThrowIfNull(run);
-
-        return this.CreateTeamEmbed("Active Team Updated", run);
+        return string.Join(
+            Environment.NewLine,
+            this.CreateRunHeader("Run Status", run),
+            string.Empty,
+            this.CreateTableSection("Current Team", currentTeam, playerNames, StatusTableContentMaxLength),
+            string.Empty,
+            this.CreateTableSection("Box", box, playerNames, StatusTableContentMaxLength),
+            string.Empty,
+            this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames, StatusTableContentMaxLength));
     }
 
     /// <summary>
@@ -250,19 +230,9 @@ public sealed class EmbedFactory
     /// <returns>The formatted team message.</returns>
     public string CreateUseMessage(SoulLinkRun run)
     {
-        return this.CreateRunOverviewMessage(this.CreateUseEmbed(run));
-    }
-
-    /// <summary>
-    /// Creates an embed for the active team.
-    /// </summary>
-    /// <param name="run">The active run.</param>
-    /// <returns>The created embed.</returns>
-    public Embed CreateTeamEmbed(SoulLinkRun run)
-    {
         ArgumentNullException.ThrowIfNull(run);
 
-        return this.CreateTeamEmbed("Active Team", run);
+        return this.CreateTeamMessage("Active Team Updated", run);
     }
 
     /// <summary>
@@ -272,7 +242,9 @@ public sealed class EmbedFactory
     /// <returns>The formatted team message.</returns>
     public string CreateTeamMessage(SoulLinkRun run)
     {
-        return this.CreateRunOverviewMessage(this.CreateTeamEmbed(run));
+        ArgumentNullException.ThrowIfNull(run);
+
+        return this.CreateTeamMessage("Active Team", run);
     }
 
     /// <summary>
@@ -375,9 +347,8 @@ public sealed class EmbedFactory
             .Build();
     }
 
-    private static string CreateCodeBlock(string value)
+    private static string CreateCodeBlock(string value, int maxContentLength)
     {
-        var maxContentLength = DiscordFieldValueMaxLength - CodeBlockOverheadLength;
         var table = TruncateTable(value, maxContentLength);
         return $"```{table}```";
     }
@@ -418,50 +389,33 @@ public sealed class EmbedFactory
         return builder.ToString();
     }
 
-    private Embed CreateTeamEmbed(string title, SoulLinkRun run)
+    private string CreateTeamMessage(string title, SoulLinkRun run)
     {
         var playerNames = run.Players.Select(player => player.UserName).ToList();
-        var builder = this.CreateRunOutputBuilder(title, run)
-            .WithColor(Color.Blue);
 
-        this.AddTableField(builder, "Team", run.ActiveLinks, playerNames);
-
-        return builder.Build();
+        return string.Join(
+            Environment.NewLine,
+            this.CreateRunHeader(title, run),
+            string.Empty,
+            this.CreateTableSection("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength));
     }
 
-    private EmbedBuilder CreateRunOutputBuilder(string title, SoulLinkRun run)
+    private string CreateRunHeader(string title, SoulLinkRun run)
     {
-        return new EmbedBuilder()
-            .WithTitle(title)
-            .AddField("Run", run.Name, true)
-            .AddField("Edition", run.Game, true);
+        return
+            $"**{title}**{Environment.NewLine}" +
+            $"Run: **{run.Name}**{Environment.NewLine}" +
+            $"Edition: **{run.Game}**";
     }
 
-    private void AddTableField(
-        EmbedBuilder builder,
+    private string CreateTableSection(
         string title,
         IEnumerable<LinkGroup?> linkedGroups,
-        IReadOnlyList<string> playerNames)
+        IReadOnlyList<string> playerNames,
+        int maxTableContentLength)
     {
         var table = this.BuildStringTable(linkedGroups, playerNames);
-        builder.AddField(title, CreateCodeBlock(table));
-    }
-
-    private string CreateRunOverviewMessage(Embed embed)
-    {
-        var lines = new List<string>
-        {
-            $"**{embed.Title}**",
-        };
-
-        foreach (var field in embed.Fields)
-        {
-            lines.Add(string.Empty);
-            lines.Add($"**{field.Name}**");
-            lines.Add(field.Value);
-        }
-
-        return string.Join(Environment.NewLine, lines);
+        return $"**{title}**{Environment.NewLine}{CreateCodeBlock(table, maxTableContentLength)}";
     }
 
     private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)
