@@ -51,6 +51,24 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateTeamTableMessage_ShouldOmitRunSummaryHeader()
+    {
+        var run = CreateRun();
+        var teamRoute = CreateLinkGroup("101", true, "Bisasam");
+        run.LinkGroups.Add(teamRoute);
+        run.ActiveLinks[0] = teamRoute;
+        var embedFactory = new EmbedFactory();
+
+        var message = embedFactory.CreateTeamTableMessage(run);
+
+        Assert.Contains("Team", message, StringComparison.Ordinal);
+        Assert.Contains("101", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Active Team", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Run: **Ruby**", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Edition: **ruby**", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateStatusMessage_ShouldKeepTableCodeBlocksDiscordCompatible()
     {
         var run = CreateRun();

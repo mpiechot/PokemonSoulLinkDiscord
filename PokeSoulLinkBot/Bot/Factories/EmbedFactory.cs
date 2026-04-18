@@ -269,6 +269,18 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates the table-only message for the active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted active team table message.</returns>
+    public string CreateTeamTableMessage(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return this.CreateTeamTableSection(run);
+    }
+
+    /// <summary>
     /// Creates an embed for arena information.
     /// </summary>
     /// <param name="edition">The edition name.</param>
@@ -416,13 +428,18 @@ public sealed class EmbedFactory
 
     private string CreateTeamMessage(string title, SoulLinkRun run)
     {
-        var playerNames = run.Players.Select(player => player.UserName).ToList();
-
         return string.Join(
             Environment.NewLine,
             this.CreateRunHeader(title, run),
             string.Empty,
-            this.CreateTableSection("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength));
+            this.CreateTeamTableSection(run));
+    }
+
+    private string CreateTeamTableSection(SoulLinkRun run)
+    {
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
+
+        return this.CreateTableSection("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength);
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)

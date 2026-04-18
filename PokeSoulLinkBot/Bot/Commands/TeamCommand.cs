@@ -55,9 +55,10 @@ public class TeamCommand : ISlashCommand
         var guildId = CommandOptionHelper.GetGuildId(command);
 
         var activeRun = this.runService.GetActiveRun(guildId);
-        var message = this.embedFactory.CreateTeamMessage(activeRun);
+        var message = this.embedFactory.CreateTeamTableMessage(activeRun);
         var image = this.embedImageFactory.CreateTeamImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team", activeRun, image.AttachmentUrl);
-        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
+        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await command.FollowupAsync(message);
     }
 }
