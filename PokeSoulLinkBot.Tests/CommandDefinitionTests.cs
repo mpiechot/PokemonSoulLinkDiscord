@@ -14,7 +14,7 @@ public sealed class CommandDefinitionTests
     public static TheoryData<ISlashCommand, string, string[]> Commands =>
         new()
         {
-            { new ArenaCommand(new StubArenaInfoService(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
+            { new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
@@ -22,9 +22,10 @@ public sealed class CommandDefinitionTests
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
             { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
             { new StatsCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "stats", Array.Empty<string>() },
-            { new StatusCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "status", Array.Empty<string>() },
-            { new TeamCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "team", Array.Empty<string>() },
+            { new StatusCommand(new StubRunService(), new EmbedFactory(), new StubPokemonLookupService()), "status", Array.Empty<string>() },
+            { new TeamCommand(new StubRunService(), new EmbedFactory()), "team", Array.Empty<string>() },
             { new SwapCommand(new StubRunService(), new EmbedFactory()), "swap", new[] { "team-route", "box-route" } },
+            { new UseCommand(new StubRunService(), new EmbedFactory()), "use", new[] { "route", "position" } },
         };
 
     [Theory]
@@ -49,7 +50,7 @@ public sealed class CommandDefinitionTests
     [Fact]
     public void ArenaCommandDefinition_ShouldEnableAutocompleteForEditionOption()
     {
-        var command = new ArenaCommand(new StubArenaInfoService(), new StubGameDataCatalogService(), new StubRunService());
+        var command = new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), new StubGameDataCatalogService(), new StubRunService());
 
         var definition = command.BuildDefinition();
 

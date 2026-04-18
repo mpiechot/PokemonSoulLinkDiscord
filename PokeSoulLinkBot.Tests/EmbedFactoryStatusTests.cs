@@ -7,7 +7,7 @@ namespace PokeSoulLinkBot.Tests;
 public sealed class EmbedFactoryStatusTests
 {
     [Fact]
-    public void CreateStatusMessage_ShouldGroupRoutesByCurrentTeamBoxAndDead()
+    public void CreateStatusEmbed_ShouldGroupRoutesByCurrentTeamBoxAndDead()
     {
         var run = CreateRun();
         var teamRoute = CreateLinkGroup("101", true, "Bisasam");
@@ -17,8 +17,14 @@ public sealed class EmbedFactoryStatusTests
         run.ActiveLinks[0] = teamRoute;
         var embedFactory = new EmbedFactory();
 
-        var message = embedFactory.CreateStatusMessage(run);
+        var embed = embedFactory.CreateStatusEmbed(run);
+        var message = string.Join(
+            Environment.NewLine,
+            embed.Fields.Select(field => $"{field.Name}{Environment.NewLine}{field.Value}"));
 
+        Assert.Equal("Run Status", embed.Title);
+        Assert.Contains(embed.Fields, field => field.Name == "Run" && field.Value == "Ruby");
+        Assert.Contains(embed.Fields, field => field.Name == "Edition" && field.Value == "ruby");
         Assert.Contains("Current Team", message, StringComparison.Ordinal);
         Assert.Contains("Box", message, StringComparison.Ordinal);
         Assert.Contains("Dead", message, StringComparison.Ordinal);
@@ -31,7 +37,7 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
-    public void CreateTeamMessage_ShouldUseCurrentActiveLinks()
+    public void CreateTeamEmbed_ShouldUseCurrentActiveLinks()
     {
         var run = CreateRun();
         var teamRoute = CreateLinkGroup("101", true, "Bisasam");
@@ -40,11 +46,31 @@ public sealed class EmbedFactoryStatusTests
         run.ActiveLinks[0] = boxRoute;
         var embedFactory = new EmbedFactory();
 
-        var message = embedFactory.CreateTeamMessage(run);
+        var embed = embedFactory.CreateTeamEmbed(run);
+        var message = string.Join(
+            Environment.NewLine,
+            embed.Fields.Select(field => $"{field.Name}{Environment.NewLine}{field.Value}"));
 
-        Assert.Contains("Active Teams", message, StringComparison.Ordinal);
+        Assert.Equal("Active Team", embed.Title);
         Assert.Contains("102", message, StringComparison.Ordinal);
         Assert.DoesNotContain("101", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateStatusEmbed_ShouldKeepTableFieldsDiscordCompatible()
+    {
+        var run = CreateRun();
+        for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
+        {
+            run.LinkGroups.Add(CreateLinkGroup($"route-{routeIndex:000}", true, $"Pokemon-{routeIndex:000}"));
+        }
+
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateStatusEmbed(run);
+
+        Assert.All(embed.Fields, field => Assert.True(field.Value.Length <= 1024));
+        Assert.Contains(embed.Fields, field => field.Name == "Box" && field.Value.EndsWith("...```", StringComparison.Ordinal));
     }
 
     private static SoulLinkRun CreateRun()

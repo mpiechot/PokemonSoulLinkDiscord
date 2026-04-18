@@ -10,6 +10,12 @@ namespace PokeSoulLinkBot.Bot.Factories;
 /// </summary>
 public sealed class EmbedFactory
 {
+    private const int DiscordFieldValueMaxLength = 1024;
+
+    private const int CodeBlockOverheadLength = 6;
+
+    private const string TruncatedTableSuffix = "...";
+
     /// <summary>
     /// Creates an embed for a newly started run.
     /// </summary>
@@ -28,8 +34,10 @@ public sealed class EmbedFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
 
         return new EmbedBuilder()
-            .WithTitle("Soul Link Run Started")
-            .WithDescription($"Run **{run.Name}** for **{run.Game}** has been started.")
+            .WithTitle("Run Started")
+            .WithDescription($"Run **{run.Name}** has been started.")
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true)
             .AddField("Players", string.Join(", ", run.Players.Select(player => player.UserName)))
             .AddField("Started At (UTC)", run.StartedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"))
             .WithImageUrl(imageUrl)
@@ -54,9 +62,10 @@ public sealed class EmbedFactory
         ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
 
         return new EmbedBuilder()
-            .WithTitle("🚀 Soul Link Run Ended")
+            .WithTitle("Run Ended")
             .WithDescription($"Run **{run.Name}** has ended.")
-            .AddField("Game", run.Game)
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true)
             .AddField("Reason", run.EndReason ?? "No reason given.")
             .AddField(
                 "Ended At (UTC)",
@@ -73,18 +82,18 @@ public sealed class EmbedFactory
     /// <param name="pokemon">The Pokémon name.</param>
     /// <param name="currentEntries">The current number of linked entries.</param>
     /// <param name="requiredEntries">The required number of linked entries.</param>
-    /// <param name="imageUrl">The Pokémon image URL.</param>
+    /// <param name="pokemonInfo">The Pokémon metadata used for visual details.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentException">
     /// Thrown when one of the string parameters is null, empty, or whitespace.
     /// </exception>
     public Embed CreateCatchRegisteredEmbed(
-    string route,
-    string playerName,
-    string pokemon,
-    int currentEntries,
-    int requiredEntries,
-    PokemonInfo? pokemonInfo)
+        string route,
+        string playerName,
+        string pokemon,
+        int currentEntries,
+        int requiredEntries,
+        PokemonInfo? pokemonInfo)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(route);
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
@@ -97,6 +106,9 @@ public sealed class EmbedFactory
         var builder = new EmbedBuilder()
             .WithTitle("Catch Registered")
             .WithDescription($"**{playerName}** registered **{pokemon}** on **{route}**.")
+            .AddField("Route", route, true)
+            .AddField("Player", playerName, true)
+            .AddField("Pokemon", pokemon, true)
             .AddField("Progress", $"{currentEntries}/{requiredEntries}", true)
             .AddField("Status", statusText, true);
 
@@ -139,10 +151,12 @@ public sealed class EmbedFactory
             linkGroup.Entries.Select(entry => $"{entry.PlayerName}: {entry.PokemonName}"));
 
         return new EmbedBuilder()
-            .WithTitle("💀 Soul Link Death")
+            .WithTitle("Death Registered")
             .WithColor(new Color(128, 0, 128))
             .WithDescription($"The linked group on **{linkGroup.Route}** has been marked as dead.")
-            .AddField("Affected Pokémon", entries)
+            .AddField("Route", linkGroup.Route, true)
+            .AddField("Status", "Dead", true)
+            .AddField("Affected Pokemon", entries)
             .WithImageUrl(imageUrl)
             .Build();
     }
@@ -168,6 +182,8 @@ public sealed class EmbedFactory
             .WithTitle("Route Lost")
             .WithColor(new Color(128, 0, 128))
             .WithDescription($"Route **{linkGroup.Route}** has been marked as lost.")
+            .AddField("Route", linkGroup.Route, true)
+            .AddField("Status", "Lost", true)
             .AddField("Reason", linkGroup.LossReason ?? "First encounter was not caught.")
             .WithImageUrl(imageUrl);
 
@@ -187,45 +203,108 @@ public sealed class EmbedFactory
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> is <see langword="null"/>.
     /// </exception>
-    public string CreateStatusMessage(SoulLinkRun run)
+    public Embed CreateStatusEmbed(SoulLinkRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
 
         var currentTeam = run.ActiveLinks.Where(group => group != null && group.IsAlive).ToList();
         var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
         var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
-        var deadTable = this.BuildStringTable(run.LinkGroups.Where(group => !group.IsAlive), run.Players.Select(player => player.UserName).ToList());
-        var currentTeamTable = this.BuildStringTable(currentTeam, run.Players.Select(player => player.UserName).ToList());
-        var boxTable = this.BuildStringTable(box, run.Players.Select(player => player.UserName).ToList());
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
+        var builder = this.CreateRunOutputBuilder("Run Status", run)
+            .WithColor(Color.Blue);
 
-        return
-            $"**Run Status: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Current Team**{Environment.NewLine}" +
-            $"```{currentTeamTable}```{Environment.NewLine}{Environment.NewLine}" +
-            $"**📦 Box**{Environment.NewLine}" +
-            $"```{boxTable}```{Environment.NewLine}{Environment.NewLine}" +
-            $"**💀 Dead**{Environment.NewLine}" +
-            $"```{deadTable}```";
+        this.AddTableField(builder, "Current Team", currentTeam, playerNames);
+        this.AddTableField(builder, "Box", box, playerNames);
+        this.AddTableField(builder, "Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames);
+
+        return builder.Build();
     }
 
+    /// <summary>
+    /// Creates the status message for the active run.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted status message.</returns>
+    public string CreateStatusMessage(SoulLinkRun run)
+    {
+        return this.CreateRunOverviewMessage(this.CreateStatusEmbed(run));
+    }
+
+    /// <summary>
+    /// Creates an embed for a newly selected active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateUseEmbed(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return this.CreateTeamEmbed("Active Team Updated", run);
+    }
+
+    /// <summary>
+    /// Creates the message for a newly selected active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted team message.</returns>
     public string CreateUseMessage(SoulLinkRun run)
     {
-        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
-
-        return
-            $"**New Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Team**{Environment.NewLine}" +
-            $"```{activeTeam}```{Environment.NewLine}{Environment.NewLine}";
+        return this.CreateRunOverviewMessage(this.CreateUseEmbed(run));
     }
 
+    /// <summary>
+    /// Creates an embed for the active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateTeamEmbed(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return this.CreateTeamEmbed("Active Team", run);
+    }
+
+    /// <summary>
+    /// Creates the message for the active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted team message.</returns>
     public string CreateTeamMessage(SoulLinkRun run)
     {
-        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
+        return this.CreateRunOverviewMessage(this.CreateTeamEmbed(run));
+    }
 
-        return
-            $"**Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Team**{Environment.NewLine}" +
-            $"```{activeTeam}```{Environment.NewLine}{Environment.NewLine}";
+    /// <summary>
+    /// Creates an embed for arena information.
+    /// </summary>
+    /// <param name="edition">The edition name.</param>
+    /// <param name="arenaNumber">The arena number.</param>
+    /// <param name="leaderName">The arena leader name.</param>
+    /// <param name="location">The arena location.</param>
+    /// <param name="levels">The Pokémon levels in the arena.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateArenaInfoEmbed(
+        string edition,
+        long arenaNumber,
+        string leaderName,
+        string location,
+        IReadOnlyCollection<int> levels)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(edition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaderName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(location);
+        ArgumentNullException.ThrowIfNull(levels);
+
+        return new EmbedBuilder()
+            .WithTitle("Arena Information")
+            .WithColor(Color.Blue)
+            .AddField("Edition", edition, true)
+            .AddField("Arena", arenaNumber, true)
+            .AddField("Leader", leaderName, true)
+            .AddField("Location", location, true)
+            .AddField("Pokemon Levels", string.Join(", ", levels), true)
+            .Build();
     }
 
     /// <summary>
@@ -267,7 +346,7 @@ public sealed class EmbedFactory
         }
 
         return new EmbedBuilder()
-            .WithTitle("📊 Run Statistics")
+            .WithTitle("Run Statistics")
             .WithColor(Color.Blue)
             .AddField("Stored Runs", runs.Count)
             .AddField("Completed Runs", completedRuns)
@@ -294,6 +373,95 @@ public sealed class EmbedFactory
             .WithColor(Color.Red)
             .WithDescription(message)
             .Build();
+    }
+
+    private static string CreateCodeBlock(string value)
+    {
+        var maxContentLength = DiscordFieldValueMaxLength - CodeBlockOverheadLength;
+        var table = TruncateTable(value, maxContentLength);
+        return $"```{table}```";
+    }
+
+    private static string TruncateTable(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        var lines = value.Split(Environment.NewLine);
+        var builder = new StringBuilder();
+
+        foreach (var line in lines)
+        {
+            var separatorLength = builder.Length == 0 ? 0 : Environment.NewLine.Length;
+            var projectedLength = builder.Length + separatorLength + line.Length + Environment.NewLine.Length + TruncatedTableSuffix.Length;
+            if (projectedLength > maxLength)
+            {
+                break;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.Append(line);
+        }
+
+        if (builder.Length > 0)
+        {
+            builder.AppendLine();
+        }
+
+        builder.Append(TruncatedTableSuffix);
+        return builder.ToString();
+    }
+
+    private Embed CreateTeamEmbed(string title, SoulLinkRun run)
+    {
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
+        var builder = this.CreateRunOutputBuilder(title, run)
+            .WithColor(Color.Blue);
+
+        this.AddTableField(builder, "Team", run.ActiveLinks, playerNames);
+
+        return builder.Build();
+    }
+
+    private EmbedBuilder CreateRunOutputBuilder(string title, SoulLinkRun run)
+    {
+        return new EmbedBuilder()
+            .WithTitle(title)
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true);
+    }
+
+    private void AddTableField(
+        EmbedBuilder builder,
+        string title,
+        IEnumerable<LinkGroup?> linkedGroups,
+        IReadOnlyList<string> playerNames)
+    {
+        var table = this.BuildStringTable(linkedGroups, playerNames);
+        builder.AddField(title, CreateCodeBlock(table));
+    }
+
+    private string CreateRunOverviewMessage(Embed embed)
+    {
+        var lines = new List<string>
+        {
+            $"**{embed.Title}**",
+        };
+
+        foreach (var field in embed.Fields)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"**{field.Name}**");
+            lines.Add(field.Value);
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)

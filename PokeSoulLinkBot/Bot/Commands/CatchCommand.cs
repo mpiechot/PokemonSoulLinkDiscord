@@ -85,8 +85,8 @@ public class CatchCommand : ISlashCommand
 
         await command.RespondWithFileAsync(image.FileAttachment, embed: catchEmbed);
 
-        var statusMessage = this.embedFactory.CreateStatusMessage(activeRun);
-        await command.FollowupAsync(statusMessage);
+        var statusEmbed = this.embedFactory.CreateStatusEmbed(activeRun);
+        await command.FollowupAsync(embed: statusEmbed);
     }
 
     /// <inheritdoc />

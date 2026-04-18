@@ -14,25 +14,21 @@ public class UseCommand : ISlashCommand
 {
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
-    private readonly EmbedImageFactory embedImageFactory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UseCommand"/> class.
     /// </summary>
     /// <param name="runService">The run service.</param>
     /// <param name="embedFactory">The embed factory.</param>
-    /// <param name="embedImageFactory">The embed image factory.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
     public UseCommand(
         IRunService runService,
-        EmbedFactory embedFactory,
-        EmbedImageFactory embedImageFactory)
+        EmbedFactory embedFactory)
     {
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
-        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
     }
 
     /// <inheritdoc />
@@ -61,14 +57,14 @@ public class UseCommand : ISlashCommand
 
         if (position < 1 || position > 6)
         {
-            await command.RespondAsync("Position must be between 1 and 6.");
+            var errorEmbed = this.embedFactory.CreateErrorEmbed("Position must be between 1 and 6.");
+            await command.RespondAsync(embed: errorEmbed, ephemeral: true);
             return;
         }
 
         var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
-        var image = this.embedImageFactory.CreateStatusImage();
-        var message = this.embedFactory.CreateUseMessage(activeRun);
-        await command.RespondAsync(message);
+        var embed = this.embedFactory.CreateUseEmbed(activeRun);
+        await command.RespondAsync(embed: embed);
     }
 }

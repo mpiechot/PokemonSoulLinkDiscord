@@ -53,9 +53,9 @@ public sealed class SwapCommand : ISlashCommand
         var boxRoute = CommandOptionHelper.GetRequiredStringOption(command, "box-route").ToLowerInvariant().Trim();
 
         var activeRun = this.runService.SwapRoute(guildId, teamRoute, boxRoute);
-        var message = this.embedFactory.CreateTeamMessage(activeRun);
+        var embed = this.embedFactory.CreateTeamEmbed(activeRun);
 
-        await command.RespondAsync(message);
+        await command.RespondAsync(embed: embed);
     }
 
     /// <inheritdoc />
