@@ -23,7 +23,7 @@ public sealed class CommandDefinitionTests
             { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
             { new StatsCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "stats", Array.Empty<string>() },
             { new StatusCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "status", Array.Empty<string>() },
-            { new TeamCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "team", Array.Empty<string>() },
+            { new TeamCommand(new StubRunService(), new EmbedFactory()), "team", Array.Empty<string>() },
             { new SwapCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "swap", new[] { "team-route", "box-route" } },
             { new UseCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "use", new[] { "route", "position" } },
         };

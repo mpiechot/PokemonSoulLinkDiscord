@@ -269,18 +269,6 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
-    /// Creates the table-only message for the active team.
-    /// </summary>
-    /// <param name="run">The active run.</param>
-    /// <returns>The formatted active team table message.</returns>
-    public string CreateTeamTableMessage(SoulLinkRun run)
-    {
-        ArgumentNullException.ThrowIfNull(run);
-
-        return this.CreateTeamTableSection(run);
-    }
-
-    /// <summary>
     /// Creates an embed for arena information.
     /// </summary>
     /// <param name="edition">The edition name.</param>
