@@ -81,6 +81,7 @@ public class CatchCommand : ISlashCommand
             pokemon,
             linkGroup.Entries.Count,
             activeRun.Players.Count,
+            image.AttachmentUrl,
             pokemonInfo);
 
         await command.RespondWithFileAsync(image.FileAttachment, embed: catchEmbed);

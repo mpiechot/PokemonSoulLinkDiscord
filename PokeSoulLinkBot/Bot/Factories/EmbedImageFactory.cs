@@ -23,7 +23,7 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the run start command.
+    /// Creates an embed thumbnail for the run start command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateRunStartImage()
@@ -32,7 +32,7 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the run end command.
+    /// Creates an embed thumbnail for the run end command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateRunEndImage()
@@ -41,7 +41,7 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the catch command.
+    /// Creates an embed thumbnail for the catch command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateCatchImage()
@@ -50,7 +50,7 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the death command.
+    /// Creates an embed thumbnail for the death command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateDeathImage()
@@ -59,7 +59,7 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the status command.
+    /// Creates an embed thumbnail for the status command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateStatusImage()
@@ -68,12 +68,48 @@ public sealed class EmbedImageFactory
     }
 
     /// <summary>
-    /// Creates an embed image for the stats command.
+    /// Creates an embed thumbnail for the stats command.
     /// </summary>
     /// <returns>The created embed image.</returns>
     public EmbedImage CreateStatsImage()
     {
         return this.CreateImage("stats.png");
+    }
+
+    /// <summary>
+    /// Creates an embed thumbnail for the team command.
+    /// </summary>
+    /// <returns>The created embed image.</returns>
+    public EmbedImage CreateTeamImage()
+    {
+        return this.CreateImage("team.png");
+    }
+
+    /// <summary>
+    /// Creates an embed thumbnail for the use command.
+    /// </summary>
+    /// <returns>The created embed image.</returns>
+    public EmbedImage CreateUseImage()
+    {
+        return this.CreateImage("use.png");
+    }
+
+    /// <summary>
+    /// Creates an embed thumbnail for the swap command.
+    /// </summary>
+    /// <returns>The created embed image.</returns>
+    public EmbedImage CreateSwapImage()
+    {
+        return this.CreateImage("swap.png");
+    }
+
+    /// <summary>
+    /// Creates an embed thumbnail for the arena command.
+    /// </summary>
+    /// <returns>The created embed image.</returns>
+    public EmbedImage CreateArenaImage()
+    {
+        return this.CreateImage("arena.png");
     }
 
     private EmbedImage CreateImage(string fileName)

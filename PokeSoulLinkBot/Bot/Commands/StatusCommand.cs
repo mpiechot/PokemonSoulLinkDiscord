@@ -14,6 +14,7 @@ public class StatusCommand : ISlashCommand
 {
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
+    private readonly EmbedImageFactory embedImageFactory;
     private readonly IPokemonLookupService pokemonLookupService;
 
     /// <summary>
@@ -21,6 +22,7 @@ public class StatusCommand : ISlashCommand
     /// </summary>
     /// <param name="runService">The run service.</param>
     /// <param name="embedFactory">The embed factory.</param>
+    /// <param name="embedImageFactory">The embed image factory.</param>
     /// <param name="pokemonLookupService">The Pokémon lookup service.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
@@ -28,10 +30,12 @@ public class StatusCommand : ISlashCommand
     public StatusCommand(
         IRunService runService,
         EmbedFactory embedFactory,
+        EmbedImageFactory embedImageFactory,
         IPokemonLookupService pokemonLookupService)
     {
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
         this.pokemonLookupService = pokemonLookupService ?? throw new ArgumentNullException(nameof(pokemonLookupService));
     }
 
@@ -58,7 +62,9 @@ public class StatusCommand : ISlashCommand
         await this.EnrichMissingPokemonTypesAsync(activeRun);
 
         var message = this.embedFactory.CreateStatusMessage(activeRun);
-        await command.RespondAsync(message);
+        var image = this.embedImageFactory.CreateStatusImage();
+        var embed = this.embedFactory.CreateRunSummaryEmbed("Run Status", activeRun, image.AttachmentUrl);
+        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 
     private async Task EnrichMissingPokemonTypesAsync(SoulLinkRun run)

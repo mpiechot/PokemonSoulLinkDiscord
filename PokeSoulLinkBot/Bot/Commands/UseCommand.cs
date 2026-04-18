@@ -14,21 +14,25 @@ public class UseCommand : ISlashCommand
 {
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
+    private readonly EmbedImageFactory embedImageFactory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="UseCommand"/> class.
     /// </summary>
     /// <param name="runService">The run service.</param>
     /// <param name="embedFactory">The embed factory.</param>
+    /// <param name="embedImageFactory">The embed image factory.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
     public UseCommand(
         IRunService runService,
-        EmbedFactory embedFactory)
+        EmbedFactory embedFactory,
+        EmbedImageFactory embedImageFactory)
     {
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
     }
 
     /// <inheritdoc />
@@ -65,6 +69,8 @@ public class UseCommand : ISlashCommand
         var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
         var message = this.embedFactory.CreateUseMessage(activeRun);
-        await command.RespondAsync(message);
+        var image = this.embedImageFactory.CreateUseImage();
+        var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team Updated", activeRun, image.AttachmentUrl);
+        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 }
