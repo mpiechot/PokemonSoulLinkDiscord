@@ -61,9 +61,10 @@ public class StatusCommand : ISlashCommand
         var activeRun = this.runService.GetActiveRun(guildId);
         await this.EnrichMissingPokemonTypesAsync(activeRun);
 
-        var image = this.embedImageFactory.CreateStatusImage();
         var message = this.embedFactory.CreateStatusMessage(activeRun);
-        await command.RespondAsync(message);
+        var image = this.embedImageFactory.CreateStatusImage();
+        var embed = this.embedFactory.CreateRunSummaryEmbed("Run Status", activeRun, image.AttachmentUrl);
+        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 
     private async Task EnrichMissingPokemonTypesAsync(SoulLinkRun run)

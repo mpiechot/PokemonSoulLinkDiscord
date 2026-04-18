@@ -67,10 +67,11 @@ var commands = new List<ISlashCommand>
     new RouteDeathCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
     new StatusCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),
     new StatsCommand(runService, embedFactory, embedImageFactory),
-    new TeamCommand(runService, embedFactory, embedImageFactory),
-    new SwapCommand(runService, embedFactory),
+    new TeamCommand(runService, embedFactory),
+    new SwapCommand(runService, embedFactory, embedImageFactory),
+    new UseCommand(runService, embedFactory, embedImageFactory),
     new PokedexCommand(pokedexService, pokedexPresenter),
-    new ArenaCommand(arenaInfoService, gameDataCatalogService, runService),
+    new ArenaCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
 };
 
 var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);

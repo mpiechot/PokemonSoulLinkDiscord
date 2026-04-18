@@ -20,8 +20,9 @@ public sealed class PokedexPresenter
         ArgumentException.ThrowIfNullOrWhiteSpace(requestedPokemonName);
 
         var builder = new EmbedBuilder()
-            .WithTitle($"Pokédex: {entry.PokemonName}")
-            .WithDescription($"Angefragt: **{requestedPokemonName}**");
+            .WithTitle("Pokedex")
+            .AddField("Pokemon", entry.PokemonName, true)
+            .AddField("Requested Pokemon", requestedPokemonName, true);
 
         if (!string.IsNullOrWhiteSpace(entry.ImageUrl))
         {

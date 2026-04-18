@@ -1,6 +1,7 @@
 using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
+using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
 using Serilog;
 
@@ -12,6 +13,8 @@ namespace PokeSoulLinkBot.Bot.Commands;
 public sealed class ArenaCommand : ISlashCommand
 {
     private readonly IArenaInfoService arenaInfoService;
+    private readonly EmbedFactory embedFactory;
+    private readonly EmbedImageFactory embedImageFactory;
     private readonly IGameDataCatalogService gameDataCatalogService;
     private readonly IRunService runService;
 
@@ -19,14 +22,20 @@ public sealed class ArenaCommand : ISlashCommand
     /// Initializes a new instance of the <see cref="ArenaCommand"/> class.
     /// </summary>
     /// <param name="arenaInfoService">The arena info service.</param>
+    /// <param name="embedFactory">The embed factory.</param>
+    /// <param name="embedImageFactory">The embed image factory.</param>
     /// <param name="gameDataCatalogService">The game data catalog service.</param>
     /// <param name="runService">The run service.</param>
     public ArenaCommand(
         IArenaInfoService arenaInfoService,
+        EmbedFactory embedFactory,
+        EmbedImageFactory embedImageFactory,
         IGameDataCatalogService gameDataCatalogService,
         IRunService runService)
     {
         this.arenaInfoService = arenaInfoService ?? throw new ArgumentNullException(nameof(arenaInfoService));
+        this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
         this.gameDataCatalogService = gameDataCatalogService ?? throw new ArgumentNullException(nameof(gameDataCatalogService));
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
     }
@@ -57,11 +66,16 @@ public sealed class ArenaCommand : ISlashCommand
         var arenaNumber = CommandOptionHelper.GetRequiredIntegerOption(command, "number");
 
         var arenaInfo = await this.arenaInfoService.GetArenaInfoAsync(edition, arenaNumber);
-        var joinedLevels = string.Join(", ", arenaInfo.Levels);
+        var image = this.embedImageFactory.CreateArenaImage();
+        var embed = this.embedFactory.CreateArenaInfoEmbed(
+            edition,
+            arenaNumber,
+            arenaInfo.LeaderName,
+            arenaInfo.Location,
+            arenaInfo.Levels,
+            image.AttachmentUrl);
 
-        await command.RespondAsync(
-            $"Angefragt: **{edition}**, Arena **{arenaNumber}** ({arenaInfo.LeaderName}, {arenaInfo.Location}).{Environment.NewLine}" +
-            $"In dieser Arena gibt es Pokemon auf dem Level: {joinedLevels}");
+        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

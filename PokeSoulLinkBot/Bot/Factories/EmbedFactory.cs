@@ -10,29 +10,37 @@ namespace PokeSoulLinkBot.Bot.Factories;
 /// </summary>
 public sealed class EmbedFactory
 {
+    private const int StatusTableContentMaxLength = 480;
+
+    private const int TeamTableContentMaxLength = 1600;
+
+    private const string TruncatedTableSuffix = "...";
+
     /// <summary>
     /// Creates an embed for a newly started run.
     /// </summary>
     /// <param name="run">The started run.</param>
-    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// Thrown when <paramref name="thumbnailUrl"/> is null, empty, or whitespace.
     /// </exception>
-    public Embed CreateRunStartedEmbed(SoulLinkRun run, string imageUrl)
+    public Embed CreateRunStartedEmbed(SoulLinkRun run, string thumbnailUrl)
     {
         ArgumentNullException.ThrowIfNull(run);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         return new EmbedBuilder()
-            .WithTitle("Soul Link Run Started")
-            .WithDescription($"Run **{run.Name}** for **{run.Game}** has been started.")
+            .WithTitle("Run Started")
+            .WithDescription($"Run **{run.Name}** has been started.")
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true)
             .AddField("Players", string.Join(", ", run.Players.Select(player => player.UserName)))
             .AddField("Started At (UTC)", run.StartedAtUtc.ToString("yyyy-MM-dd HH:mm:ss"))
-            .WithImageUrl(imageUrl)
+            .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
 
@@ -40,28 +48,29 @@ public sealed class EmbedFactory
     /// Creates an embed for an ended run.
     /// </summary>
     /// <param name="run">The ended run.</param>
-    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// Thrown when <paramref name="thumbnailUrl"/> is null, empty, or whitespace.
     /// </exception>
-    public Embed CreateRunEndedEmbed(SoulLinkRun run, string imageUrl)
+    public Embed CreateRunEndedEmbed(SoulLinkRun run, string thumbnailUrl)
     {
         ArgumentNullException.ThrowIfNull(run);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         return new EmbedBuilder()
-            .WithTitle("🚀 Soul Link Run Ended")
+            .WithTitle("Run Ended")
             .WithDescription($"Run **{run.Name}** has ended.")
-            .AddField("Game", run.Game)
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true)
             .AddField("Reason", run.EndReason ?? "No reason given.")
             .AddField(
                 "Ended At (UTC)",
                 run.EndedAtUtc?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Unknown")
-            .WithImageUrl(imageUrl)
+            .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
 
@@ -73,22 +82,25 @@ public sealed class EmbedFactory
     /// <param name="pokemon">The Pokémon name.</param>
     /// <param name="currentEntries">The current number of linked entries.</param>
     /// <param name="requiredEntries">The required number of linked entries.</param>
-    /// <param name="imageUrl">The Pokémon image URL.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
+    /// <param name="pokemonInfo">The Pokémon metadata used for visual details.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentException">
     /// Thrown when one of the string parameters is null, empty, or whitespace.
     /// </exception>
     public Embed CreateCatchRegisteredEmbed(
-    string route,
-    string playerName,
-    string pokemon,
-    int currentEntries,
-    int requiredEntries,
-    PokemonInfo? pokemonInfo)
+        string route,
+        string playerName,
+        string pokemon,
+        int currentEntries,
+        int requiredEntries,
+        string thumbnailUrl,
+        PokemonInfo? pokemonInfo)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(route);
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemon);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         var statusText = currentEntries >= requiredEntries
             ? "Link group is complete."
@@ -97,16 +109,15 @@ public sealed class EmbedFactory
         var builder = new EmbedBuilder()
             .WithTitle("Catch Registered")
             .WithDescription($"**{playerName}** registered **{pokemon}** on **{route}**.")
+            .AddField("Route", route, true)
+            .AddField("Player", playerName, true)
+            .AddField("Pokemon", pokemon, true)
             .AddField("Progress", $"{currentEntries}/{requiredEntries}", true)
-            .AddField("Status", statusText, true);
+            .AddField("Status", statusText, true)
+            .WithThumbnailUrl(thumbnailUrl);
 
         if (pokemonInfo != null)
         {
-            if (!string.IsNullOrWhiteSpace(pokemonInfo.ImageUrl))
-            {
-                builder.WithThumbnailUrl(pokemonInfo.ImageUrl);
-            }
-
             if (pokemonInfo.Types.Count > 0)
             {
                 var typeText = string.Join(", ", pokemonInfo.Types.Select(PokemonTypeVisualizer.FormatType));
@@ -121,29 +132,31 @@ public sealed class EmbedFactory
     /// Creates an embed for a linked group death.
     /// </summary>
     /// <param name="linkGroup">The affected link group.</param>
-    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="linkGroup"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// Thrown when <paramref name="thumbnailUrl"/> is null, empty, or whitespace.
     /// </exception>
-    public Embed CreateDeathRegisteredEmbed(LinkGroup linkGroup, string imageUrl)
+    public Embed CreateDeathRegisteredEmbed(LinkGroup linkGroup, string thumbnailUrl)
     {
         ArgumentNullException.ThrowIfNull(linkGroup);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         var entries = string.Join(
             Environment.NewLine,
             linkGroup.Entries.Select(entry => $"{entry.PlayerName}: {entry.PokemonName}"));
 
         return new EmbedBuilder()
-            .WithTitle("💀 Soul Link Death")
+            .WithTitle("Death Registered")
             .WithColor(new Color(128, 0, 128))
             .WithDescription($"The linked group on **{linkGroup.Route}** has been marked as dead.")
-            .AddField("Affected Pokémon", entries)
-            .WithImageUrl(imageUrl)
+            .AddField("Route", linkGroup.Route, true)
+            .AddField("Status", "Dead", true)
+            .AddField("Affected Pokemon", entries)
+            .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
 
@@ -151,25 +164,27 @@ public sealed class EmbedFactory
     /// Creates an embed for a route lost before any catch was registered.
     /// </summary>
     /// <param name="linkGroup">The affected link group.</param>
-    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="linkGroup"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// Thrown when <paramref name="thumbnailUrl"/> is null, empty, or whitespace.
     /// </exception>
-    public Embed CreateRouteLostEmbed(LinkGroup linkGroup, string imageUrl)
+    public Embed CreateRouteLostEmbed(LinkGroup linkGroup, string thumbnailUrl)
     {
         ArgumentNullException.ThrowIfNull(linkGroup);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         var builder = new EmbedBuilder()
             .WithTitle("Route Lost")
             .WithColor(new Color(128, 0, 128))
             .WithDescription($"Route **{linkGroup.Route}** has been marked as lost.")
+            .AddField("Route", linkGroup.Route, true)
+            .AddField("Status", "Lost", true)
             .AddField("Reason", linkGroup.LossReason ?? "First encounter was not caught.")
-            .WithImageUrl(imageUrl);
+            .WithThumbnailUrl(thumbnailUrl);
 
         if (!string.IsNullOrWhiteSpace(linkGroup.FailedEncounterPlayerName))
         {
@@ -177,6 +192,28 @@ public sealed class EmbedFactory
         }
 
         return builder.Build();
+    }
+
+    /// <summary>
+    /// Creates a compact summary embed for run table messages.
+    /// </summary>
+    /// <param name="title">The embed title.</param>
+    /// <param name="run">The active run.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateRunSummaryEmbed(string title, SoulLinkRun run, string thumbnailUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
+
+        return new EmbedBuilder()
+            .WithTitle(title)
+            .WithColor(Color.Blue)
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", run.Game, true)
+            .WithThumbnailUrl(thumbnailUrl)
+            .Build();
     }
 
     /// <summary>
@@ -194,56 +231,95 @@ public sealed class EmbedFactory
         var currentTeam = run.ActiveLinks.Where(group => group != null && group.IsAlive).ToList();
         var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
         var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
-        var deadTable = this.BuildStringTable(run.LinkGroups.Where(group => !group.IsAlive), run.Players.Select(player => player.UserName).ToList());
-        var currentTeamTable = this.BuildStringTable(currentTeam, run.Players.Select(player => player.UserName).ToList());
-        var boxTable = this.BuildStringTable(box, run.Players.Select(player => player.UserName).ToList());
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
 
-        return
-            $"**Run Status: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Current Team**{Environment.NewLine}" +
-            $"```{currentTeamTable}```{Environment.NewLine}{Environment.NewLine}" +
-            $"**📦 Box**{Environment.NewLine}" +
-            $"```{boxTable}```{Environment.NewLine}{Environment.NewLine}" +
-            $"**💀 Dead**{Environment.NewLine}" +
-            $"```{deadTable}```";
+        return string.Join(
+            Environment.NewLine,
+            this.CreateRunHeader("Run Status", run),
+            string.Empty,
+            this.CreateTableSection("Current Team", currentTeam, playerNames, StatusTableContentMaxLength),
+            string.Empty,
+            this.CreateTableSection("Box", box, playerNames, StatusTableContentMaxLength),
+            string.Empty,
+            this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames, StatusTableContentMaxLength));
     }
 
+    /// <summary>
+    /// Creates the message for a newly selected active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted team message.</returns>
     public string CreateUseMessage(SoulLinkRun run)
     {
-        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
+        ArgumentNullException.ThrowIfNull(run);
 
-        return
-            $"**New Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Team**{Environment.NewLine}" +
-            $"```{activeTeam}```{Environment.NewLine}{Environment.NewLine}";
+        return this.CreateTeamMessage("Active Team Updated", run);
     }
 
+    /// <summary>
+    /// Creates the message for the active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The formatted team message.</returns>
     public string CreateTeamMessage(SoulLinkRun run)
     {
-        var activeTeam = this.BuildStringTable(run.ActiveLinks, run.Players.Select(player => player.UserName).ToList());
+        ArgumentNullException.ThrowIfNull(run);
 
-        return
-            $"**Active Teams: {run.Name} ({run.Game})**{Environment.NewLine}{Environment.NewLine}" +
-            $"**📜 Team**{Environment.NewLine}" +
-            $"```{activeTeam}```{Environment.NewLine}{Environment.NewLine}";
+        return this.CreateTeamMessage("Active Team", run);
+    }
+
+    /// <summary>
+    /// Creates an embed for arena information.
+    /// </summary>
+    /// <param name="edition">The edition name.</param>
+    /// <param name="arenaNumber">The arena number.</param>
+    /// <param name="leaderName">The arena leader name.</param>
+    /// <param name="location">The arena location.</param>
+    /// <param name="levels">The Pokémon levels in the arena.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateArenaInfoEmbed(
+        string edition,
+        long arenaNumber,
+        string leaderName,
+        string location,
+        IReadOnlyCollection<int> levels,
+        string thumbnailUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(edition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaderName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(location);
+        ArgumentNullException.ThrowIfNull(levels);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
+
+        return new EmbedBuilder()
+            .WithTitle("Arena Information")
+            .WithColor(Color.Blue)
+            .AddField("Edition", edition, true)
+            .AddField("Arena", arenaNumber, true)
+            .AddField("Leader", leaderName, true)
+            .AddField("Location", location, true)
+            .AddField("Pokemon Levels", string.Join(", ", levels), true)
+            .WithThumbnailUrl(thumbnailUrl)
+            .Build();
     }
 
     /// <summary>
     /// Creates an embed for historical run statistics.
     /// </summary>
     /// <param name="runs">The stored runs.</param>
-    /// <param name="imageUrl">The attachment URL of the image shown in the embed.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
     /// <returns>The created embed.</returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="runs"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="imageUrl"/> is null, empty, or whitespace.
+    /// Thrown when <paramref name="thumbnailUrl"/> is null, empty, or whitespace.
     /// </exception>
-    public Embed CreateStatsEmbed(IReadOnlyList<SoulLinkRun> runs, string imageUrl)
+    public Embed CreateStatsEmbed(IReadOnlyList<SoulLinkRun> runs, string thumbnailUrl)
     {
         ArgumentNullException.ThrowIfNull(runs);
-        ArgumentException.ThrowIfNullOrWhiteSpace(imageUrl);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
         var completedRuns = runs.Count(run => run.EndedAtUtc is not null);
         var totalDeaths = runs
@@ -267,13 +343,13 @@ public sealed class EmbedFactory
         }
 
         return new EmbedBuilder()
-            .WithTitle("📊 Run Statistics")
+            .WithTitle("Run Statistics")
             .WithColor(Color.Blue)
             .AddField("Stored Runs", runs.Count)
             .AddField("Completed Runs", completedRuns)
             .AddField("Total Recorded Deaths", totalDeaths)
             .AddField("Top Deaths by Player", topDeaths)
-            .WithImageUrl(imageUrl)
+            .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
 
@@ -294,6 +370,82 @@ public sealed class EmbedFactory
             .WithColor(Color.Red)
             .WithDescription(message)
             .Build();
+    }
+
+    private static string CreateCodeBlock(string value, int maxContentLength)
+    {
+        var table = TruncateTable(value, maxContentLength);
+        return $"```{table}```";
+    }
+
+    private static string TruncateTable(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        var lines = value.Split(Environment.NewLine);
+        var builder = new StringBuilder();
+
+        foreach (var line in lines)
+        {
+            var separatorLength = builder.Length == 0 ? 0 : Environment.NewLine.Length;
+            var projectedLength = builder.Length + separatorLength + line.Length + Environment.NewLine.Length + TruncatedTableSuffix.Length;
+            if (projectedLength > maxLength)
+            {
+                break;
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.Append(line);
+        }
+
+        if (builder.Length > 0)
+        {
+            builder.AppendLine();
+        }
+
+        builder.Append(TruncatedTableSuffix);
+        return builder.ToString();
+    }
+
+    private string CreateTeamMessage(string title, SoulLinkRun run)
+    {
+        return string.Join(
+            Environment.NewLine,
+            this.CreateRunHeader(title, run),
+            string.Empty,
+            this.CreateTeamTableSection(run));
+    }
+
+    private string CreateTeamTableSection(SoulLinkRun run)
+    {
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
+
+        return this.CreateTableSection("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength);
+    }
+
+    private string CreateRunHeader(string title, SoulLinkRun run)
+    {
+        return
+            $"**{title}**{Environment.NewLine}" +
+            $"Run: **{run.Name}**{Environment.NewLine}" +
+            $"Edition: **{run.Game}**";
+    }
+
+    private string CreateTableSection(
+        string title,
+        IEnumerable<LinkGroup?> linkedGroups,
+        IReadOnlyList<string> playerNames,
+        int maxTableContentLength)
+    {
+        var table = this.BuildStringTable(linkedGroups, playerNames);
+        return $"**{title}**{Environment.NewLine}{CreateCodeBlock(table, maxTableContentLength)}";
     }
 
     private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)

@@ -19,6 +19,9 @@ public sealed class EmbedFactoryStatusTests
 
         var message = embedFactory.CreateStatusMessage(run);
 
+        Assert.Contains("Run Status", message, StringComparison.Ordinal);
+        Assert.Contains("Run: **Ruby**", message, StringComparison.Ordinal);
+        Assert.Contains("Edition: **ruby**", message, StringComparison.Ordinal);
         Assert.Contains("Current Team", message, StringComparison.Ordinal);
         Assert.Contains("Box", message, StringComparison.Ordinal);
         Assert.Contains("Dead", message, StringComparison.Ordinal);
@@ -42,9 +45,27 @@ public sealed class EmbedFactoryStatusTests
 
         var message = embedFactory.CreateTeamMessage(run);
 
-        Assert.Contains("Active Teams", message, StringComparison.Ordinal);
+        Assert.Contains("Active Team", message, StringComparison.Ordinal);
         Assert.Contains("102", message, StringComparison.Ordinal);
         Assert.DoesNotContain("101", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CreateStatusMessage_ShouldKeepTableCodeBlocksDiscordCompatible()
+    {
+        var run = CreateRun();
+        for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
+        {
+            run.LinkGroups.Add(CreateLinkGroup($"route-{routeIndex:000}", true, $"Pokemon-{routeIndex:000}"));
+        }
+
+        var embedFactory = new EmbedFactory();
+
+        var message = embedFactory.CreateStatusMessage(run);
+
+        Assert.True(message.Length <= 2000);
+        Assert.Contains("Box", message, StringComparison.Ordinal);
+        Assert.Contains("...```", message, StringComparison.Ordinal);
     }
 
     private static SoulLinkRun CreateRun()

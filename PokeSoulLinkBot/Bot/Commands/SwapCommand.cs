@@ -14,19 +14,25 @@ public sealed class SwapCommand : ISlashCommand
 {
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
+    private readonly EmbedImageFactory embedImageFactory;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SwapCommand"/> class.
     /// </summary>
     /// <param name="runService">The run service.</param>
     /// <param name="embedFactory">The embed factory.</param>
+    /// <param name="embedImageFactory">The embed image factory.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
-    public SwapCommand(IRunService runService, EmbedFactory embedFactory)
+    public SwapCommand(
+        IRunService runService,
+        EmbedFactory embedFactory,
+        EmbedImageFactory embedImageFactory)
     {
         this.runService = runService ?? throw new ArgumentNullException(nameof(runService));
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.embedImageFactory = embedImageFactory ?? throw new ArgumentNullException(nameof(embedImageFactory));
     }
 
     /// <inheritdoc />
@@ -54,8 +60,10 @@ public sealed class SwapCommand : ISlashCommand
 
         var activeRun = this.runService.SwapRoute(guildId, teamRoute, boxRoute);
         var message = this.embedFactory.CreateTeamMessage(activeRun);
+        var image = this.embedImageFactory.CreateSwapImage();
+        var embed = this.embedFactory.CreateRunSummaryEmbed("Team Swapped", activeRun, image.AttachmentUrl);
 
-        await command.RespondAsync(message);
+        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 
     /// <inheritdoc />

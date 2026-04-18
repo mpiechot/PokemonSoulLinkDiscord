@@ -17,8 +17,8 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
 
 ### BL-002 Einheitliche Command-Ausgaben
 
-- Status: offen
-- Branch: noch keiner
+- Status: umgesetzt
+- Branch: codex/bl-002-command-ausgaben
 - Ziel: Den Output aller Commands normalisieren, damit Antworten ein einheitliches Bild haben und Daten uebersichtlich angezeigt werden.
 - Akzeptanzkriterien:
   - Einheitliche Embed- oder Textstruktur fuer Erfolg, Status, Fehler und Zusammenfassungen.

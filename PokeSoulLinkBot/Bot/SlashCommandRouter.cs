@@ -63,7 +63,8 @@ public sealed class SlashCommandRouter
             if (!this.commands.TryGetValue(command.CommandName, out var slashCommand))
             {
                 Log.Warning("Unknown slash command /{CommandName}.", command.CommandName);
-                await command.RespondAsync("Unknown command.", ephemeral: true);
+                var errorEmbed = this.embedFactory.CreateErrorEmbed("Unknown command.");
+                await command.RespondAsync(embed: errorEmbed, ephemeral: true);
                 return;
             }
 

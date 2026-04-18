@@ -61,14 +61,16 @@ public class UseCommand : ISlashCommand
 
         if (position < 1 || position > 6)
         {
-            await command.RespondAsync("Position must be between 1 and 6.");
+            var errorEmbed = this.embedFactory.CreateErrorEmbed("Position must be between 1 and 6.");
+            await command.RespondAsync(embed: errorEmbed, ephemeral: true);
             return;
         }
 
         var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
-        var image = this.embedImageFactory.CreateStatusImage();
         var message = this.embedFactory.CreateUseMessage(activeRun);
-        await command.RespondAsync(message);
+        var image = this.embedImageFactory.CreateUseImage();
+        var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team Updated", activeRun, image.AttachmentUrl);
+        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 }
