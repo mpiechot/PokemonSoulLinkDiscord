@@ -228,12 +228,23 @@ public sealed class RunService : IRunService
     }
 
     /// <inheritdoc />
-    public LinkGroup RegisterDeath(string guildId, string route)
+    public LinkGroup RegisterDeath(
+        string guildId,
+        string route,
+        string reason,
+        ulong? playerId,
+        string? playerName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
         ArgumentException.ThrowIfNullOrWhiteSpace(route);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
         SoulLinkRun activeRun = this.GetActiveRun(guildId);
+
+        if (playerId.HasValue && activeRun.Players.All(player => player.UserId != playerId.Value))
+        {
+            throw new InvalidOperationException("The specified player is not part of the active run.");
+        }
 
         LinkGroup? linkGroup = activeRun.LinkGroups.FirstOrDefault(group =>
             group.Route.Equals(route, StringComparison.OrdinalIgnoreCase));
@@ -247,6 +258,11 @@ public sealed class RunService : IRunService
         {
             entry.IsAlive = false;
             entry.DiedAtUtc = DateTime.UtcNow;
+            entry.DeathReason = reason.Trim();
+            entry.DeathCausedByPlayerUserId = playerId;
+            entry.DeathCausedByPlayerName = string.IsNullOrWhiteSpace(playerName)
+                ? null
+                : playerName.Trim();
         }
 
         this.runStore.Save();

@@ -16,7 +16,7 @@ public sealed class CommandDefinitionTests
         {
             { new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
-            { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route" } },
+            { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route", "reason", "player" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
             { new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "route-death", new[] { "route", "reason", "player" } },
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
@@ -90,7 +90,12 @@ public sealed class CommandDefinitionTests
             throw new NotSupportedException();
         }
 
-        public LinkGroup RegisterDeath(string guildId, string pokemon)
+        public LinkGroup RegisterDeath(
+            string guildId,
+            string route,
+            string reason,
+            ulong? playerId,
+            string? playerName)
         {
             throw new NotSupportedException();
         }

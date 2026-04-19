@@ -148,16 +148,29 @@ public sealed class EmbedFactory
         var entries = string.Join(
             Environment.NewLine,
             linkGroup.Entries.Select(entry => $"{entry.PlayerName}: {entry.PokemonName}"));
+        var deathReason = linkGroup.Entries
+            .Select(entry => entry.DeathReason)
+            .FirstOrDefault(reason => !string.IsNullOrWhiteSpace(reason));
+        var causedByPlayer = linkGroup.Entries
+            .Select(entry => entry.DeathCausedByPlayerName)
+            .FirstOrDefault(playerName => !string.IsNullOrWhiteSpace(playerName));
 
-        return new EmbedBuilder()
+        var builder = new EmbedBuilder()
             .WithTitle("Death Registered")
             .WithColor(new Color(128, 0, 128))
             .WithDescription($"The linked group on **{linkGroup.Route}** has been marked as dead.")
             .AddField("Route", linkGroup.Route, true)
             .AddField("Status", "Dead", true)
+            .AddField("Reason", deathReason ?? "No reason given.")
             .AddField("Affected Pokemon", entries)
-            .WithThumbnailUrl(thumbnailUrl)
-            .Build();
+            .WithThumbnailUrl(thumbnailUrl);
+
+        if (!string.IsNullOrWhiteSpace(causedByPlayer))
+        {
+            builder.AddField("Player", causedByPlayer, true);
+        }
+
+        return builder.Build();
     }
 
     /// <summary>

@@ -28,8 +28,8 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
 
 ### BL-003 DeathCommand um Reason und verursachenden Spieler erweitern
 
-- Status: offen
-- Branch: noch keiner
+- Status: umgesetzt
+- Branch: codex/bl-003-death-reason-player
 - Ziel: Der DeathCommand bekommt eine Reason und optional einen Spieler, der Schuld war.
 - Akzeptanzkriterien:
   - `reason` ist als Command-Parameter verfuegbar.

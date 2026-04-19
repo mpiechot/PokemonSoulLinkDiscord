@@ -81,9 +81,17 @@ public interface IRunService
     /// Registers the death of a Pokémon and marks the whole linked group as dead.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>
-    /// <param name="pokemon">The Pokémon name.</param>
+    /// <param name="route">The route or area name.</param>
+    /// <param name="reason">The reason why the linked Pokémon died.</param>
+    /// <param name="playerId">The optional Discord user identifier of the player responsible for the death.</param>
+    /// <param name="playerName">The optional display name of the player responsible for the death.</param>
     /// <returns>The affected link group.</returns>
-    LinkGroup RegisterDeath(string guildId, string pokemon);
+    LinkGroup RegisterDeath(
+        string guildId,
+        string route,
+        string reason,
+        ulong? playerId,
+        string? playerName);
 
     /// <summary>
     /// Gets the currently active run for the specified guild.
