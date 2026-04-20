@@ -83,14 +83,29 @@ public sealed class RunServiceCatchTests
         var linkGroup = service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
         service.RegisterCatch(GuildId, "101", 2, "bene", "Pichu", Array.Empty<string>());
 
-        var deadGroup = service.RegisterDeath(GuildId, "101");
+        var deadGroup = service.RegisterDeath(GuildId, "101", "Critical hit.", 2, "bene");
 
         Assert.Same(linkGroup, deadGroup);
         Assert.All(deadGroup.Entries, entry =>
         {
             Assert.False(entry.IsAlive);
             Assert.NotNull(entry.DiedAtUtc);
+            Assert.Equal("Critical hit.", entry.DeathReason);
+            Assert.Equal(2UL, entry.DeathCausedByPlayerUserId);
+            Assert.Equal("bene", entry.DeathCausedByPlayerName);
         });
+    }
+
+    [Fact]
+    public void RegisterDeath_ShouldRejectPlayerOutsideRun()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.RegisterDeath(GuildId, "101", "Critical hit.", 99, "outsider"));
+
+        Assert.Equal("The specified player is not part of the active run.", exception.Message);
     }
 
     [Fact]
@@ -296,7 +311,7 @@ public sealed class RunServiceCatchTests
     {
         var service = CreateServiceWithStartedRun();
         service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
-        service.RegisterDeath(GuildId, "101");
+        service.RegisterDeath(GuildId, "101", "Critical hit.", null, null);
 
         var exception = Assert.Throws<InvalidOperationException>(() => service.UseRoute(GuildId, "101", 1));
 

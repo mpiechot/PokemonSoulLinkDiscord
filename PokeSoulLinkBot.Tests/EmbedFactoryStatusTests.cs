@@ -51,6 +51,22 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateDeathRegisteredEmbed_ShouldIncludeReasonAndCausingPlayer()
+    {
+        var linkGroup = CreateLinkGroup("101", false, "Bisasam");
+        var entry = Assert.Single(linkGroup.Entries);
+        entry.DeathReason = "Critical hit.";
+        entry.DeathCausedByPlayerName = "bene";
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateDeathRegisteredEmbed(linkGroup, "attachment://death.png");
+
+        Assert.Contains(embed.Fields, field => field.Name == "Reason" && field.Value == "Critical hit.");
+        Assert.Contains(embed.Fields, field => field.Name == "Player" && field.Value == "bene");
+        Assert.Contains(embed.Fields, field => field.Name == "Affected Pokemon" && field.Value.Contains("Bisasam", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CreateStatusMessage_ShouldKeepTableCodeBlocksDiscordCompatible()
     {
         var run = CreateRun();

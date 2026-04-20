@@ -39,4 +39,19 @@ public sealed class LinkedPokemon
     /// Gets or sets the UTC date and time when the Pokémon died.
     /// </summary>
     public DateTime? DiedAtUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the reason why the Pokémon died.
+    /// </summary>
+    public string? DeathReason { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Discord user identifier of the player responsible for the death.
+    /// </summary>
+    public ulong? DeathCausedByPlayerUserId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Discord user name of the player responsible for the death.
+    /// </summary>
+    public string? DeathCausedByPlayerName { get; set; }
 }

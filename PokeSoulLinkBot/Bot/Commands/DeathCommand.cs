@@ -46,6 +46,8 @@ public class DeathCommand : ISlashCommand
             .WithName(this.CommandName)
             .WithDescription("Register the death of a linked Pokémon group.")
             .AddOption("route", ApplicationCommandOptionType.String, "The route that is now dead.", isRequired: true, isAutocomplete: true)
+            .AddOption("reason", ApplicationCommandOptionType.String, "Why the linked Pokémon died.", isRequired: true)
+            .AddOption("player", ApplicationCommandOptionType.User, "The player who caused the death.", isRequired: false)
             .Build();
     }
 
@@ -57,8 +59,15 @@ public class DeathCommand : ISlashCommand
         var guildId = CommandOptionHelper.GetGuildId(command);
 
         var route = CommandOptionHelper.GetRequiredStringOption(command, "route");
+        var reason = CommandOptionHelper.GetRequiredStringOption(command, "reason");
+        var player = CommandOptionHelper.GetOptionalUserOption(command, "player");
 
-        var linkGroup = this.runService.RegisterDeath(guildId, route);
+        var linkGroup = this.runService.RegisterDeath(
+            guildId,
+            route,
+            reason,
+            player?.Id,
+            player?.Username);
         var image = this.embedImageFactory.CreateDeathImage();
         var embed = this.embedFactory.CreateDeathRegisteredEmbed(linkGroup, image.AttachmentUrl);
 
