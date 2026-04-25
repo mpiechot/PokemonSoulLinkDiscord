@@ -119,3 +119,17 @@ System.TimeoutException: Cannot respond to an interaction after 3 seconds!
   - Langsame Datenquellen koennen keinen 3-Sekunden-Interaction-Timeout mehr verursachen.
   - Tests oder gezielte Abdeckung pruefen, dass Router und Commands Antwortpfade korrekt behandeln.
   - Die Loesung passt zu bestehenden Embed- und Fehlerausgaben.
+
+### BL-014 Run-Start-, Catch- und Route-Death-Tests nachziehen
+
+- Status: offen
+- Branch: noch keiner
+- Ziel: Die Testabdeckung fuer `/run-start`, `/catch` und `/route-death` erweitern, damit fachliche Edgecases, Autocomplete-Verhalten und Command-Definitionen sicher abgedeckt sind.
+- Hintergrund: Catch- und Route-Death-Logik ist auf Service-Ebene bereits gut getestet, Run-Start und Autocomplete-/Handler-Pfade haben aber noch Luecken.
+- Akzeptanzkriterien:
+  - `RunService.StartRun` ist fuer erfolgreiche Anlage, leere Spielerlisten, doppelte aktive Runs, getrennte Guilds und Whitespace-/Argumentvalidierung getestet.
+  - `/run-start`, `/catch` und `/route-death` pruefen Command-Definitionen inklusive Pflicht-/Optional-Flags und Autocomplete-Flags.
+  - Autocomplete-Tests decken leeren Katalog, nicht bereiten Katalog, bestehende Routen aus dem aktiven Run, Duplikate und partiellen Input ab.
+  - Catch-Tests decken Route-Normalisierung, mehrere Spieler pro Route, Team-Zuordnung, volle Teams, Spieler ausserhalb des Runs und Persistenz ab.
+  - Route-Death-Tests decken verlorene Routen ohne Pokemon, Default-Reason, getrimmte Reason/Player-Werte, bereits verlorene Routen, Routen mit Catches, Entfernen aus dem aktiven Team und Persistenz ab.
+  - Falls direkte Handler-Tests sinnvoll und stabil umsetzbar sind, pruefen sie erfolgreiche Antwortpfade und relevante Fehlerpfade ohne Discord-API-Aufrufe.
