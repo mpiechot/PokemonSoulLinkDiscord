@@ -144,3 +144,26 @@ System.TimeoutException: Cannot respond to an interaction after 3 seconds!
    at PokeSoulLinkBot.Bot.Handlers.SlashCommandRouter.HandleAsync(SocketSlashCommand command) in C:\MARPIE\Projekte\CSharp\PokemonSoulLinkDiscord\PokeSoulLinkBot\Bot\SlashCommandRouter.cs:line 95
    at Discord.EventExtensions.InvokeAsync[T](AsyncEvent`1 eventHandler, T arg)
    at Discord.WebSocket.DiscordSocketClient.TimeoutWrap(String name, Func`1 action)
+
+### BL-012 Mehrere Runs parallel in einer Guild verwalten
+
+- Status: offen
+- Branch: noch keiner
+- Ziel: Mehrere Runs sollen parallel gespeichert und ueber einen Gruppennamen geladen werden koennen, damit verschiedene Spielergruppen gleichzeitig spielen koennen und Testen leichter wird.
+- Hintergrund: Der Bot arbeitet aktuell mit genau einem aktiven Run pro Guild. Fuer Spielbetrieb und lokale Tests ist es unpraktisch, wenn dafuer bestehende Runs beendet oder ueberschrieben werden muessen. Der Gruppenname soll kuenftig der fachliche Schluessel sein, ueber den ein Run gestartet, geladen und im Bot als aktiv gemerkt wird.
+- Akzeptanzkriterien:
+  - `/run-start` wird um einen verpflichtenden Gruppennamen erweitert.
+  - Der Gruppenname wird mit dem Run persistiert und zur Identifizierung verwendet.
+  - `/run-start` darf keinen neuen Run erzeugen, wenn fuer denselben Gruppennamen bereits ein nicht beendeter Run existiert.
+  - Wenn `/run-start` mit einem Gruppennamen aufgerufen wird, unter dem aktuell kein laufender Run existiert, startet der Command normal einen neuen Run.
+  - Es gibt einen neuen Command `/run-load <gruppenname>`, der alle gespeicherten Runs durchsucht und den ersten nicht beendeten Run fuer diesen Gruppennamen als aktiv setzt.
+  - Wenn fuer den Gruppennamen kein laufender Run existiert, liefert `/run-load` eine klare Rueckmeldung.
+  - Solange fuer einen Gruppennamen ein Run aktiv ist, sind fuer diesen Gruppennamen nur Laden oder Beenden des bestehenden Runs moeglich; ein weiterer Start ist blockiert.
+  - Der Bot speichert pro Guild, welcher Gruppenname beziehungsweise welcher Run aktuell aktiv ist.
+  - Nach einem Bot-Neustart wird der zuletzt aktive Run automatisch wieder aktiv gesetzt.
+  - Wenn noch kein aktiver Run gespeichert ist, wird als Fallback der erste noch nicht beendete gespeicherte Run als aktiv gesetzt.
+  - Alle bestehenden Commands arbeiten weiterhin ohne zusaetzlichen Gruppenname-Parameter und verwenden immer den aktuell aktiven Run.
+  - Relevante Ausgaben der bestehenden Commands nennen den Gruppennamen des aktuell aktiven Runs zusaetzlich mit.
+  - Es gibt einen separaten Command, der den Gruppennamen des aktuell aktiven Runs ausgibt.
+  - Persistenz und Laden verhindern Datenverlust oder Verwechslungen zwischen parallelen Runs.
+  - Tests decken Starten, Blockieren doppelter Gruppennamen, Laden, Neustart-Fallback, aktiven Kontext und parallele Runs ab.
