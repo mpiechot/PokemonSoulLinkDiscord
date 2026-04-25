@@ -39,7 +39,11 @@ var socketConfig = new DiscordSocketConfig()
 var client = new DiscordSocketClient(socketConfig);
 
 var filePath = Path.Combine(AppContext.BaseDirectory, "Data", "runs.json");
-var gameDataCachePath = Path.Combine(AppContext.BaseDirectory, "Data", "game-data-catalog.json");
+var gameDataCachePath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "PokeSoulLinkBot",
+    "Data",
+    "game-data-catalog.json");
 var resourcesDirectoryPath = Path.Combine(AppContext.BaseDirectory, "Resources");
 var httpClient = new HttpClient
 {

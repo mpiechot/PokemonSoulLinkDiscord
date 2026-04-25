@@ -15,17 +15,6 @@ Dieses Suggestions-Backlog sammelt Ideen, Folgeaufgaben und Verbesserungen, die 
   - Wichtige Konfigurationswerte aus `appsettings.json` werden erklaert, ohne Secrets zu dokumentieren.
   - Troubleshooting-Hinweise fuer haeufige Discord- oder API-Probleme sind enthalten.
 
-### SG-002 Slash-Command-Antworten zentral absichern
-
-- Status: offen
-- Branch: noch keiner
-- Ziel: Eine zentrale Strategie fuer Discord-Interaction-Antworten definieren, damit lang laufende Commands rechtzeitig deferen und konsistent antworten.
-- Akzeptanzkriterien:
-  - Commands nutzen ein einheitliches Muster fuer `DeferAsync`, Followups und Fehlerantworten.
-  - Langsame Datenquellen koennen keinen 3-Sekunden-Interaction-Timeout mehr verursachen.
-  - Tests oder gezielte Abdeckung pruefen, dass Router und Commands Antwortpfade korrekt behandeln.
-  - Die Loesung passt zu bestehenden Embed- und Fehlerausgaben.
-
 ### SG-003 Run-Daten versionieren und migrierbar machen
 
 - Status: offen

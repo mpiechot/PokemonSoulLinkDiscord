@@ -387,9 +387,8 @@ public sealed class EmbedFactory
 
     private static string CreateCodeBlock(string value, int maxContentLength)
     {
-        // Ignore maxContentLength for now, since it breaks the output.
-        //var table = TruncateTable(value, maxContentLength);
-        return $"```{value}```";
+        var table = TruncateTable(value, maxContentLength);
+        return $"```{table}```";
     }
 
     private static string TruncateTable(string value, int maxLength)

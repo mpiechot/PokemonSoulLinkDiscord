@@ -15,40 +15,6 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Der erledigte Arena-Status wird persistiert.
   - Status-, Stats- oder Run-Ausgaben koennen den Arena-Fortschritt anzeigen.
 
-### BL-002 Einheitliche Command-Ausgaben
-
-- Status: umgesetzt
-- Branch: codex/bl-002-command-ausgaben
-- Ziel: Den Output aller Commands normalisieren, damit Antworten ein einheitliches Bild haben und Daten uebersichtlich angezeigt werden.
-- Akzeptanzkriterien:
-  - Einheitliche Embed- oder Textstruktur fuer Erfolg, Status, Fehler und Zusammenfassungen.
-  - Einheitliche Benennung von Run, Edition, Route, Spieler, Pokemon und Status.
-  - Lange Listen bleiben lesbar und Discord-kompatibel.
-  - Bestehende Tests werden angepasst oder ergaenzt.
-
-### BL-003 DeathCommand um Reason und verursachenden Spieler erweitern
-
-- Status: umgesetzt
-- Branch: codex/bl-003-death-reason-player
-- Ziel: Der DeathCommand bekommt eine Reason und optional einen Spieler, der Schuld war.
-- Akzeptanzkriterien:
-  - `reason` ist als Command-Parameter verfuegbar.
-  - `player` ist optional als Command-Parameter verfuegbar.
-  - Reason und Spieler werden persistiert.
-  - Ausgabe zeigt Route, betroffene Pokemon, Reason und optionalen Spieler.
-
-### BL-004 Route direkt als verloren markieren
-
-- Status: erledigt
-- Branch: `codex/route-direkt-verloren`
-- Ziel: Einen leichten Command fuer Situationen erstellen, in denen eine Route direkt verloren ist, weil das erste Encounter-Pokemon nicht gefangen wurde.
-- Vorschlag: `/route-death`
-- Akzeptanzkriterien:
-  - [x] Route kann direkt als tot/verloren markiert werden, ohne alle Pokemon einzeln zu erfassen.
-  - [x] Reason ist verpflichtend oder sinnvoll vorbelegt.
-  - [x] Optional kann angegeben werden, welcher Spieler das Encounter nicht gefangen hat.
-  - [x] Der Command verhindert widerspruechliche Team-/Box-Zustaende.
-
 ### BL-005 StatsCommand ausbauen
 
 - Status: offen
@@ -86,31 +52,6 @@ Dieses Backlog sammelt fachliche und technische Aufgaben fuer die naechsten Iter
   - Der Output liegt in einem separaten Verzeichnis ausserhalb von `bin\\Debug`, damit VS/MSBuild nicht kollidieren.
   - Startanleitung fuer den gebauten Bot ist dokumentiert.
   - Der Build enthaelt alle benoetigten Ressourcen und Konfigurationsdateien.
-
-### BL-008 Game-Data-Katalog-Fetch beschleunigen und stabilisieren
-
-- Status: offen
-- Branch: noch keiner
-- Hintergrund: Der erste Fetch der PokeAPI Location Areas ist langsam, weil fuer viele Location Areas einzelne Detail-Requests ausgefuehrt werden.
-- Ziel: Startup und Autocomplete duerfen nicht davon abhaengen, dass alle Location Areas frisch geladen werden.
-- Akzeptanzkriterien:
-  - Der Cache liegt an einem stabilen Ort und geht nicht bei Clean/Rebuild verloren.
-  - Es gibt eine klare Logmeldung, ob Cache, API oder Fallback verwendet wird.
-  - Location-Area-Details werden begrenzt parallelisiert oder anderweitig schneller geladen.
-  - Bei API-Fehlern bleiben Edition-Autocomplete und bestehende Route-Daten nutzbar.
-  - Optional: Ein vorbefuellter JSON-Katalog wird ins Repository aufgenommen.
-
-### BL-009 StyleCop-Dateikopf-Regel deaktivieren
-
-- Status: erledigt
-- Branch: `codex/disable-stylecop-file-header`
-- Hintergrund: StyleCop meldet aktuell `The file header is missing or not located at the top of the file.`
-- Ziel: Die File-Header-Warnung wird in der StyleCop-Konfiguration deaktiviert, weil dieses Repository keine verpflichtenden Dateikoepfe verwendet.
-- Akzeptanzkriterien:
-  - [x] Die betroffene StyleCop-Regel fuer fehlende Dateikoepfe ist zentral deaktiviert.
-  - [x] Neue und bestehende Dateien muessen keinen File Header enthalten.
-  - [x] StyleCop-Analyse oder Build laeuft ohne diese Warnung durch.
-  - [x] Andere StyleCop-Regeln bleiben unveraendert aktiv.
 
 ### BL-010 Command fuer Fangbarkeits-Check
 
@@ -167,3 +108,14 @@ System.TimeoutException: Cannot respond to an interaction after 3 seconds!
   - Es gibt einen separaten Command, der den Gruppennamen des aktuell aktiven Runs ausgibt.
   - Persistenz und Laden verhindern Datenverlust oder Verwechslungen zwischen parallelen Runs.
   - Tests decken Starten, Blockieren doppelter Gruppennamen, Laden, Neustart-Fallback, aktiven Kontext und parallele Runs ab.
+
+### BL-013 Slash-Command-Antworten zentral absichern
+
+- Status: offen
+- Branch: noch keiner
+- Ziel: Eine zentrale Strategie fuer Discord-Interaction-Antworten definieren, damit lang laufende Commands rechtzeitig deferen und konsistent antworten.
+- Akzeptanzkriterien:
+  - Commands nutzen ein einheitliches Muster fuer `DeferAsync`, Followups und Fehlerantworten.
+  - Langsame Datenquellen koennen keinen 3-Sekunden-Interaction-Timeout mehr verursachen.
+  - Tests oder gezielte Abdeckung pruefen, dass Router und Commands Antwortpfade korrekt behandeln.
+  - Die Loesung passt zu bestehenden Embed- und Fehlerausgaben.
