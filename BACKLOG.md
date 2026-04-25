@@ -3,6 +3,7 @@
 Das aktive Backlog wird ab sofort in GitHub Issues gepflegt:
 
 - Issues: https://github.com/mpiechot/PokemonSoulLinkDiscord/issues
+- Project: https://github.com/users/mpiechot/projects/2
 - Offene Backlog-Tickets: https://github.com/mpiechot/PokemonSoulLinkDiscord/issues?q=is%3Aissue%20is%3Aopen%20BL-
 - Pull Requests: https://github.com/mpiechot/PokemonSoulLinkDiscord/pulls
 
@@ -12,29 +13,26 @@ Das aktive Backlog wird ab sofort in GitHub Issues gepflegt:
 - Der Issue-Titel beginnt weiterhin mit der fachlichen ID, zum Beispiel `BL-013 Slash-Command-Antworten zentral absichern`.
 - Akzeptanzkriterien stehen im Issue-Body als Markdown-Checkliste oder Bullet-Liste.
 - PRs verlinken das passende Issue im Body, idealerweise mit `Closes #<issue-number>`.
-- Der Issue-Status wird ueber GitHub Issues und, sobald angelegt, ueber ein GitHub Project gepflegt.
+- Der Issue-Status wird ueber GitHub Issues und das GitHub Project gepflegt.
 - Erledigte Aufgaben werden ueber geschlossene Issues nachvollzogen; `DONE.md` bleibt nur als historisches Archiv der vor der Migration erledigten Markdown-Tickets.
 
-## Empfohlenes GitHub Project
+## GitHub Project
 
-Ein GitHub Project kann als Board fuer dieses Repository angelegt werden.
+Das GitHub Project [Pokemon Soul Link Backlog](https://github.com/users/mpiechot/projects/2) ist mit diesem Repository verknuepft. Die migrierten offenen Tickets sind dort als Project Items hinterlegt.
 
-Empfohlene Views:
+Aktuelle Views:
 
 - Board nach Status
 - Table fuer Detailpflege
 
-Empfohlene Statuswerte:
+Aktuelle Statuswerte:
 
-- Backlog
-- Ready
+- Todo
 - In Progress
-- Review
 - Done
 
-Empfohlene Felder:
+Empfohlene optionale Felder fuer spaeter:
 
-- Status
 - Priority
 - Type
 - Branch
