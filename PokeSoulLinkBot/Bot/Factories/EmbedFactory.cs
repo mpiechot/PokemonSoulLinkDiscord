@@ -137,11 +137,9 @@ public sealed class EmbedFactory
         if (result.IsAllowed)
         {
             return new EmbedBuilder()
-                .WithTitle("Catch Check")
+                .WithTitle("Fang-Check")
                 .WithColor(Color.Green)
-                .WithDescription($"**{result.RequestedPokemonName}** may still be caught in this run.")
-                .AddField("Pokemon", result.RequestedPokemonName, true)
-                .AddField("Result", "Allowed", true)
+                .WithDescription($"✅ **{result.RequestedPokemonName}** darf gefangen werden.")
                 .Build();
         }
 
@@ -149,15 +147,10 @@ public sealed class EmbedFactory
             ?? throw new InvalidOperationException("Blocked catch checks must include the matching catch.");
 
         return new EmbedBuilder()
-            .WithTitle("Catch Check")
+            .WithTitle("Fang-Check")
             .WithColor(Color.Red)
-            .WithDescription($"**{result.RequestedPokemonName}** may not be caught because this evolution line already appears in the run.")
-            .AddField("Pokemon", result.RequestedPokemonName, true)
-            .AddField("Result", "Blocked", true)
-            .AddField("Matched Pokemon", match.PokemonName, true)
-            .AddField("Route", match.Route, true)
-            .AddField("Player", match.PlayerName, true)
-            .AddField("Status", match.Status, true)
+            .WithDescription($"⛔ **{result.RequestedPokemonName}** ist gesperrt.")
+            .AddField("Fund", $"{match.PokemonName} · {match.Route} · {match.PlayerName} · {FormatCatchCheckStatus(match.Status)}")
             .Build();
     }
 
@@ -474,6 +467,17 @@ public sealed class EmbedFactory
         return string.Join(
             Environment.NewLine + Environment.NewLine,
             blocks);
+    }
+
+    private static string FormatCatchCheckStatus(string status)
+    {
+        return status switch
+        {
+            "Dead" => "Tot",
+            "Team" => "Team",
+            "Box" => "Box",
+            _ => status,
+        };
     }
 
     private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)

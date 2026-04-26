@@ -64,6 +64,49 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateCatchCheckEmbed_ShouldUseShortGermanAllowedOutput()
+    {
+        var result = new CatchCheckResult
+        {
+            RequestedPokemonName = "Raichu",
+            IsAllowed = true,
+        };
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateCatchCheckEmbed(result);
+
+        Assert.Equal("Fang-Check", embed.Title);
+        Assert.Equal("✅ **Raichu** darf gefangen werden.", embed.Description);
+        Assert.Empty(embed.Fields);
+    }
+
+    [Fact]
+    public void CreateCatchCheckEmbed_ShouldUseShortGermanBlockedOutput()
+    {
+        var result = new CatchCheckResult
+        {
+            RequestedPokemonName = "Raichu",
+            IsAllowed = false,
+            Match = new CatchCheckMatch
+            {
+                PokemonName = "Pikachu",
+                Route = "route 3",
+                PlayerName = "Misty",
+                Status = "Dead",
+            },
+        };
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateCatchCheckEmbed(result);
+
+        Assert.Equal("Fang-Check", embed.Title);
+        Assert.Equal("⛔ **Raichu** ist gesperrt.", embed.Description);
+        var field = Assert.Single(embed.Fields);
+        Assert.Equal("Fund", field.Name);
+        Assert.Equal("Pikachu · route 3 · Misty · Tot", field.Value);
+    }
+
+    [Fact]
     public void CreateStatusMessages_ShouldKeepAllTableRowsWithoutContinuationSections()
     {
         var run = CreateRun();
