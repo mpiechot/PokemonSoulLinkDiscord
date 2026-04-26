@@ -3,6 +3,7 @@ using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Bot.Commands;
 using PokeSoulLinkBot.Bot.Factories;
+using PokeSoulLinkBot.Bot.Helpers;
 using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Handlers;
@@ -64,10 +65,11 @@ public sealed class SlashCommandRouter
             {
                 Log.Warning("Unknown slash command /{CommandName}.", command.CommandName);
                 var errorEmbed = this.embedFactory.CreateErrorEmbed("Unknown command.");
-                await command.RespondAsync(embed: errorEmbed, ephemeral: true);
+                await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
                 return;
             }
 
+            await command.DeferAsync();
             await slashCommand.HandleAsync(command);
 
             Log.Information(
@@ -87,13 +89,7 @@ public sealed class SlashCommandRouter
             var errorMessage = CreateUserFacingErrorMessage(command, exception);
             var errorEmbed = this.embedFactory.CreateErrorEmbed(errorMessage);
 
-            if (command.HasResponded)
-            {
-                await command.FollowupAsync(embed: errorEmbed, ephemeral: true);
-                return;
-            }
-
-            await command.RespondAsync(embed: errorEmbed, ephemeral: true);
+            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
         }
     }
 

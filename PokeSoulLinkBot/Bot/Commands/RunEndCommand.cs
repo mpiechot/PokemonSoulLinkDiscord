@@ -61,6 +61,6 @@ public class RunEndCommand : ISlashCommand
         var image = this.embedImageFactory.CreateRunEndImage();
         var embed = this.embedFactory.CreateRunEndedEmbed(run, image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
     }
 }

@@ -75,7 +75,7 @@ public sealed class ArenaCommand : ISlashCommand
             arenaInfo.Levels,
             image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

@@ -76,7 +76,7 @@ public class RunStartCommand : ISlashCommand
         var image = this.embedImageFactory.CreateRunStartImage();
         var embed = this.embedFactory.CreateRunStartedEmbed(run, image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

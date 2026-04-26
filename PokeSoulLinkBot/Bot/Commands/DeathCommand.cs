@@ -71,7 +71,7 @@ public class DeathCommand : ISlashCommand
         var image = this.embedImageFactory.CreateDeathImage();
         var embed = this.embedFactory.CreateDeathRegisteredEmbed(linkGroup, image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

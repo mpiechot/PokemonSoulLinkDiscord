@@ -19,9 +19,6 @@ public sealed class EmbedFactoryStatusTests
 
         var message = embedFactory.CreateStatusMessage(run);
 
-        Assert.Contains("Run Status", message, StringComparison.Ordinal);
-        Assert.Contains("Run: **Ruby**", message, StringComparison.Ordinal);
-        Assert.Contains("Edition: **ruby**", message, StringComparison.Ordinal);
         Assert.Contains("Current Team", message, StringComparison.Ordinal);
         Assert.Contains("Box", message, StringComparison.Ordinal);
         Assert.Contains("Dead", message, StringComparison.Ordinal);

@@ -51,6 +51,6 @@ public sealed class PokedexCommand : ISlashCommand
         var embed = this.pokedexPresenter.CreateEmbed(entry, pokemonName);
         var tableMessage = this.pokedexPresenter.CreateTableMessage(entry);
 
-        await command.RespondAsync(tableMessage, embed: embed);
+        await SlashCommandResponse.SendAsync(command, tableMessage, embed: embed);
     }
 }

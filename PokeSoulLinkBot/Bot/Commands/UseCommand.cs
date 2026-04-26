@@ -62,7 +62,7 @@ public class UseCommand : ISlashCommand
         if (position < 1 || position > 6)
         {
             var errorEmbed = this.embedFactory.CreateErrorEmbed("Position must be between 1 and 6.");
-            await command.RespondAsync(embed: errorEmbed, ephemeral: true);
+            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
             return;
         }
 
@@ -71,7 +71,7 @@ public class UseCommand : ISlashCommand
         var messages = this.embedFactory.CreateUseMessages(activeRun);
         var image = this.embedImageFactory.CreateUseImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team Updated", activeRun, image.AttachmentUrl);
-        await command.RespondWithFileAsync(image.FileAttachment, text: messages[0], embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
 
         foreach (var message in messages.Skip(1))
         {
