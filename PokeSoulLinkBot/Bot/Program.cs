@@ -106,15 +106,13 @@ internal sealed class Program
         {
             try
             {
-                Log.Information("Registering global slash commands.");
                 var definitions = slashCommandRouter.GetDefinitions();
                 foreach (var definition in definitions)
                 {
                     Log.Debug("Prepared slash command definition {CommandName}.", definition.Name.Value);
                 }
 
-                await client.BulkOverwriteGlobalApplicationCommandsAsync(definitions.ToArray());
-                Log.Information("Registered {CommandCount} global slash commands.", definitions.Count);
+                await RegisterSlashCommandsAsync(definitions);
 
                 Log.Information("Initializing game data catalog.");
                 await gameDataCatalogService.InitializeAsync();
@@ -127,6 +125,32 @@ internal sealed class Program
             catch (Exception exception)
             {
                 Log.Error(exception, "Ready startup failed.");
+            }
+        }
+
+        async Task RegisterSlashCommandsAsync(IReadOnlyCollection<ApplicationCommandProperties> definitions)
+        {
+            var commandDefinitions = definitions.ToArray();
+
+            Log.Information("Registering {CommandCount} global slash commands.", commandDefinitions.Length);
+            await client.BulkOverwriteGlobalApplicationCommandsAsync(commandDefinitions);
+            Log.Information("Registered {CommandCount} global slash commands.", commandDefinitions.Length);
+
+            foreach (var guild in client.Guilds)
+            {
+                Log.Information(
+                    "Registering {CommandCount} slash commands for guild {GuildName} ({GuildId}).",
+                    commandDefinitions.Length,
+                    guild.Name,
+                    guild.Id);
+
+                await guild.BulkOverwriteApplicationCommandAsync(commandDefinitions);
+
+                Log.Information(
+                    "Registered {CommandCount} slash commands for guild {GuildName} ({GuildId}).",
+                    commandDefinitions.Length,
+                    guild.Name,
+                    guild.Id);
             }
         }
     }
