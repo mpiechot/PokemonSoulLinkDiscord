@@ -125,6 +125,36 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates an embed for a catch eligibility check.
+    /// </summary>
+    /// <param name="result">The catch check result.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateCatchCheckEmbed(CatchCheckResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentException.ThrowIfNullOrWhiteSpace(result.RequestedPokemonName);
+
+        if (result.IsAllowed)
+        {
+            return new EmbedBuilder()
+                .WithTitle("Fang-Check")
+                .WithColor(Color.Green)
+                .WithDescription($"✅ **{result.RequestedPokemonName}** darf gefangen werden.")
+                .Build();
+        }
+
+        var match = result.Match
+            ?? throw new InvalidOperationException("Blocked catch checks must include the matching catch.");
+
+        return new EmbedBuilder()
+            .WithTitle("Fang-Check")
+            .WithColor(Color.Red)
+            .WithDescription($"⛔ **{result.RequestedPokemonName}** ist gesperrt.")
+            .AddField("Fund", $"{match.PokemonName} · {match.Route} · {match.PlayerName} · {FormatCatchCheckStatus(match.Status)}")
+            .Build();
+    }
+
+    /// <summary>
     /// Creates an embed for a linked group death.
     /// </summary>
     /// <param name="linkGroup">The affected link group.</param>
@@ -437,6 +467,17 @@ public sealed class EmbedFactory
         return string.Join(
             Environment.NewLine + Environment.NewLine,
             blocks);
+    }
+
+    private static string FormatCatchCheckStatus(string status)
+    {
+        return status switch
+        {
+            "Dead" => "Tot",
+            "Team" => "Team",
+            "Box" => "Box",
+            _ => status,
+        };
     }
 
     private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)
