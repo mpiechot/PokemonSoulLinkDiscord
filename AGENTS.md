@@ -28,6 +28,8 @@ Beim Umsetzen einzelner Aufgaben soll das grosse Ganze im Blick bleiben: Der Bot
 - Die Pull-Request-Beschreibung beginnt immer in der ersten Zeile mit `Ticket: <Issue-Link>`, damit der Pull Request direkt auf das Ticket zurueckverweist.
 - Sobald eine Aufgabe bearbeitet und der Pull Request erstellt wurde, wird das Project Item des Tickets auf `In Review` gesetzt.
 - Wenn ein PR ein Ticket vollstaendig erledigt und gemerged wurde, wird das Issue geschlossen und das Project Item auf `Done` gesetzt.
+- Wenn PR-Kommentare bearbeitet werden, werden alle Vorschlaege kritisch und realistisch bewertet. Bei Zustimmung und umgesetzter Aenderung bekommt der Kommentar eine `+1`-Reaction; bei Widerspruch wird im PR auf Englisch erklaert, warum die Aenderung nicht oder anders umgesetzt werden sollte.
+- GitHub-PR-Diskussionen, Review-Antworten und implementierungsnahe PR-Texte werden auf Englisch geschrieben. Code-Kommentare werden ebenfalls auf Englisch geschrieben.
 - Git-Befehle fuer den normalen Ticket-Workflow duerfen ohne Rueckfrage ausgefuehrt werden, insbesondere `git add`, `git commit`, `git switch` und `git push` ohne Force-Optionen. Force-Pushes, auch `--force-with-lease`, duerfen nur nach ausdruecklicher Zustimmung ausgefuehrt werden.
 - Falls fuer den Task noch kein Pull Request existiert, wird nach dem Push ein Pull Request erstellt. Wenn die Aufgabe aus Sicht von Codex abgeschlossen ist, darf der Pull Request nicht im Draft-Modus bleiben.
 - Pull Requests werden mit aussagekraeftigem Titel, nachvollziehbarer Beschreibung, passenden Labels und, soweit bekannt, sinnvollen Reviewern oder weiteren Metadaten versehen.

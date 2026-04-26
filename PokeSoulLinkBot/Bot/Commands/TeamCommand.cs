@@ -50,7 +50,12 @@ public class TeamCommand : ISlashCommand
         var guildId = CommandOptionHelper.GetGuildId(command);
 
         var activeRun = this.runService.GetActiveRun(guildId);
-        var message = this.embedFactory.CreateTeamMessage(activeRun);
-        await command.RespondAsync(message);
+        var messages = this.embedFactory.CreateTeamMessages(activeRun);
+        await command.RespondAsync(messages[0]);
+
+        foreach (var message in messages.Skip(1))
+        {
+            await command.FollowupAsync(message);
+        }
     }
 }

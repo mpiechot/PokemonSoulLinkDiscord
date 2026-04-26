@@ -167,6 +167,11 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         return value.Trim().ToLowerInvariant().Replace(' ', '-');
     }
 
+    private static bool IsCacheWriteException(Exception exception)
+    {
+        return exception is IOException or UnauthorizedAccessException or NotSupportedException;
+    }
+
     private async Task<GameDataCatalog?> LoadCatalogFromCacheAsync()
     {
         if (!File.Exists(this.cacheFilePath))
@@ -315,8 +320,21 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         try
         {
             var refreshedCatalog = await this.RefreshCatalogAsync();
-            await this.SaveCatalogAsync(refreshedCatalog);
             this.catalog = refreshedCatalog;
+
+            try
+            {
+                await this.SaveCatalogAsync(refreshedCatalog);
+            }
+            catch (Exception exception) when (IsCacheWriteException(exception))
+            {
+                Log.Warning(
+                    exception,
+                    "Using refreshed game data catalog from PokeAPI, but cache could not be saved to {CacheFilePath}.",
+                    this.cacheFilePath);
+                return;
+            }
+
             Log.Information(
                 "Using game data catalog source PokeAPI with {EditionCount} editions and {RouteCount} routes. Saved cache to {CacheFilePath}.",
                 refreshedCatalog.Editions.Count,

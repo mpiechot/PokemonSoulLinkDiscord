@@ -113,6 +113,24 @@ public sealed class PokeApiGameDataCatalogServiceTests
         Assert.Equal(["Route A", "Route B", "Route C"], ruby.Routes);
     }
 
+    [Fact]
+    public async Task BackgroundRefresh_ShouldUseRefreshedCatalogWhenCacheCannotBeSaved()
+    {
+        var cacheFilePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "game-data-catalog.json");
+        Directory.CreateDirectory(cacheFilePath);
+        using var httpClient = new HttpClient(new ImmediateCatalogHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiGameDataCatalogService(httpClient, cacheFilePath);
+
+        await service.GetEditionsAsync();
+        var editions = await WaitForEditionsAsync(service);
+
+        var ruby = Assert.Single(editions, edition => edition.Name == "ruby");
+        Assert.Equal(["Route A"], ruby.Routes);
+    }
+
     private static string CreateCacheFile(GameDataCatalog catalog)
     {
         var cacheDirectoryPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -148,6 +166,23 @@ public sealed class PokeApiGameDataCatalogServiceTests
         throw new InvalidOperationException("Game data catalog cache was not saved in time.");
     }
 
+    private static async Task<IReadOnlyCollection<GameEditionInfo>> WaitForEditionsAsync(
+        PokeApiGameDataCatalogService service)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var editions = await service.GetEditionsAsync();
+            if (editions.Count > 0)
+            {
+                return editions;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new InvalidOperationException("Game data catalog was not refreshed in time.");
+    }
+
     private sealed class BlockingHttpMessageHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
@@ -169,6 +204,74 @@ public sealed class PokeApiGameDataCatalogServiceTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        }
+    }
+
+    private sealed class ImmediateCatalogHttpMessageHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/version", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(CreateJsonResponse(
+                    """
+                    {
+                      "results": [
+                        { "name": "ruby", "url": "https://pokeapi.co/api/v2/version/7/" }
+                      ]
+                    }
+                    """));
+            }
+
+            if (path.EndsWith("/location-area", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(CreateJsonResponse(
+                    """
+                    {
+                      "results": [
+                        { "name": "route-a", "url": "https://pokeapi.co/api/v2/location-area/1/" }
+                      ]
+                    }
+                    """));
+            }
+
+            if (path.Contains("/location-area/", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(CreateJsonResponse(
+                    """
+                    {
+                      "name": "route-a",
+                      "names": [
+                        {
+                          "name": "Route A",
+                          "language": { "name": "en" }
+                        }
+                      ],
+                      "pokemon_encounters": [
+                        {
+                          "version_details": [
+                            {
+                              "version": { "name": "ruby" }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static HttpResponseMessage CreateJsonResponse(string json)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            };
         }
     }
 
