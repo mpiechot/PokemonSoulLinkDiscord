@@ -38,7 +38,7 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
         {
             foreach (var entry in linkGroup.Entries)
             {
-                var caughtFamily = await this.GetEvolutionFamilyAsync(entry.PokemonName, familyCache);
+                var caughtFamily = await this.GetStoredCatchFamilyAsync(entry.PokemonName, familyCache);
                 if (!requestedFamily.Overlaps(caughtFamily))
                 {
                     continue;
@@ -91,6 +91,26 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .Replace("-", string.Empty, StringComparison.Ordinal)
             .Replace("_", string.Empty, StringComparison.Ordinal);
+    }
+
+    private async Task<HashSet<string>> GetStoredCatchFamilyAsync(
+        string pokemonName,
+        Dictionary<string, HashSet<string>> familyCache)
+    {
+        try
+        {
+            return await this.GetEvolutionFamilyAsync(pokemonName, familyCache);
+        }
+        catch (InvalidOperationException)
+        {
+            var family = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                NormalizePokemonName(pokemonName),
+            };
+
+            familyCache[pokemonName] = family;
+            return family;
+        }
     }
 
     private async Task<HashSet<string>> GetEvolutionFamilyAsync(

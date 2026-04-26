@@ -64,6 +64,31 @@ public sealed class CatchEligibilityServiceTests
     }
 
     [Fact]
+    public async Task CheckCatchAsync_ShouldIgnoreUnresolvedStoredCatchWhenItDoesNotMatchRequestedPokemon()
+    {
+        var linkGroup = CreateLinkGroup("route 3", 2, "Misty", "Quieckel", isAlive: true);
+        var service = CreateService(CreateRun(linkGroup));
+
+        var result = await service.CheckCatchAsync(GuildId, "Raichu");
+
+        Assert.True(result.IsAllowed);
+        Assert.Null(result.Match);
+    }
+
+    [Fact]
+    public async Task CheckCatchAsync_ShouldBlockUnresolvedStoredCatchOnKnownFamilyMemberMatch()
+    {
+        var linkGroup = CreateLinkGroup("route 3", 2, "Misty", "Pikachu", isAlive: true);
+        var service = CreateService(CreateRun(linkGroup));
+
+        var result = await service.CheckCatchAsync(GuildId, "Raichu");
+
+        Assert.False(result.IsAllowed);
+        Assert.NotNull(result.Match);
+        Assert.Equal("Pikachu", result.Match.PokemonName);
+    }
+
+    [Fact]
     public async Task CheckCatchAsync_ShouldReportUnclearPokemonName()
     {
         var service = CreateService(CreateRun());
@@ -208,6 +233,7 @@ public sealed class CatchEligibilityServiceTests
                 ["Venusaur"] = new[] { "Bulbasaur", "Ivysaur", "Venusaur" },
                 ["Charmander"] = new[] { "Charmander", "Charmeleon", "Charizard" },
                 ["Charmeleon"] = new[] { "Charmander", "Charmeleon", "Charizard" },
+                ["Raichu"] = new[] { "Pichu", "Pikachu", "Raichu" },
                 ["Squirtle"] = new[] { "Squirtle", "Wartortle", "Blastoise" },
             };
 
