@@ -447,10 +447,7 @@ public sealed class EmbedFactory
         var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
         var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
         var playerNames = run.Players.Select(player => player.UserName).ToList();
-        var blocks = new List<string>
-        {
-            this.CreateRunHeader("Run Status", run),
-        };
+        var blocks = new List<string>();
 
         blocks.Add(this.CreateTableSection("Current Team", currentTeam, playerNames));
         blocks.Add(this.CreateTableSection("Box", box, playerNames));
