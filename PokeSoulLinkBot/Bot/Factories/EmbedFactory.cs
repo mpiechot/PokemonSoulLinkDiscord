@@ -10,11 +10,7 @@ namespace PokeSoulLinkBot.Bot.Factories;
 /// </summary>
 public sealed class EmbedFactory
 {
-    private const int StatusTableContentMaxLength = 480;
-
-    private const int TeamTableContentMaxLength = 1600;
-
-    private const string TruncatedTableSuffix = "...";
+    private const int DiscordMessageMaxLength = 2000;
 
     /// <summary>
     /// Creates an embed for a newly started run.
@@ -239,22 +235,17 @@ public sealed class EmbedFactory
     /// </exception>
     public string CreateStatusMessage(SoulLinkRun run)
     {
-        ArgumentNullException.ThrowIfNull(run);
+        return JoinBlocks(this.CreateStatusBlocks(run));
+    }
 
-        var currentTeam = run.ActiveLinks.Where(group => group != null && group.IsAlive).ToList();
-        var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
-        var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
-        var playerNames = run.Players.Select(player => player.UserName).ToList();
-
-        return string.Join(
-            Environment.NewLine,
-            this.CreateRunHeader("Run Status", run),
-            string.Empty,
-            this.CreateTableSection("Current Team", currentTeam, playerNames, StatusTableContentMaxLength),
-            string.Empty,
-            this.CreateTableSection("Box", box, playerNames, StatusTableContentMaxLength),
-            string.Empty,
-            this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames, StatusTableContentMaxLength));
+    /// <summary>
+    /// Creates Discord-compatible status messages for the active run.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The paged status messages.</returns>
+    public IReadOnlyList<string> CreateStatusMessages(SoulLinkRun run)
+    {
+        return CombineBlocks(this.CreateStatusBlocks(run), DiscordMessageMaxLength);
     }
 
     /// <summary>
@@ -266,7 +257,19 @@ public sealed class EmbedFactory
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        return this.CreateTeamMessage("Active Team Updated", run);
+        return JoinBlocks(this.CreateTeamBlocks("Active Team Updated", run));
+    }
+
+    /// <summary>
+    /// Creates Discord-compatible messages for a newly selected active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The paged team messages.</returns>
+    public IReadOnlyList<string> CreateUseMessages(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return CombineBlocks(this.CreateTeamBlocks("Active Team Updated", run), DiscordMessageMaxLength);
     }
 
     /// <summary>
@@ -278,7 +281,19 @@ public sealed class EmbedFactory
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        return this.CreateTeamMessage("Active Team", run);
+        return JoinBlocks(this.CreateTeamBlocks("Active Team", run));
+    }
+
+    /// <summary>
+    /// Creates Discord-compatible messages for the active team.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <returns>The paged team messages.</returns>
+    public IReadOnlyList<string> CreateTeamMessages(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        return CombineBlocks(this.CreateTeamBlocks("Active Team", run), DiscordMessageMaxLength);
     }
 
     /// <summary>
@@ -385,63 +400,78 @@ public sealed class EmbedFactory
             .Build();
     }
 
-    private static string CreateCodeBlock(string value, int maxContentLength)
+    private static IReadOnlyList<string> CombineBlocks(IReadOnlyList<string> blocks, int maxLength)
     {
-        // Ignore maxContentLength for now, since it breaks the output.
-        //var table = TruncateTable(value, maxContentLength);
-        return $"```{value}```";
-    }
-
-    private static string TruncateTable(string value, int maxLength)
-    {
-        if (value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        var lines = value.Split(Environment.NewLine);
+        var messages = new List<string>();
         var builder = new StringBuilder();
 
-        foreach (var line in lines)
+        foreach (var block in blocks)
         {
-            var separatorLength = builder.Length == 0 ? 0 : Environment.NewLine.Length;
-            var projectedLength = builder.Length + separatorLength + line.Length + Environment.NewLine.Length + TruncatedTableSuffix.Length;
-            if (projectedLength > maxLength)
+            var separatorLength = builder.Length == 0 ? 0 : Environment.NewLine.Length * 2;
+            var projectedLength = builder.Length + separatorLength + block.Length;
+            if (builder.Length > 0 && projectedLength > maxLength)
             {
-                break;
+                messages.Add(builder.ToString());
+                builder.Clear();
             }
 
             if (builder.Length > 0)
             {
                 builder.AppendLine();
+                builder.AppendLine();
             }
 
-            builder.Append(line);
+            builder.Append(block);
         }
 
         if (builder.Length > 0)
         {
-            builder.AppendLine();
+            messages.Add(builder.ToString());
         }
 
-        builder.Append(TruncatedTableSuffix);
-        return builder.ToString();
+        return messages;
     }
 
-    private string CreateTeamMessage(string title, SoulLinkRun run)
+    private static string JoinBlocks(IReadOnlyList<string> blocks)
     {
         return string.Join(
-            Environment.NewLine,
+            Environment.NewLine + Environment.NewLine,
+            blocks);
+    }
+
+    private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        var currentTeam = run.ActiveLinks.Where(group => group != null && group.IsAlive).ToList();
+        var currentTeamIds = currentTeam.Select(group => group!.Id).ToHashSet();
+        var box = run.LinkGroups.Where(group => group.IsAlive && !currentTeamIds.Contains(group.Id));
+        var playerNames = run.Players.Select(player => player.UserName).ToList();
+        var blocks = new List<string>();
+
+        blocks.Add(this.CreateTableSection("Current Team", currentTeam, playerNames));
+        blocks.Add(this.CreateTableSection("Box", box, playerNames));
+        blocks.Add(this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
+
+        return blocks;
+    }
+
+    private IReadOnlyList<string> CreateTeamBlocks(string title, SoulLinkRun run)
+    {
+        var blocks = new List<string>
+        {
             this.CreateRunHeader(title, run),
-            string.Empty,
-            this.CreateTeamTableSection(run));
+        };
+
+        blocks.Add(this.CreateTeamTableSection(run));
+        return blocks;
     }
 
     private string CreateTeamTableSection(SoulLinkRun run)
     {
         var playerNames = run.Players.Select(player => player.UserName).ToList();
 
-        return this.CreateTableSection("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength);
+        return this.CreateTableSection("Team", run.ActiveLinks, playerNames);
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)
@@ -455,11 +485,11 @@ public sealed class EmbedFactory
     private string CreateTableSection(
         string title,
         IEnumerable<LinkGroup?> linkedGroups,
-        IReadOnlyList<string> playerNames,
-        int maxTableContentLength)
+        IReadOnlyList<string> playerNames)
     {
         var table = this.BuildStringTable(linkedGroups, playerNames);
-        return $"**{title}**{Environment.NewLine}{CreateCodeBlock(table, maxTableContentLength)}";
+
+        return $"**{title}**{Environment.NewLine}```{table}```";
     }
 
     private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)
@@ -500,7 +530,7 @@ public sealed class EmbedFactory
     private string PadRight(string value, int totalWidth)
     {
         return value.Length >= totalWidth
-            ? value[.. (totalWidth - 1)] + " "
+            ? value + " "
             : value.PadRight(totalWidth);
     }
 

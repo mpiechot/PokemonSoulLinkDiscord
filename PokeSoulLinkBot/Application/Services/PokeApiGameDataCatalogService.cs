@@ -12,44 +12,7 @@ namespace PokeSoulLinkBot.Application.Services;
 /// </summary>
 public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
 {
-    private static readonly IReadOnlyCollection<(string Name, string DisplayName)> FallbackEditions =
-    [
-        ("red", "Red"),
-        ("blue", "Blue"),
-        ("yellow", "Yellow"),
-        ("gold", "Gold"),
-        ("silver", "Silver"),
-        ("crystal", "Crystal"),
-        ("ruby", "Ruby"),
-        ("sapphire", "Sapphire"),
-        ("emerald", "Emerald"),
-        ("firered", "Fire Red"),
-        ("leafgreen", "Leaf Green"),
-        ("diamond", "Diamond"),
-        ("pearl", "Pearl"),
-        ("platinum", "Platinum"),
-        ("heartgold", "Heart Gold"),
-        ("soulsilver", "Soul Silver"),
-        ("black", "Black"),
-        ("white", "White"),
-        ("black-2", "Black 2"),
-        ("white-2", "White 2"),
-        ("x", "X"),
-        ("y", "Y"),
-        ("omega-ruby", "Omega Ruby"),
-        ("alpha-sapphire", "Alpha Sapphire"),
-        ("sun", "Sun"),
-        ("moon", "Moon"),
-        ("ultra-sun", "Ultra Sun"),
-        ("ultra-moon", "Ultra Moon"),
-        ("sword", "Sword"),
-        ("shield", "Shield"),
-        ("brilliant-diamond", "Brilliant Diamond"),
-        ("shining-pearl", "Shining Pearl"),
-        ("legends-arceus", "Legends Arceus"),
-        ("scarlet", "Scarlet"),
-        ("violet", "Violet"),
-    ];
+    private const int MaxParallelLocationAreaRequests = 8;
 
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
     {
@@ -60,6 +23,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     private readonly HttpClient httpClient;
     private readonly SemaphoreSlim initializationLock = new SemaphoreSlim(1, 1);
     private GameDataCatalog? catalog;
+    private Task? refreshTask;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiGameDataCatalogService"/> class.
@@ -86,34 +50,20 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
                 return;
             }
 
-            Log.Information("Initializing game data catalog from {CacheFilePath}.", this.cacheFilePath);
+            Log.Information("Initializing game data catalog. Cache path: {CacheFilePath}.", this.cacheFilePath);
             this.catalog = await this.LoadCatalogFromCacheAsync();
             if (this.catalog is not null)
             {
-                AddMissingFallbackEditions(this.catalog);
                 Log.Information(
-                    "Loaded game data catalog from cache with {EditionCount} editions.",
-                    this.catalog.Editions.Count);
+                    "Using game data catalog source cache with {EditionCount} editions and {RouteCount} routes.",
+                    this.catalog.Editions.Count,
+                    this.catalog.Editions.Sum(edition => edition.Routes.Count));
                 return;
             }
 
-            try
-            {
-                Log.Information("No game data catalog cache found. Refreshing from PokeAPI.");
-                this.catalog = await this.RefreshCatalogAsync();
-                AddMissingFallbackEditions(this.catalog);
-                await this.SaveCatalogAsync(this.catalog);
-                Log.Information(
-                    "Refreshed game data catalog with {EditionCount} editions and saved it to cache.",
-                    this.catalog.Editions.Count);
-            }
-            catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
-            {
-                Log.Warning(
-                    exception,
-                    "Game data catalog refresh failed. Falling back to built-in edition list.");
-                this.catalog = CreateFallbackCatalog();
-            }
+            this.StartRefreshInBackground();
+            Log.Information(
+                "Game data catalog is not ready. No cache was found, and PokeAPI refresh is running in the background.");
         }
         finally
         {
@@ -127,7 +77,14 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         await this.InitializeAsync();
 
         var editions = this.catalog?.Editions ?? (IReadOnlyCollection<GameEditionInfo>)Array.Empty<GameEditionInfo>();
-        Log.Debug("Returning {EditionCount} game edition suggestions.", editions.Count);
+        if (editions.Count == 0)
+        {
+            Log.Information("Game data catalog is not ready. Returning no game edition suggestions.");
+        }
+        else
+        {
+            Log.Debug("Returning {EditionCount} game edition suggestions.", editions.Count);
+        }
 
         return editions;
     }
@@ -145,49 +102,53 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
             string.Equals(item.DisplayName, edition.Trim(), StringComparison.OrdinalIgnoreCase));
 
         var routes = matchingEdition?.Routes ?? (IReadOnlyCollection<string>)Array.Empty<string>();
-        Log.Debug(
-            "Returning {RouteCount} route suggestions for edition '{Edition}'.",
-            routes.Count,
-            edition);
+        if (this.catalog is null)
+        {
+            Log.Information(
+                "Game data catalog is not ready. Returning no route suggestions for edition '{Edition}'.",
+                edition);
+        }
+        else
+        {
+            Log.Debug(
+                "Returning {RouteCount} route suggestions for edition '{Edition}'.",
+                routes.Count,
+                edition);
+        }
 
         return routes;
+    }
+
+    private static async IAsyncEnumerable<T> ParallelizeAsync<T>(
+        IEnumerable<Task<T>> tasks,
+        int maxDegreeOfParallelism)
+    {
+        var pendingTasks = new List<Task<T>>(maxDegreeOfParallelism);
+        using var enumerator = tasks.GetEnumerator();
+
+        while (pendingTasks.Count < maxDegreeOfParallelism && enumerator.MoveNext())
+        {
+            pendingTasks.Add(enumerator.Current);
+        }
+
+        while (pendingTasks.Count > 0)
+        {
+            var completedTask = await Task.WhenAny(pendingTasks);
+            pendingTasks.Remove(completedTask);
+
+            if (enumerator.MoveNext())
+            {
+                pendingTasks.Add(enumerator.Current);
+            }
+
+            yield return await completedTask;
+        }
     }
 
     private static string CreateDisplayName(string value)
     {
         var textInfo = System.Globalization.CultureInfo.InvariantCulture.TextInfo;
         return textInfo.ToTitleCase(value.Replace('-', ' '));
-    }
-
-    private static GameDataCatalog CreateFallbackCatalog()
-    {
-        var catalog = new GameDataCatalog { RefreshedAtUtc = DateTime.UtcNow };
-        AddMissingFallbackEditions(catalog);
-
-        return catalog;
-    }
-
-    private static void AddMissingFallbackEditions(GameDataCatalog catalog)
-    {
-        foreach (var fallbackEdition in FallbackEditions)
-        {
-            var hasEdition = catalog.Editions.Any(edition =>
-                string.Equals(edition.Name, fallbackEdition.Name, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(edition.DisplayName, fallbackEdition.DisplayName, StringComparison.OrdinalIgnoreCase));
-
-            if (!hasEdition)
-            {
-                catalog.Editions.Add(new GameEditionInfo
-                {
-                    Name = fallbackEdition.Name,
-                    DisplayName = fallbackEdition.DisplayName,
-                });
-            }
-        }
-
-        catalog.Editions = catalog.Editions
-            .OrderBy(edition => edition.DisplayName)
-            .ToList();
     }
 
     private static string GetDisplayName(LocationAreaDto locationArea)
@@ -206,6 +167,11 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         return value.Trim().ToLowerInvariant().Replace(' ', '-');
     }
 
+    private static bool IsCacheWriteException(Exception exception)
+    {
+        return exception is IOException or UnauthorizedAccessException or NotSupportedException;
+    }
+
     private async Task<GameDataCatalog?> LoadCatalogFromCacheAsync()
     {
         if (!File.Exists(this.cacheFilePath))
@@ -215,11 +181,23 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         }
 
         await using var stream = File.OpenRead(this.cacheFilePath);
-        return await JsonSerializer.DeserializeAsync<GameDataCatalog>(stream, JsonOptions);
+        try
+        {
+            return await JsonSerializer.DeserializeAsync<GameDataCatalog>(stream, JsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            Log.Warning(
+                exception,
+                "Game data catalog cache could not be read from {CacheFilePath}.",
+                this.cacheFilePath);
+            return null;
+        }
     }
 
     private async Task<GameDataCatalog> RefreshCatalogAsync()
     {
+        Log.Information("Using game data catalog source PokeAPI for refresh.");
         Log.Debug("Fetching Pokemon versions from PokeAPI.");
         var versionList = await this.httpClient.GetFromJsonAsync<NamedApiResourceListDto>("version?limit=10000", JsonOptions);
         var versions = versionList?.Results ?? new List<NamedApiResourceDto>();
@@ -247,14 +225,15 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         Log.Debug("Fetching Pokemon location areas from PokeAPI.");
         var locationAreaList = await this.httpClient.GetFromJsonAsync<NamedApiResourceListDto>("location-area?limit=10000", JsonOptions);
         var locationAreas = locationAreaList?.Results ?? new List<NamedApiResourceDto>();
+        var routeNamesByVersion = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        var locationAreaTasks = locationAreas
+            .Where(resource => !string.IsNullOrWhiteSpace(resource.Name))
+            .Select(resource => this.GetLocationAreaAsync(resource.Name!));
+
         var processedLocationAreaCount = 0;
-
-        foreach (var resource in locationAreas.Where(resource => !string.IsNullOrWhiteSpace(resource.Name)))
+        await foreach (var locationArea in ParallelizeAsync(locationAreaTasks, MaxParallelLocationAreaRequests))
         {
-            var locationArea = await this.httpClient.GetFromJsonAsync<LocationAreaDto>(
-                $"location-area/{resource.Name}",
-                JsonOptions);
-
             if (locationArea is null)
             {
                 continue;
@@ -271,16 +250,28 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
 
             foreach (var versionName in versionNames)
             {
-                if (editionsByName.TryGetValue(versionName, out var edition) &&
-                    !edition.Routes.Contains(routeName, StringComparer.OrdinalIgnoreCase))
+                if (!editionsByName.ContainsKey(versionName))
                 {
-                    edition.Routes.Add(routeName);
+                    continue;
                 }
+
+                if (!routeNamesByVersion.TryGetValue(versionName, out var routeNames))
+                {
+                    routeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    routeNamesByVersion[versionName] = routeNames;
+                }
+
+                routeNames.Add(routeName);
             }
         }
 
         foreach (var edition in editionsByName.Values)
         {
+            if (routeNamesByVersion.TryGetValue(edition.Name, out var routeNames))
+            {
+                edition.Routes.AddRange(routeNames);
+            }
+
             edition.Routes = edition.Routes.OrderBy(route => route).ToList();
         }
 
@@ -299,5 +290,66 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
 
         await using var stream = File.Create(this.cacheFilePath);
         await JsonSerializer.SerializeAsync(stream, refreshedCatalog, JsonOptions);
+    }
+
+    private async Task<LocationAreaDto?> GetLocationAreaAsync(string locationAreaName)
+    {
+        try
+        {
+            return await this.httpClient.GetFromJsonAsync<LocationAreaDto>(
+                $"location-area/{locationAreaName}",
+                JsonOptions);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            Log.Warning(
+                exception,
+                "Could not fetch location area {LocationAreaName} from PokeAPI.",
+                locationAreaName);
+            return null;
+        }
+    }
+
+    private void StartRefreshInBackground()
+    {
+        this.refreshTask ??= Task.Run(this.RefreshCatalogInBackgroundAsync);
+    }
+
+    private async Task RefreshCatalogInBackgroundAsync()
+    {
+        try
+        {
+            var refreshedCatalog = await this.RefreshCatalogAsync();
+            this.catalog = refreshedCatalog;
+
+            try
+            {
+                await this.SaveCatalogAsync(refreshedCatalog);
+            }
+            catch (Exception exception) when (IsCacheWriteException(exception))
+            {
+                Log.Warning(
+                    exception,
+                    "Using refreshed game data catalog from PokeAPI, but cache could not be saved to {CacheFilePath}.",
+                    this.cacheFilePath);
+                return;
+            }
+
+            Log.Information(
+                "Using game data catalog source PokeAPI with {EditionCount} editions and {RouteCount} routes. Saved cache to {CacheFilePath}.",
+                refreshedCatalog.Editions.Count,
+                refreshedCatalog.Editions.Sum(edition => edition.Routes.Count),
+                this.cacheFilePath);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            Log.Warning(
+                exception,
+                "Game data catalog PokeAPI refresh failed. Catalog remains unavailable until cache or API refresh succeeds.");
+        }
+        finally
+        {
+            this.refreshTask = null;
+        }
     }
 }

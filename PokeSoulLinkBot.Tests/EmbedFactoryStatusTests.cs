@@ -67,7 +67,7 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
-    public void CreateStatusMessage_ShouldKeepTableCodeBlocksDiscordCompatible()
+    public void CreateStatusMessages_ShouldKeepAllTableRowsWithoutContinuationSections()
     {
         var run = CreateRun();
         for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
@@ -77,11 +77,18 @@ public sealed class EmbedFactoryStatusTests
 
         var embedFactory = new EmbedFactory();
 
-        var message = embedFactory.CreateStatusMessage(run);
+        var messages = embedFactory.CreateStatusMessages(run);
+        var fullMessage = string.Join(Environment.NewLine, messages);
 
-        Assert.True(message.Length <= 2000);
-        Assert.Contains("Box", message, StringComparison.Ordinal);
-        Assert.Contains("...```", message, StringComparison.Ordinal);
+        Assert.Contains("**Current Team**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**Box**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**Dead**", fullMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("(continued)", fullMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("...```", fullMessage, StringComparison.Ordinal);
+        for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
+        {
+            Assert.Contains($"route-{routeIndex:000}", fullMessage, StringComparison.Ordinal);
+        }
     }
 
     private static SoulLinkRun CreateRun()

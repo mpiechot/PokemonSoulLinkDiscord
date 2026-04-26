@@ -68,9 +68,14 @@ public class UseCommand : ISlashCommand
 
         var activeRun = this.runService.UseRoute(guildId, routeId, (int)position);
 
-        var message = this.embedFactory.CreateUseMessage(activeRun);
+        var messages = this.embedFactory.CreateUseMessages(activeRun);
         var image = this.embedImageFactory.CreateUseImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team Updated", activeRun, image.AttachmentUrl);
-        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
+        await command.RespondWithFileAsync(image.FileAttachment, text: messages[0], embed: embed);
+
+        foreach (var message in messages.Skip(1))
+        {
+            await command.FollowupAsync(message);
+        }
     }
 }
