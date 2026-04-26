@@ -10,10 +10,6 @@ namespace PokeSoulLinkBot.Bot.Factories;
 /// </summary>
 public sealed class EmbedFactory
 {
-    private const int StatusTableContentMaxLength = 480;
-
-    private const int TeamTableContentMaxLength = 1600;
-
     private const int DiscordMessageMaxLength = 2000;
 
     /// <summary>
@@ -404,43 +400,6 @@ public sealed class EmbedFactory
             .Build();
     }
 
-    private static IReadOnlyList<string> CreateCodeBlocks(string value, int maxLength)
-    {
-        if (value.Length <= maxLength)
-        {
-            return new[] { $"```{value}```" };
-        }
-
-        var lines = value.Split(Environment.NewLine);
-        var blocks = new List<string>();
-        var builder = new StringBuilder();
-
-        foreach (var line in lines)
-        {
-            var separatorLength = builder.Length == 0 ? 0 : Environment.NewLine.Length;
-            var projectedLength = builder.Length + separatorLength + line.Length;
-            if (builder.Length > 0 && projectedLength > maxLength)
-            {
-                blocks.Add($"```{builder}```");
-                builder.Clear();
-            }
-
-            if (builder.Length > 0)
-            {
-                builder.AppendLine();
-            }
-
-            builder.Append(line);
-        }
-
-        if (builder.Length > 0)
-        {
-            blocks.Add($"```{builder}```");
-        }
-
-        return blocks;
-    }
-
     private static IReadOnlyList<string> CombineBlocks(IReadOnlyList<string> blocks, int maxLength)
     {
         var messages = new List<string>();
@@ -493,9 +452,9 @@ public sealed class EmbedFactory
             this.CreateRunHeader("Run Status", run),
         };
 
-        blocks.AddRange(this.CreateTableSectionBlocks("Current Team", currentTeam, playerNames, StatusTableContentMaxLength));
-        blocks.AddRange(this.CreateTableSectionBlocks("Box", box, playerNames, StatusTableContentMaxLength));
-        blocks.AddRange(this.CreateTableSectionBlocks("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames, StatusTableContentMaxLength));
+        blocks.Add(this.CreateTableSection("Current Team", currentTeam, playerNames));
+        blocks.Add(this.CreateTableSection("Box", box, playerNames));
+        blocks.Add(this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
 
         return blocks;
     }
@@ -507,15 +466,15 @@ public sealed class EmbedFactory
             this.CreateRunHeader(title, run),
         };
 
-        blocks.AddRange(this.CreateTeamTableSectionBlocks(run));
+        blocks.Add(this.CreateTeamTableSection(run));
         return blocks;
     }
 
-    private IReadOnlyList<string> CreateTeamTableSectionBlocks(SoulLinkRun run)
+    private string CreateTeamTableSection(SoulLinkRun run)
     {
         var playerNames = run.Players.Select(player => player.UserName).ToList();
 
-        return this.CreateTableSectionBlocks("Team", run.ActiveLinks, playerNames, TeamTableContentMaxLength);
+        return this.CreateTableSection("Team", run.ActiveLinks, playerNames);
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)
@@ -526,20 +485,14 @@ public sealed class EmbedFactory
             $"Edition: **{run.Game}**";
     }
 
-    private IReadOnlyList<string> CreateTableSectionBlocks(
+    private string CreateTableSection(
         string title,
         IEnumerable<LinkGroup?> linkedGroups,
-        IReadOnlyList<string> playerNames,
-        int maxTableContentLength)
+        IReadOnlyList<string> playerNames)
     {
         var table = this.BuildStringTable(linkedGroups, playerNames);
-        var codeBlocks = CreateCodeBlocks(table, maxTableContentLength);
 
-        return codeBlocks
-            .Select((codeBlock, index) => index == 0
-                ? $"**{title}**{Environment.NewLine}{codeBlock}"
-                : $"**{title} (continued)**{Environment.NewLine}{codeBlock}")
-            .ToList();
+        return $"**{title}**{Environment.NewLine}```{table}```";
     }
 
     private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)

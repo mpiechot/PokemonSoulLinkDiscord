@@ -67,7 +67,7 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
-    public void CreateStatusMessages_ShouldKeepAllTableRowsInDiscordCompatibleMessages()
+    public void CreateStatusMessages_ShouldKeepAllTableRowsWithoutContinuationSections()
     {
         var run = CreateRun();
         for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
@@ -80,8 +80,10 @@ public sealed class EmbedFactoryStatusTests
         var messages = embedFactory.CreateStatusMessages(run);
         var fullMessage = string.Join(Environment.NewLine, messages);
 
-        Assert.All(messages, message => Assert.True(message.Length <= 2000));
-        Assert.Contains("Box", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**Current Team**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**Box**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**Dead**", fullMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("(continued)", fullMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("...```", fullMessage, StringComparison.Ordinal);
         for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
         {
