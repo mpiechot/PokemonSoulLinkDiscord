@@ -63,7 +63,7 @@ public sealed class SwapCommand : ISlashCommand
         var image = this.embedImageFactory.CreateSwapImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Team Swapped", activeRun, image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, text: message, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: message, embed: embed);
     }
 
     /// <inheritdoc />

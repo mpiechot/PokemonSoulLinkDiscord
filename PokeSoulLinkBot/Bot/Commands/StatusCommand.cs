@@ -64,7 +64,7 @@ public class StatusCommand : ISlashCommand
         var messages = this.embedFactory.CreateStatusMessages(activeRun);
         var image = this.embedImageFactory.CreateStatusImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Run Status", activeRun, image.AttachmentUrl);
-        await command.RespondWithFileAsync(image.FileAttachment, text: messages[0], embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
 
         foreach (var message in messages.Skip(1))
         {

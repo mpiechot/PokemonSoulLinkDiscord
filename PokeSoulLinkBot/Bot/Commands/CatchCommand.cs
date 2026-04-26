@@ -84,7 +84,7 @@ public class CatchCommand : ISlashCommand
             image.AttachmentUrl,
             pokemonInfo);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: catchEmbed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: catchEmbed);
 
         var statusMessage = this.embedFactory.CreateStatusMessage(activeRun);
         await command.FollowupAsync(statusMessage);

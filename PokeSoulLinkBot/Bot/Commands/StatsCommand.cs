@@ -58,13 +58,13 @@ public class StatsCommand : ISlashCommand
         if (runs.Count == 0)
         {
             var emptyEmbed = this.embedFactory.CreateErrorEmbed("No runs stored yet.");
-            await command.RespondAsync(embed: emptyEmbed, ephemeral: true);
+            await SlashCommandResponse.SendAsync(command, embed: emptyEmbed, ephemeral: true);
             return;
         }
 
         var image = this.embedImageFactory.CreateStatsImage();
         var embed = this.embedFactory.CreateStatsEmbed(runs, image.AttachmentUrl);
 
-        await command.RespondWithFileAsync(image.FileAttachment, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
     }
 }
