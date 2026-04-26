@@ -67,6 +67,7 @@ internal sealed class Program
 
         var runStore = new RunStore(filePath);
         var runService = new RunService(runStore);
+        var catchEligibilityService = new CatchEligibilityService(runService, pokedexService);
         var embedFactory = new EmbedFactory();
         var embedImageFactory = new EmbedImageFactory(resourcesDirectoryPath);
 
@@ -75,6 +76,7 @@ internal sealed class Program
             new RunStartCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
             new RunEndCommand(runService, embedFactory, embedImageFactory),
             new CatchCommand(runService, embedFactory, embedImageFactory, pokemonLookupService, gameDataCatalogService),
+            new CatchCheckCommand(catchEligibilityService, embedFactory),
             new DeathCommand(runService, embedFactory, embedImageFactory),
             new RouteDeathCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
             new StatusCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),

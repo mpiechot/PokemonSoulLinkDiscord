@@ -125,6 +125,43 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates an embed for a catch eligibility check.
+    /// </summary>
+    /// <param name="result">The catch check result.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateCatchCheckEmbed(CatchCheckResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentException.ThrowIfNullOrWhiteSpace(result.RequestedPokemonName);
+
+        if (result.IsAllowed)
+        {
+            return new EmbedBuilder()
+                .WithTitle("Catch Check")
+                .WithColor(Color.Green)
+                .WithDescription($"**{result.RequestedPokemonName}** may still be caught in this run.")
+                .AddField("Pokemon", result.RequestedPokemonName, true)
+                .AddField("Result", "Allowed", true)
+                .Build();
+        }
+
+        var match = result.Match
+            ?? throw new InvalidOperationException("Blocked catch checks must include the matching catch.");
+
+        return new EmbedBuilder()
+            .WithTitle("Catch Check")
+            .WithColor(Color.Red)
+            .WithDescription($"**{result.RequestedPokemonName}** may not be caught because this evolution line already appears in the run.")
+            .AddField("Pokemon", result.RequestedPokemonName, true)
+            .AddField("Result", "Blocked", true)
+            .AddField("Matched Pokemon", match.PokemonName, true)
+            .AddField("Route", match.Route, true)
+            .AddField("Player", match.PlayerName, true)
+            .AddField("Status", match.Status, true)
+            .Build();
+    }
+
+    /// <summary>
     /// Creates an embed for a linked group death.
     /// </summary>
     /// <param name="linkGroup">The affected link group.</param>
