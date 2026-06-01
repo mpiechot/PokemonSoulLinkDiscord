@@ -490,9 +490,9 @@ public sealed class EmbedFactory
         var playerNames = run.Players.Select(player => player.UserName).ToList();
         var blocks = new List<string>();
 
-        blocks.Add(this.CreateTableSection("Current Team", currentTeam, playerNames));
-        blocks.Add(this.CreateTableSection("Box", box, playerNames));
-        blocks.Add(this.CreateTableSection("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
+        blocks.AddRange(this.CreateTableSections("Current Team", currentTeam, playerNames));
+        blocks.AddRange(this.CreateTableSections("Box", box, playerNames));
+        blocks.AddRange(this.CreateTableSections("Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
 
         return blocks;
     }
@@ -504,15 +504,15 @@ public sealed class EmbedFactory
             this.CreateRunHeader(title, run),
         };
 
-        blocks.Add(this.CreateTeamTableSection(run));
+        blocks.AddRange(this.CreateTeamTableSections(run));
         return blocks;
     }
 
-    private string CreateTeamTableSection(SoulLinkRun run)
+    private IReadOnlyList<string> CreateTeamTableSections(SoulLinkRun run)
     {
         var playerNames = run.Players.Select(player => player.UserName).ToList();
 
-        return this.CreateTableSection("Team", run.ActiveLinks, playerNames);
+        return this.CreateTableSections("Team", run.ActiveLinks, playerNames);
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)
@@ -523,17 +523,50 @@ public sealed class EmbedFactory
             $"Edition: **{run.Game}**";
     }
 
-    private string CreateTableSection(
+    private IReadOnlyList<string> CreateTableSections(
         string title,
         IEnumerable<LinkGroup?> linkedGroups,
         IReadOnlyList<string> playerNames)
     {
-        var table = this.BuildStringTable(linkedGroups, playerNames);
+        var tableRows = this.BuildStringTableRows(linkedGroups, playerNames);
+        var headerRows = tableRows.Take(2).ToList();
+        var rows = tableRows.Skip(2).ToList();
+
+        if (rows.Count == 0)
+        {
+            return new[] { this.CreateTableSection(title, headerRows) };
+        }
+
+        var sections = new List<string>();
+        var currentRows = new List<string>(headerRows);
+
+        foreach (var row in rows)
+        {
+            var candidateRows = currentRows.Concat(new[] { row }).ToList();
+            var candidateSection = this.CreateTableSection(title, candidateRows);
+            if (currentRows.Count > headerRows.Count && candidateSection.Length > DiscordMessageMaxLength)
+            {
+                sections.Add(this.CreateTableSection(title, currentRows));
+                currentRows = new List<string>(headerRows);
+            }
+
+            currentRows.Add(row);
+        }
+
+        sections.Add(this.CreateTableSection(title, currentRows));
+        return sections;
+    }
+
+    private string CreateTableSection(string title, IReadOnlyList<string> rows)
+    {
+        var table = string.Join(Environment.NewLine, rows);
 
         return $"**{title}**{Environment.NewLine}```{table}```";
     }
 
-    private string BuildStringTable(IEnumerable<LinkGroup?> linkedGroups, IReadOnlyList<string> playerNames)
+    private IReadOnlyList<string> BuildStringTableRows(
+        IEnumerable<LinkGroup?> linkedGroups,
+        IReadOnlyList<string> playerNames)
     {
         const int routeWidth = 14;
         const int playerColumnWidth = 24;
@@ -565,14 +598,20 @@ public sealed class EmbedFactory
             lines.Add(row);
         }
 
-        return string.Join(Environment.NewLine, lines);
+        return lines;
     }
 
     private string PadRight(string value, int totalWidth)
     {
-        return value.Length >= totalWidth
-            ? value + " "
-            : value.PadRight(totalWidth);
+        var singleLineValue = value.ReplaceLineEndings(" ");
+        if (singleLineValue.Length > totalWidth)
+        {
+            singleLineValue = totalWidth <= 3
+                ? singleLineValue[..totalWidth]
+                : string.Concat(singleLineValue.AsSpan(0, totalWidth - 3), "...");
+        }
+
+        return singleLineValue.PadRight(totalWidth);
     }
 
     private string FormatPokemonWithTypes(LinkedPokemon pokemon)

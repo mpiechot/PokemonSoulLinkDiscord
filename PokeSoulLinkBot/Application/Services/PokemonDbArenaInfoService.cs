@@ -6,6 +6,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Models;
+using Serilog;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -129,7 +130,10 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
             }
             catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException)
             {
-                Console.WriteLine($"Arena data warm-up failed for '{representativeEdition.Key}': {exception.Message}");
+                Log.Warning(
+                    exception,
+                    "Arena data warm-up failed for edition '{Edition}'.",
+                    representativeEdition.Key);
             }
         }
     }
@@ -189,7 +193,7 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
         }
 
         var sourceUri = new Uri(BaseUri, $"{sourceSlug}/gymleaders-elitefour");
-        var html = await this.httpClient.GetStringAsync(sourceUri);
+        var html = await HttpRequestHelper.GetStringAsync(this.httpClient, sourceUri);
         var arenaInfos = ParseArenaInfos(html, edition);
 
         if (arenaInfos.Count == 0)

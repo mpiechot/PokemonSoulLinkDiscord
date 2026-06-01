@@ -41,6 +41,23 @@ public sealed class PokeApiGameDataCatalogServiceTests
     }
 
     [Fact]
+    public async Task BackgroundRefresh_ShouldNotSaveEmptyCatalogWhenRootFetchFails()
+    {
+        var cacheFilePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "game-data-catalog.json");
+        var handler = new FailingHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiGameDataCatalogService(httpClient, cacheFilePath);
+
+        await service.GetEditionsAsync();
+        await WaitForRequestCountAsync(handler, 2);
+
+        Assert.False(File.Exists(cacheFilePath));
+    }
+
+    [Fact]
     public async Task GetEditionsAsync_ShouldUseCachedCatalog()
     {
         var cacheFilePath = CreateCacheFile(new GameDataCatalog
@@ -183,6 +200,21 @@ public sealed class PokeApiGameDataCatalogServiceTests
         throw new InvalidOperationException("Game data catalog was not refreshed in time.");
     }
 
+    private static async Task WaitForRequestCountAsync(FailingHttpMessageHandler handler, int requestCount)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            if (handler.RequestCount >= requestCount)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new InvalidOperationException("Expected HTTP requests were not sent in time.");
+    }
+
     private sealed class BlockingHttpMessageHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
@@ -199,10 +231,16 @@ public sealed class PokeApiGameDataCatalogServiceTests
 
     private sealed class FailingHttpMessageHandler : HttpMessageHandler
     {
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref this.requestCount);
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            Interlocked.Increment(ref this.requestCount);
+
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError));
         }
     }

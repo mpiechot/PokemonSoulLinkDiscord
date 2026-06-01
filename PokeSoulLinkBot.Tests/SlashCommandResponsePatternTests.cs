@@ -40,6 +40,49 @@ public sealed class SlashCommandResponsePatternTests
         Assert.Empty(violations);
     }
 
+    [Fact]
+    public void SlashCommandHandlers_ShouldUseCentralResponseHelperForFollowupResponses()
+    {
+        var commandsDirectory = Path.Combine(GetRepositoryRoot(), "PokeSoulLinkBot", "Bot", "Commands");
+        var commandFiles = Directory.GetFiles(commandsDirectory, "*Command.cs")
+            .Where(file => Path.GetFileName(file) != "ISlashCommand.cs");
+        var violations = new List<string>();
+
+        foreach (var commandFile in commandFiles)
+        {
+            var source = File.ReadAllText(commandFile);
+            var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command)");
+
+            if (handleAsyncBody.Contains(".FollowupAsync(", StringComparison.Ordinal)
+                || handleAsyncBody.Contains(".FollowupWithFileAsync(", StringComparison.Ordinal))
+            {
+                violations.Add(Path.GetFileName(commandFile));
+            }
+        }
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void CatchCommand_ShouldUsePagedStatusFollowups()
+    {
+        var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "CatchCommand.cs");
+        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command)");
+
+        Assert.Contains("this.embedFactory.CreateStatusMessages(activeRun)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("SlashCommandResponse.SendFollowupsAsync(command, statusMessages)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateStatusMessage(activeRun)", handleAsyncBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Router_ShouldGuardErrorResponseFailures()
+    {
+        var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");
+
+        Assert.Contains("TrySendErrorResponseAsync(command, errorEmbed, exception)", routerSource, StringComparison.Ordinal);
+        Assert.Contains("Could not send error response for slash command", routerSource, StringComparison.Ordinal);
+    }
+
     private static string ReadSourceFile(params string[] pathParts)
     {
         return File.ReadAllText(Path.Combine(new[] { GetRepositoryRoot() }.Concat(pathParts).ToArray()));

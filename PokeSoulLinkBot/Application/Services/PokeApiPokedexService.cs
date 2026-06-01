@@ -2,6 +2,7 @@ using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
 using PokeSoulLinkBot.Core.Models;
+using Serilog;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -64,7 +65,10 @@ public sealed class PokeApiPokedexService : IPokedexService
 
         if (string.IsNullOrWhiteSpace(imageUrl))
         {
-            Console.WriteLine($"Pokédex image lookup found no image for '{pokemonName}' using '{normalizedPokemonName}'.");
+            Log.Debug(
+                "Pokedex image lookup found no image for '{PokemonName}' resolved as '{ResolvedPokemonName}'.",
+                pokemonName,
+                normalizedPokemonName);
         }
 
         return new PokedexEntry
@@ -340,7 +344,7 @@ public sealed class PokeApiPokedexService : IPokedexService
 
         try
         {
-            using var response = await this.httpClient.GetAsync(requestUri);
+            using var response = await HttpRequestHelper.GetAsync(this.httpClient, requestUri);
 
             if (!response.IsSuccessStatusCode)
             {

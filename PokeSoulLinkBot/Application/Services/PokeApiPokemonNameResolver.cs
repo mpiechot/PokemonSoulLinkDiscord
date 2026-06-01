@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
+using Serilog;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -18,6 +20,9 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
 
     private readonly SemaphoreSlim indexLock = new SemaphoreSlim(1, 1);
     private readonly HttpClient httpClient;
+    private readonly ConcurrentDictionary<string, string> resolvedNameCache =
+        new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
     private IReadOnlyDictionary<string, string>? localizedNameIndex;
 
     /// <summary>
@@ -38,17 +43,27 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
         var normalizedName = this.NormalizePokemonName(pokemonName);
+        var lookupKey = this.CreateLookupKey(pokemonName);
+        if (this.resolvedNameCache.TryGetValue(lookupKey, out var cachedName))
+        {
+            return cachedName;
+        }
+
         var directName = await this.TryResolveDirectPokemonNameAsync(normalizedName);
 
         if (!string.IsNullOrWhiteSpace(directName))
         {
+            this.resolvedNameCache.TryAdd(lookupKey, directName);
             return directName;
         }
 
         var nameIndex = await this.GetLocalizedNameIndexAsync();
-        return nameIndex.TryGetValue(this.CreateLookupKey(pokemonName), out var resolvedName)
-            ? resolvedName
+        var resolvedName = nameIndex.TryGetValue(lookupKey, out var indexedName)
+            ? indexedName
             : normalizedName;
+
+        this.resolvedNameCache.TryAdd(lookupKey, resolvedName);
+        return resolvedName;
     }
 
     private void AddSpeciesNames(Dictionary<string, string> index, PokemonSpeciesDto species)
@@ -145,7 +160,7 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
         }
         catch (InvalidOperationException exception)
         {
-            Console.WriteLine($"Direct Pokémon name lookup failed for '{pokemonName}': {exception.Message}");
+            Log.Debug(exception, "Direct Pokemon name lookup failed for '{PokemonName}'.", pokemonName);
             return null;
         }
     }
@@ -204,7 +219,7 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
     {
         try
         {
-            using var response = await this.httpClient.GetAsync(requestUri);
+            using var response = await HttpRequestHelper.GetAsync(this.httpClient, requestUri);
 
             if (!response.IsSuccessStatusCode)
             {

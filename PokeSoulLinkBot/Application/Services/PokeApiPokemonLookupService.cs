@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
 using PokeSoulLinkBot.Core.Models;
+using Serilog;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -15,6 +17,8 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
 
     private readonly HttpClient httpClient;
     private readonly IPokemonNameResolver pokemonNameResolver;
+    private readonly ConcurrentDictionary<string, PokemonInfo> pokemonInfoCache =
+        new ConcurrentDictionary<string, PokemonInfo>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokemonLookupService"/> class.
@@ -45,8 +49,14 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
         }
         catch (InvalidOperationException exception)
         {
-            Console.WriteLine($"Pokémon name lookup failed for '{pokemonName}': {exception.Message}");
+            Log.Warning(exception, "Pokemon name lookup failed for '{PokemonName}'.", pokemonName);
             return null;
+        }
+
+        if (this.pokemonInfoCache.TryGetValue(resolvedName, out var cachedInfo))
+        {
+            Log.Debug("Using cached Pokemon info for '{PokemonName}' resolved as '{ResolvedName}'.", pokemonName, resolvedName);
+            return cachedInfo;
         }
 
         var requestUri = $"pokemon/{Uri.EscapeDataString(resolvedName)}";
@@ -54,11 +64,15 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
 
         try
         {
-            using var response = await this.httpClient.GetAsync(requestUri);
+            using var response = await HttpRequestHelper.GetAsync(this.httpClient, requestUri);
 
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"Pokémon image lookup failed for '{pokemonName}' using '{resolvedName}': {response.StatusCode}");
+                Log.Warning(
+                    "Pokemon lookup failed for '{PokemonName}' resolved as '{ResolvedName}'. StatusCode={StatusCode}.",
+                    pokemonName,
+                    resolvedName,
+                    response.StatusCode);
                 return null;
             }
 
@@ -67,13 +81,20 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            Console.WriteLine($"Pokémon image lookup failed for '{pokemonName}' using '{resolvedName}': {exception.Message}");
+            Log.Warning(
+                exception,
+                "Pokemon lookup failed for '{PokemonName}' resolved as '{ResolvedName}'.",
+                pokemonName,
+                resolvedName);
             return null;
         }
 
         if (dto == null)
         {
-            Console.WriteLine($"Pokémon image lookup returned no data for '{pokemonName}' using '{resolvedName}'.");
+            Log.Warning(
+                "Pokemon lookup returned no data for '{PokemonName}' resolved as '{ResolvedName}'.",
+                pokemonName,
+                resolvedName);
             return null;
         }
 
@@ -87,13 +108,19 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
 
         if (string.IsNullOrWhiteSpace(imageUrl))
         {
-            Console.WriteLine($"Pokémon image lookup found no image for '{pokemonName}' using '{resolvedName}'.");
+            Log.Debug(
+                "Pokemon lookup found no image for '{PokemonName}' resolved as '{ResolvedName}'.",
+                pokemonName,
+                resolvedName);
         }
 
-        return new PokemonInfo
+        var pokemonInfo = new PokemonInfo
         {
             ImageUrl = imageUrl,
             Types = types,
         };
+
+        this.pokemonInfoCache.TryAdd(resolvedName, pokemonInfo);
+        return pokemonInfo;
     }
 }

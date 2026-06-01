@@ -89,7 +89,7 @@ public sealed class SlashCommandRouter
             var errorMessage = CreateUserFacingErrorMessage(command, exception);
             var errorEmbed = this.embedFactory.CreateErrorEmbed(errorMessage);
 
-            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
+            await TrySendErrorResponseAsync(command, errorEmbed, exception);
         }
     }
 
@@ -149,6 +149,25 @@ public sealed class SlashCommandRouter
     private static long GetElapsedMilliseconds(DateTimeOffset startedAt)
     {
         return (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
+    }
+
+    private static async Task TrySendErrorResponseAsync(
+        SocketSlashCommand command,
+        Embed errorEmbed,
+        Exception originalException)
+    {
+        try
+        {
+            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
+        }
+        catch (Exception responseException)
+        {
+            Log.Warning(
+                responseException,
+                "Could not send error response for slash command /{CommandName}. OriginalException={OriginalExceptionType}.",
+                command.CommandName,
+                originalException.GetType().Name);
+        }
     }
 
     private static string FormatCommandOptions(SocketSlashCommand command)

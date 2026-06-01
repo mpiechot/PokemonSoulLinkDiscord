@@ -59,11 +59,12 @@ public sealed class SwapCommand : ISlashCommand
         var boxRoute = CommandOptionHelper.GetRequiredStringOption(command, "box-route").ToLowerInvariant().Trim();
 
         var activeRun = this.runService.SwapRoute(guildId, teamRoute, boxRoute);
-        var message = this.embedFactory.CreateTeamMessage(activeRun);
+        var messages = this.embedFactory.CreateTeamMessages(activeRun);
         var image = this.embedImageFactory.CreateSwapImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Team Swapped", activeRun, image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: message, embed: embed);
+        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
+        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
     }
 
     /// <inheritdoc />
