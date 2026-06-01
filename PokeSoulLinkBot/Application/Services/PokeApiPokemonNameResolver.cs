@@ -20,6 +20,7 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
 
     private readonly SemaphoreSlim indexLock = new SemaphoreSlim(1, 1);
     private readonly HttpClient httpClient;
+    private readonly PokemonDataCacheStore? pokemonDataCacheStore;
     private readonly ConcurrentDictionary<string, string> resolvedNameCache =
         new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -29,12 +30,16 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
     /// Initializes a new instance of the <see cref="PokeApiPokemonNameResolver"/> class.
     /// </summary>
     /// <param name="httpClient">The HTTP client.</param>
+    /// <param name="pokemonDataCacheStore">The optional persistent Pokémon data cache.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="httpClient"/> is <see langword="null"/>.
     /// </exception>
-    public PokeApiPokemonNameResolver(HttpClient httpClient)
+    public PokeApiPokemonNameResolver(
+        HttpClient httpClient,
+        PokemonDataCacheStore? pokemonDataCacheStore = null)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.pokemonDataCacheStore = pokemonDataCacheStore;
     }
 
     /// <inheritdoc />
@@ -64,6 +69,15 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
 
         this.resolvedNameCache.TryAdd(lookupKey, resolvedName);
         return resolvedName;
+    }
+
+    /// <summary>
+    /// Warms the localized Pokémon name index.
+    /// </summary>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public async Task WarmUpAsync()
+    {
+        _ = await this.GetLocalizedNameIndexAsync();
     }
 
     private void AddSpeciesNames(Dictionary<string, string> index, PokemonSpeciesDto species)
@@ -181,7 +195,24 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
                 return this.localizedNameIndex;
             }
 
+            IReadOnlyDictionary<string, string>? persistedIndex = this.pokemonDataCacheStore is null
+                ? null
+                : await this.pokemonDataCacheStore.GetNameIndexAsync();
+            if (persistedIndex is not null && persistedIndex.Count > 0)
+            {
+                Log.Information(
+                    "Using Pokemon localized name index from persistent cache with {NameCount} names.",
+                    persistedIndex.Count);
+                this.localizedNameIndex = persistedIndex;
+                return this.localizedNameIndex;
+            }
+
             this.localizedNameIndex = await this.BuildLocalizedNameIndexAsync();
+            if (this.pokemonDataCacheStore is not null)
+            {
+                await this.pokemonDataCacheStore.SaveNameIndexAsync(this.localizedNameIndex);
+            }
+
             return this.localizedNameIndex;
         }
         finally
