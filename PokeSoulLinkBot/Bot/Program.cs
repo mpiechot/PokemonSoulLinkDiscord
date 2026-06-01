@@ -7,6 +7,7 @@ using PokeSoulLinkBot.Bot.Commands;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Handlers;
 using PokeSoulLinkBot.Bot.Presentation;
+using PokeSoulLinkBot.Bot.Registration;
 using PokeSoulLinkBot.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -90,6 +91,7 @@ internal sealed class Program
         };
 
         var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);
+        var slashCommandRegistrationService = new SlashCommandRegistrationService();
         var readyStartupTaskRunner = new ReadyStartupTaskRunner(RegisterCommandsAfterReadyAsync);
 
         client.Log += OnLogAsync;
@@ -132,27 +134,81 @@ internal sealed class Program
         async Task RegisterSlashCommandsAsync(IReadOnlyCollection<ApplicationCommandProperties> definitions)
         {
             var commandDefinitions = definitions.ToArray();
+            var registrationTargets = CreateRegistrationTargets();
 
-            Log.Information("Registering {CommandCount} global slash commands.", commandDefinitions.Length);
-            await client.BulkOverwriteGlobalApplicationCommandsAsync(commandDefinitions);
-            Log.Information("Registered {CommandCount} global slash commands.", commandDefinitions.Length);
+            await slashCommandRegistrationService.RegisterAsync(commandDefinitions, registrationTargets);
+        }
+
+        IReadOnlyCollection<ISlashCommandRegistrationTarget> CreateRegistrationTargets()
+        {
+            var registrationMode = (configuration["DISCORD_COMMAND_REGISTRATION_MODE"] ?? "all")
+                .Trim()
+                .ToLowerInvariant();
+            var configuredGuildIds = ParseGuildIds(configuration["DISCORD_COMMAND_GUILD_IDS"]);
+            var targets = new List<ISlashCommandRegistrationTarget>();
+
+            if (ShouldRegisterGlobalCommands(registrationMode))
+            {
+                targets.Add(new SlashCommandRegistrationTarget(
+                    "global commands",
+                    async () => (await client.GetGlobalApplicationCommandsAsync()).Cast<IApplicationCommand>().ToList(),
+                    async definitions => await client.BulkOverwriteGlobalApplicationCommandsAsync(definitions)));
+            }
+
+            if (!ShouldRegisterGuildCommands(registrationMode))
+            {
+                return targets;
+            }
 
             foreach (var guild in client.Guilds)
             {
-                Log.Information(
-                    "Registering {CommandCount} slash commands for guild {GuildName} ({GuildId}).",
-                    commandDefinitions.Length,
-                    guild.Name,
-                    guild.Id);
+                if (configuredGuildIds.Count > 0 && !configuredGuildIds.Contains(guild.Id))
+                {
+                    continue;
+                }
 
-                await guild.BulkOverwriteApplicationCommandAsync(commandDefinitions);
-
-                Log.Information(
-                    "Registered {CommandCount} slash commands for guild {GuildName} ({GuildId}).",
-                    commandDefinitions.Length,
-                    guild.Name,
-                    guild.Id);
+                targets.Add(new SlashCommandRegistrationTarget(
+                    $"guild {guild.Name} ({guild.Id})",
+                    async () => (await guild.GetApplicationCommandsAsync()).Cast<IApplicationCommand>().ToList(),
+                    async definitions => await guild.BulkOverwriteApplicationCommandAsync(definitions)));
             }
+
+            return targets;
+        }
+
+        static bool ShouldRegisterGlobalCommands(string registrationMode)
+        {
+            return registrationMode is "all" or "global";
+        }
+
+        static bool ShouldRegisterGuildCommands(string registrationMode)
+        {
+            return registrationMode is "all" or "guild" or "guilds" or "development";
+        }
+
+        static IReadOnlySet<ulong> ParseGuildIds(string? guildIds)
+        {
+            var parsedGuildIds = new HashSet<ulong>();
+            if (string.IsNullOrWhiteSpace(guildIds))
+            {
+                return parsedGuildIds;
+            }
+
+            foreach (var value in guildIds.Split(
+                new[] { ',', ';', ' ' },
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (ulong.TryParse(value, out ulong guildId))
+                {
+                    parsedGuildIds.Add(guildId);
+                }
+                else
+                {
+                    Log.Warning("Ignoring invalid Discord guild id '{GuildId}' in DISCORD_COMMAND_GUILD_IDS.", value);
+                }
+            }
+
+            return parsedGuildIds;
         }
     }
 
