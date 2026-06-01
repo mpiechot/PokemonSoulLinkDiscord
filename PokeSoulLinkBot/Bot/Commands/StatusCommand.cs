@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Discord;
 using Discord.WebSocket;
 using PokeSoulLinkBot.Application.Interfaces;
@@ -12,6 +13,8 @@ namespace PokeSoulLinkBot.Bot.Commands;
 /// </summary>
 public class StatusCommand : ISlashCommand
 {
+    private const int MaxParallelPokemonTypeLookups = 4;
+
     private readonly IRunService runService;
     private readonly EmbedFactory embedFactory;
     private readonly EmbedImageFactory embedImageFactory;
@@ -66,26 +69,58 @@ public class StatusCommand : ISlashCommand
         var embed = this.embedFactory.CreateRunSummaryEmbed("Run Status", activeRun, image.AttachmentUrl);
         await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
 
-        foreach (var message in messages.Skip(1))
-        {
-            await command.FollowupAsync(message);
-        }
+        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
     }
 
     private async Task EnrichMissingPokemonTypesAsync(SoulLinkRun run)
     {
-        foreach (var entry in run.LinkGroups.SelectMany(group => group.Entries))
-        {
-            if (entry.Types.Count > 0)
-            {
-                continue;
-            }
+        var entriesWithoutTypes = run.LinkGroups
+            .SelectMany(group => group.Entries)
+            .Where(entry => entry.Types.Count == 0)
+            .ToList();
 
-            var pokemonInfo = await this.pokemonLookupService.GetPokemonInfoAsync(entry.PokemonName);
+        if (entriesWithoutTypes.Count == 0)
+        {
+            return;
+        }
+
+        var typesByPokemonName = new ConcurrentDictionary<string, IReadOnlyList<string>>(
+            StringComparer.OrdinalIgnoreCase);
+        using var lookupLimiter = new SemaphoreSlim(MaxParallelPokemonTypeLookups, MaxParallelPokemonTypeLookups);
+        var lookupTasks = entriesWithoutTypes
+            .Select(entry => entry.PokemonName)
+            .Where(pokemonName => !string.IsNullOrWhiteSpace(pokemonName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(pokemonName => this.LookupPokemonTypesAsync(pokemonName, typesByPokemonName, lookupLimiter));
+
+        await Task.WhenAll(lookupTasks);
+
+        foreach (var entry in entriesWithoutTypes)
+        {
+            if (typesByPokemonName.TryGetValue(entry.PokemonName, out var pokemonTypes))
+            {
+                entry.Types = pokemonTypes.ToList();
+            }
+        }
+    }
+
+    private async Task LookupPokemonTypesAsync(
+        string pokemonName,
+        ConcurrentDictionary<string, IReadOnlyList<string>> typesByPokemonName,
+        SemaphoreSlim lookupLimiter)
+    {
+        await lookupLimiter.WaitAsync();
+        try
+        {
+            var pokemonInfo = await this.pokemonLookupService.GetPokemonInfoAsync(pokemonName);
             if (pokemonInfo?.Types.Count > 0)
             {
-                entry.Types = pokemonInfo.Types.ToList();
+                typesByPokemonName.TryAdd(pokemonName, pokemonInfo.Types);
             }
+        }
+        finally
+        {
+            lookupLimiter.Release();
         }
     }
 }

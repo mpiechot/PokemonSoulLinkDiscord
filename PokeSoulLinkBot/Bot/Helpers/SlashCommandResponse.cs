@@ -1,5 +1,6 @@
 using Discord;
 using Discord.WebSocket;
+using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Helpers;
 
@@ -50,5 +51,37 @@ public static class SlashCommandResponse
         return command.HasResponded
             ? command.FollowupWithFileAsync(fileAttachment, text: text, embed: embed, ephemeral: ephemeral)
             : command.RespondWithFileAsync(fileAttachment, text: text, embed: embed, ephemeral: ephemeral);
+    }
+
+    /// <summary>
+    /// Sends supplemental slash-command followup messages.
+    /// </summary>
+    /// <param name="command">The slash command interaction.</param>
+    /// <param name="messages">The followup messages.</param>
+    /// <param name="ephemeral">A value indicating whether the responses should be visible only to the caller.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    public static async Task SendFollowupsAsync(
+        SocketSlashCommand command,
+        IEnumerable<string> messages,
+        bool ephemeral = false)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(messages);
+
+        foreach (var message in messages.Where(message => !string.IsNullOrWhiteSpace(message)))
+        {
+            try
+            {
+                await command.FollowupAsync(message, ephemeral: ephemeral);
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(
+                    exception,
+                    "Could not send slash-command followup for /{CommandName}. MessageLength={MessageLength}.",
+                    command.CommandName,
+                    message.Length);
+            }
+        }
     }
 }

@@ -53,9 +53,6 @@ public class TeamCommand : ISlashCommand
         var messages = this.embedFactory.CreateTeamMessages(activeRun);
         await SlashCommandResponse.SendAsync(command, messages[0]);
 
-        foreach (var message in messages.Skip(1))
-        {
-            await command.FollowupAsync(message);
-        }
+        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
     }
 }

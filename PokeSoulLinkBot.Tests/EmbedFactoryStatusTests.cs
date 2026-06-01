@@ -125,6 +125,7 @@ public sealed class EmbedFactoryStatusTests
         Assert.Contains("**Dead**", fullMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("(continued)", fullMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("...```", fullMessage, StringComparison.Ordinal);
+        Assert.All(messages, message => Assert.InRange(message.Length, 1, 2000));
         for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
         {
             Assert.Contains($"route-{routeIndex:000}", fullMessage, StringComparison.Ordinal);

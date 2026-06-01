@@ -56,6 +56,7 @@ internal sealed class Program
         var httpClient = new HttpClient
         {
             BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+            Timeout = TimeSpan.FromSeconds(5),
         };
 
         var pokemonNameResolver = new PokeApiPokemonNameResolver(httpClient);

@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
@@ -199,7 +198,10 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     {
         Log.Information("Using game data catalog source PokeAPI for refresh.");
         Log.Debug("Fetching Pokemon versions from PokeAPI.");
-        var versionList = await this.httpClient.GetFromJsonAsync<NamedApiResourceListDto>("version?limit=10000", JsonOptions);
+        var versionList = await HttpRequestHelper.GetFromJsonAsync<NamedApiResourceListDto>(
+            this.httpClient,
+            "version?limit=10000",
+            JsonOptions);
         var versions = versionList?.Results ?? new List<NamedApiResourceDto>();
         var editionsByName = versions
             .Where(version => !string.IsNullOrWhiteSpace(version.Name))
@@ -223,7 +225,10 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     private async Task AddEncounterRoutesAsync(Dictionary<string, GameEditionInfo> editionsByName)
     {
         Log.Debug("Fetching Pokemon location areas from PokeAPI.");
-        var locationAreaList = await this.httpClient.GetFromJsonAsync<NamedApiResourceListDto>("location-area?limit=10000", JsonOptions);
+        var locationAreaList = await HttpRequestHelper.GetFromJsonAsync<NamedApiResourceListDto>(
+            this.httpClient,
+            "location-area?limit=10000",
+            JsonOptions);
         var locationAreas = locationAreaList?.Results ?? new List<NamedApiResourceDto>();
         var routeNamesByVersion = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -296,7 +301,8 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     {
         try
         {
-            return await this.httpClient.GetFromJsonAsync<LocationAreaDto>(
+            return await HttpRequestHelper.GetFromJsonAsync<LocationAreaDto>(
+                this.httpClient,
                 $"location-area/{locationAreaName}",
                 JsonOptions);
         }
