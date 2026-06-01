@@ -52,6 +52,11 @@ internal sealed class Program
             "PokeSoulLinkBot",
             "Data",
             "game-data-catalog.json");
+        var pokemonDataCachePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PokeSoulLinkBot",
+            "Data",
+            "pokemon-data-cache.json");
         var resourcesDirectoryPath = Path.Combine(AppContext.BaseDirectory, "Resources");
         var httpClient = new HttpClient
         {
@@ -59,9 +64,13 @@ internal sealed class Program
             Timeout = TimeSpan.FromSeconds(5),
         };
 
-        var pokemonNameResolver = new PokeApiPokemonNameResolver(httpClient);
-        var pokemonLookupService = new PokeApiPokemonLookupService(httpClient, pokemonNameResolver);
-        var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver);
+        var pokemonDataCacheStore = new PokemonDataCacheStore(pokemonDataCachePath);
+        var pokemonNameResolver = new PokeApiPokemonNameResolver(httpClient, pokemonDataCacheStore);
+        var pokemonLookupService = new PokeApiPokemonLookupService(
+            httpClient,
+            pokemonNameResolver,
+            pokemonDataCacheStore);
+        var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver, pokemonDataCacheStore);
         var pokedexPresenter = new PokedexPresenter();
         var arenaInfoService = new PokemonDbArenaInfoService(httpClient);
         var gameDataCatalogService = new PokeApiGameDataCatalogService(httpClient, gameDataCachePath);
@@ -115,6 +124,8 @@ internal sealed class Program
 
                 await RegisterSlashCommandsAsync(definitions);
 
+                _ = Task.Run(WarmPokemonDataCacheAsync);
+
                 Log.Information("Initializing game data catalog.");
                 await gameDataCatalogService.InitializeAsync();
                 Log.Information("Game data catalog initialization completed.");
@@ -126,6 +137,21 @@ internal sealed class Program
             catch (Exception exception)
             {
                 Log.Error(exception, "Ready startup failed.");
+            }
+        }
+
+        async Task WarmPokemonDataCacheAsync()
+        {
+            try
+            {
+                Log.Information("Warming Pokemon data cache.");
+                await pokemonDataCacheStore.InitializeAsync();
+                await pokemonNameResolver.WarmUpAsync();
+                Log.Information("Pokemon data cache warmup completed.");
+            }
+            catch (Exception exception)
+            {
+                Log.Warning(exception, "Pokemon data cache warmup failed.");
             }
         }
 

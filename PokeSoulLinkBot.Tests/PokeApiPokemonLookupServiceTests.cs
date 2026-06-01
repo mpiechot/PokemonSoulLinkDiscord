@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
+using PokeSoulLinkBot.Core.Models;
 using Xunit;
 
 namespace PokeSoulLinkBot.Tests;
@@ -40,6 +41,107 @@ public sealed class PokeApiPokemonLookupServiceTests
 
         Assert.NotNull(pokemonInfo);
         Assert.Equal(2, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task GetPokemonInfoAsync_ShouldUsePersistedCacheWhenAvailable()
+    {
+        string cacheFilePath = CreateTemporaryCacheFilePath();
+        try
+        {
+            var cacheStore = new PokemonDataCacheStore(cacheFilePath);
+            await cacheStore.SavePokemonInfoAsync("bulbasaur", new PokemonInfo
+            {
+                ImageUrl = "https://img.example/cached-bulbasaur.png",
+                Types = new[] { "grass", "poison" },
+            });
+
+            var handler = new CountingPokemonHttpMessageHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+            };
+            var service = new PokeApiPokemonLookupService(
+                httpClient,
+                new StubPokemonNameResolver("bulbasaur"),
+                cacheStore);
+
+            PokemonInfo? pokemonInfo = await service.GetPokemonInfoAsync("Bisasam");
+
+            Assert.NotNull(pokemonInfo);
+            Assert.Equal("https://img.example/cached-bulbasaur.png", pokemonInfo.ImageUrl);
+            Assert.Equal(new[] { "grass", "poison" }, pokemonInfo.Types);
+            Assert.Equal(0, handler.RequestCount);
+        }
+        finally
+        {
+            DeleteTemporaryCacheFile(cacheFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetPokemonInfoAsync_ShouldPersistSuccessfulLookupsForLaterRequests()
+    {
+        string cacheFilePath = CreateTemporaryCacheFilePath();
+        try
+        {
+            var cacheStore = new PokemonDataCacheStore(cacheFilePath);
+            var handler = new CountingPokemonHttpMessageHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+            };
+            var service = new PokeApiPokemonLookupService(
+                httpClient,
+                new StubPokemonNameResolver("bulbasaur"),
+                cacheStore);
+
+            PokemonInfo? fetchedInfo = await service.GetPokemonInfoAsync("Bulbasaur");
+
+            Assert.NotNull(fetchedInfo);
+            Assert.Equal(1, handler.RequestCount);
+
+            var reloadedCacheStore = new PokemonDataCacheStore(cacheFilePath);
+            var offlineHandler = new CountingPokemonHttpMessageHandler();
+            using var offlineHttpClient = new HttpClient(offlineHandler)
+            {
+                BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+            };
+            var offlineService = new PokeApiPokemonLookupService(
+                offlineHttpClient,
+                new StubPokemonNameResolver("bulbasaur"),
+                reloadedCacheStore);
+
+            PokemonInfo? cachedInfo = await offlineService.GetPokemonInfoAsync("Bulbasaur");
+
+            Assert.NotNull(cachedInfo);
+            Assert.Equal(fetchedInfo.ImageUrl, cachedInfo.ImageUrl);
+            Assert.Equal(fetchedInfo.Types, cachedInfo.Types);
+            Assert.Equal(0, offlineHandler.RequestCount);
+        }
+        finally
+        {
+            DeleteTemporaryCacheFile(cacheFilePath);
+        }
+    }
+
+    private static string CreateTemporaryCacheFilePath()
+    {
+        string directoryPath = Path.Combine(
+            Path.GetTempPath(),
+            "PokeSoulLinkBotTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directoryPath);
+        return Path.Combine(directoryPath, "pokemon-data-cache.json");
+    }
+
+    private static void DeleteTemporaryCacheFile(string cacheFilePath)
+    {
+        string? directoryPath = Path.GetDirectoryName(cacheFilePath);
+        if (!string.IsNullOrWhiteSpace(directoryPath) && Directory.Exists(directoryPath))
+        {
+            Directory.Delete(directoryPath, recursive: true);
+        }
     }
 
     private static HttpResponseMessage CreatePokemonResponse()

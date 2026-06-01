@@ -17,6 +17,7 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
 
     private readonly HttpClient httpClient;
     private readonly IPokemonNameResolver pokemonNameResolver;
+    private readonly PokemonDataCacheStore? pokemonDataCacheStore;
     private readonly ConcurrentDictionary<string, PokemonInfo> pokemonInfoCache =
         new ConcurrentDictionary<string, PokemonInfo>(StringComparer.OrdinalIgnoreCase);
 
@@ -25,15 +26,18 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
     /// </summary>
     /// <param name="httpClient">The HTTP client.</param>
     /// <param name="pokemonNameResolver">The Pokémon name resolver.</param>
+    /// <param name="pokemonDataCacheStore">The optional persistent Pokémon data cache.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
     public PokeApiPokemonLookupService(
         HttpClient httpClient,
-        IPokemonNameResolver pokemonNameResolver)
+        IPokemonNameResolver pokemonNameResolver,
+        PokemonDataCacheStore? pokemonDataCacheStore = null)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         this.pokemonNameResolver = pokemonNameResolver ?? throw new ArgumentNullException(nameof(pokemonNameResolver));
+        this.pokemonDataCacheStore = pokemonDataCacheStore;
     }
 
     /// <inheritdoc />
@@ -57,6 +61,19 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
         {
             Log.Debug("Using cached Pokemon info for '{PokemonName}' resolved as '{ResolvedName}'.", pokemonName, resolvedName);
             return cachedInfo;
+        }
+
+        PokemonInfo? persistedInfo = this.pokemonDataCacheStore is null
+            ? null
+            : await this.pokemonDataCacheStore.GetPokemonInfoAsync(resolvedName);
+        if (persistedInfo is not null)
+        {
+            Log.Debug(
+                "Using persisted Pokemon info for '{PokemonName}' resolved as '{ResolvedName}'.",
+                pokemonName,
+                resolvedName);
+            this.pokemonInfoCache.TryAdd(resolvedName, persistedInfo);
+            return persistedInfo;
         }
 
         var requestUri = $"pokemon/{Uri.EscapeDataString(resolvedName)}";
@@ -121,6 +138,11 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
         };
 
         this.pokemonInfoCache.TryAdd(resolvedName, pokemonInfo);
+        if (this.pokemonDataCacheStore is not null)
+        {
+            await this.pokemonDataCacheStore.SavePokemonInfoAsync(resolvedName, pokemonInfo);
+        }
+
         return pokemonInfo;
     }
 }

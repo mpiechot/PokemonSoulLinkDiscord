@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Dtos;
@@ -16,21 +17,27 @@ public sealed class PokeApiPokedexService : IPokedexService
 
     private readonly HttpClient httpClient;
     private readonly IPokemonNameResolver pokemonNameResolver;
+    private readonly PokemonDataCacheStore? pokemonDataCacheStore;
+    private readonly ConcurrentDictionary<string, PokedexEntry> pokedexEntryCache =
+        new ConcurrentDictionary<string, PokedexEntry>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokedexService"/> class.
     /// </summary>
     /// <param name="httpClient">The HTTP client.</param>
     /// <param name="pokemonNameResolver">The Pokémon name resolver.</param>
+    /// <param name="pokemonDataCacheStore">The optional persistent Pokémon data cache.</param>
     /// <exception cref="ArgumentNullException">
     /// Thrown when one of the parameters is <see langword="null"/>.
     /// </exception>
     public PokeApiPokedexService(
         HttpClient httpClient,
-        IPokemonNameResolver pokemonNameResolver)
+        IPokemonNameResolver pokemonNameResolver,
+        PokemonDataCacheStore? pokemonDataCacheStore = null)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         this.pokemonNameResolver = pokemonNameResolver ?? throw new ArgumentNullException(nameof(pokemonNameResolver));
+        this.pokemonDataCacheStore = pokemonDataCacheStore;
     }
 
     /// <inheritdoc />
@@ -39,6 +46,29 @@ public sealed class PokeApiPokedexService : IPokedexService
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
         var normalizedPokemonName = await this.pokemonNameResolver.ResolvePokemonNameAsync(pokemonName);
+        var cacheKey = NormalizePokemonName(normalizedPokemonName);
+
+        if (this.pokedexEntryCache.TryGetValue(cacheKey, out PokedexEntry? cachedEntry))
+        {
+            Log.Debug(
+                "Using cached Pokedex entry for '{PokemonName}' resolved as '{ResolvedPokemonName}'.",
+                pokemonName,
+                normalizedPokemonName);
+            return cachedEntry;
+        }
+
+        PokedexEntry? persistedEntry = this.pokemonDataCacheStore is null
+            ? null
+            : await this.pokemonDataCacheStore.GetPokedexEntryAsync(cacheKey);
+        if (persistedEntry is not null)
+        {
+            Log.Debug(
+                "Using persisted Pokedex entry for '{PokemonName}' resolved as '{ResolvedPokemonName}'.",
+                pokemonName,
+                normalizedPokemonName);
+            this.pokedexEntryCache.TryAdd(cacheKey, persistedEntry);
+            return persistedEntry;
+        }
 
         var requestedPokemon = await this.GetPokemonAsync(normalizedPokemonName)
             ?? throw CreatePokemonNotFoundException(pokemonName, normalizedPokemonName);
@@ -71,12 +101,20 @@ public sealed class PokeApiPokedexService : IPokedexService
                 normalizedPokemonName);
         }
 
-        return new PokedexEntry
+        var pokedexEntry = new PokedexEntry
         {
             PokemonName = FormatResourceName(requestedPokemon.Name ?? normalizedPokemonName),
             ImageUrl = imageUrl,
             Rows = rows,
         };
+
+        this.pokedexEntryCache.TryAdd(cacheKey, pokedexEntry);
+        if (this.pokemonDataCacheStore is not null)
+        {
+            await this.pokemonDataCacheStore.SavePokedexEntryAsync(cacheKey, pokedexEntry);
+        }
+
+        return pokedexEntry;
     }
 
     private static IReadOnlyList<string> GetFormattedTypes(PokemonDto pokemon)
