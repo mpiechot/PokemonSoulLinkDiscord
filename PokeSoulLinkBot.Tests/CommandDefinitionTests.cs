@@ -16,6 +16,7 @@ public sealed class CommandDefinitionTests
         {
             { new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
+            { new CatchCheckCommand(new StubCatchEligibilityService(), new EmbedFactory()), "catch-check", new[] { "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route", "reason", "player" } },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
             { new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "route-death", new[] { "route", "reason", "player" } },
@@ -134,6 +135,14 @@ public sealed class CommandDefinitionTests
     private sealed class StubPokemonLookupService : IPokemonLookupService
     {
         public Task<PokemonInfo?> GetPokemonInfoAsync(string pokemonName)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class StubCatchEligibilityService : ICatchEligibilityService
+    {
+        public Task<CatchCheckResult> CheckCatchAsync(string guildId, string pokemonName)
         {
             throw new NotSupportedException();
         }
