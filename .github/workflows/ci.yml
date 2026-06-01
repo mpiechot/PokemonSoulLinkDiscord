@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore PokeSoulLinkBot.Tests/PokeSoulLinkBot.Tests.csproj --verbosity minimal
+
+      - name: Build bot
+        run: >
+          dotnet build PokeSoulLinkBot/PokeSoulLinkBot.csproj
+          --no-restore
+          --no-incremental
+          --verbosity minimal
+          -p:UseAppHost=false
+          -p:UseSharedCompilation=false
+          -p:OutputPath=../artifacts/build/PokeSoulLinkBot/
+
+      - name: Test
+        run: >
+          dotnet test PokeSoulLinkBot.Tests/PokeSoulLinkBot.Tests.csproj
+          --no-restore
+          --verbosity minimal
+          -p:UseAppHost=false
+          -p:UseSharedCompilation=false
+          -p:OutputPath=../artifacts/test/PokeSoulLinkBot.Tests/
