@@ -32,10 +32,7 @@ internal static class HttpRequestHelper
         ArgumentNullException.ThrowIfNull(jsonSerializerOptions);
 
         using var response = await GetAsync(httpClient, requestUri);
-        if (!response.IsSuccessStatusCode)
-        {
-            return default;
-        }
+        response.EnsureSuccessStatusCode();
 
         await using var responseStream = await response.Content.ReadAsStreamAsync();
         return await JsonSerializer.DeserializeAsync<T>(responseStream, jsonSerializerOptions);
