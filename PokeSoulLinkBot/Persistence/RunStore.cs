@@ -9,9 +9,17 @@ namespace PokeSoulLinkBot.Infrastructure.Persistence;
 /// </summary>
 public sealed class RunStore : IRunStore
 {
+    private const string BackupFileSuffix = ".bak";
+
     private readonly string filePath;
+    private readonly string backupFilePath;
     private readonly JsonSerializerOptions jsonSerializerOptions;
+    private readonly object stateLock = new object();
+    private readonly object fileLock = new object();
     private readonly List<SoulLinkRun> runs;
+    private long nextSaveVersion;
+    private long persistedSaveVersion;
+    private bool canBackupPrimaryFile;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RunStore"/> class.
@@ -20,6 +28,7 @@ public sealed class RunStore : IRunStore
     public RunStore(string filePath)
     {
         this.filePath = filePath;
+        this.backupFilePath = filePath + BackupFileSuffix;
         this.jsonSerializerOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -31,27 +40,86 @@ public sealed class RunStore : IRunStore
     /// <inheritdoc />
     public SoulLinkRun? GetActiveRun(string guildId)
     {
-        return this.runs.LastOrDefault(run => run.GuildId == guildId && run.EndedAtUtc is null);
+        lock (this.stateLock)
+        {
+            return this.runs.LastOrDefault(run => run.GuildId == guildId && run.EndedAtUtc is null);
+        }
     }
 
     /// <inheritdoc />
     public IReadOnlyList<SoulLinkRun> GetRunsForGuild(string guildId)
     {
-        return this.runs
-            .Where(run => run.GuildId == guildId)
-            .OrderByDescending(run => run.StartedAtUtc)
-            .ToList();
+        lock (this.stateLock)
+        {
+            return this.runs
+                .Where(run => run.GuildId == guildId)
+                .OrderByDescending(run => run.StartedAtUtc)
+                .ToList();
+        }
     }
 
     /// <inheritdoc />
     public void AddRun(SoulLinkRun run)
     {
-        this.runs.Add(run);
-        this.Save();
+        ArgumentNullException.ThrowIfNull(run);
+
+        RunStoreSnapshot snapshot;
+        lock (this.stateLock)
+        {
+            this.runs.Add(run);
+            snapshot = this.CreateSnapshotCore();
+        }
+
+        this.SaveSnapshot(snapshot);
     }
 
     /// <inheritdoc />
     public void Save()
+    {
+        RunStoreSnapshot snapshot = this.CreateSnapshot();
+        this.SaveSnapshot(snapshot);
+    }
+
+    private RunStoreSnapshot CreateSnapshot()
+    {
+        lock (this.stateLock)
+        {
+            return this.CreateSnapshotCore();
+        }
+    }
+
+    private RunStoreSnapshot CreateSnapshotCore()
+    {
+        string json = JsonSerializer.Serialize(this.runs, this.jsonSerializerOptions);
+        return new RunStoreSnapshot(++this.nextSaveVersion, json);
+    }
+
+    private void SaveSnapshot(RunStoreSnapshot snapshot)
+    {
+        lock (this.fileLock)
+        {
+            if (snapshot.Version < this.persistedSaveVersion)
+            {
+                return;
+            }
+
+            string directoryPath = this.EnsureDirectory();
+            string tempFilePath = this.CreateTempFilePath(directoryPath);
+
+            try
+            {
+                this.WriteAllText(tempFilePath, snapshot.Json);
+                this.ReplacePersistedFile(tempFilePath);
+                this.persistedSaveVersion = snapshot.Version;
+            }
+            finally
+            {
+                this.DeleteFileIfExists(tempFilePath);
+            }
+        }
+    }
+
+    private string EnsureDirectory()
     {
         string directoryPath = Path.GetDirectoryName(this.filePath) ?? string.Empty;
 
@@ -60,24 +128,117 @@ public sealed class RunStore : IRunStore
             Directory.CreateDirectory(directoryPath);
         }
 
-        string json = JsonSerializer.Serialize(this.runs, this.jsonSerializerOptions);
-        File.WriteAllText(this.filePath, json);
+        return directoryPath;
+    }
+
+    private string CreateTempFilePath(string directoryPath)
+    {
+        string tempFileName = $"{Path.GetFileName(this.filePath)}.{Guid.NewGuid():N}.tmp";
+
+        return string.IsNullOrWhiteSpace(directoryPath)
+            ? tempFileName
+            : Path.Combine(directoryPath, tempFileName);
+    }
+
+    private void ReplacePersistedFile(string tempFilePath)
+    {
+        if (File.Exists(this.filePath))
+        {
+            if (this.canBackupPrimaryFile)
+            {
+                File.Copy(this.filePath, this.backupFilePath, overwrite: true);
+            }
+
+            File.Move(tempFilePath, this.filePath, overwrite: true);
+            this.canBackupPrimaryFile = true;
+            return;
+        }
+
+        File.Move(tempFilePath, this.filePath);
+        this.canBackupPrimaryFile = true;
     }
 
     private List<SoulLinkRun> LoadRuns()
     {
-        if (!File.Exists(this.filePath))
+        if (this.TryLoadRuns(this.filePath, out List<SoulLinkRun> persistedRuns))
         {
-            return new List<SoulLinkRun>();
+            this.canBackupPrimaryFile = true;
+            return persistedRuns;
         }
 
-        string json = File.ReadAllText(this.filePath);
-
-        if (string.IsNullOrWhiteSpace(json))
+        if (this.TryLoadRuns(this.backupFilePath, out List<SoulLinkRun> backupRuns))
         {
-            return new List<SoulLinkRun>();
+            this.canBackupPrimaryFile = false;
+            return backupRuns;
         }
 
-        return JsonSerializer.Deserialize<List<SoulLinkRun>>(json) ?? new List<SoulLinkRun>();
+        this.canBackupPrimaryFile = false;
+        return new List<SoulLinkRun>();
+    }
+
+    private bool TryLoadRuns(string path, out List<SoulLinkRun> persistedRuns)
+    {
+        persistedRuns = new List<SoulLinkRun>();
+
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            persistedRuns = JsonSerializer.Deserialize<List<SoulLinkRun>>(json) ?? new List<SoulLinkRun>();
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    private void WriteAllText(string path, string content)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.WriteThrough);
+        using var writer = new StreamWriter(stream);
+        writer.Write(content);
+        writer.Flush();
+        stream.Flush(flushToDisk: true);
+    }
+
+    private void DeleteFileIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    private readonly struct RunStoreSnapshot
+    {
+        public RunStoreSnapshot(long version, string json)
+        {
+            this.Version = version;
+            this.Json = json;
+        }
+
+        public long Version { get; }
+
+        public string Json { get; }
     }
 }
