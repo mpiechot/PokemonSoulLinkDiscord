@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Discord;
 using PokeSoulLinkBot.Bot.Helpers;
@@ -11,6 +12,8 @@ namespace PokeSoulLinkBot.Bot.Factories;
 public sealed class EmbedFactory
 {
     private const int DiscordMessageMaxLength = 2000;
+    private const int DiscordEmbedsPerMessageMaxCount = 10;
+    private const int DiscordEmbedsPerMessageMaxCharacters = 6000;
 
     /// <summary>
     /// Creates an embed for a newly started run.
@@ -279,6 +282,27 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates Discord-compatible status embed batches for the active run.
+    /// </summary>
+    /// <param name="run">The active run.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the first embed.</param>
+    /// <returns>The paged status embed batches.</returns>
+    public IReadOnlyList<IReadOnlyList<Embed>> CreateStatusEmbedBatches(SoulLinkRun run, string thumbnailUrl)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
+
+        var embeds = new List<Embed>
+        {
+            this.CreateRunSummaryEmbed("Run Status", run, thumbnailUrl),
+        };
+
+        embeds.AddRange(this.CreateStatusBlocks(run).Select(CreateStatusBlockEmbed));
+
+        return BatchEmbeds(embeds);
+    }
+
+    /// <summary>
     /// Creates the message for a newly selected active team.
     /// </summary>
     /// <param name="run">The active run.</param>
@@ -458,6 +482,57 @@ public sealed class EmbedFactory
         }
 
         return messages;
+    }
+
+    private static IReadOnlyList<IReadOnlyList<Embed>> BatchEmbeds(IReadOnlyList<Embed> embeds)
+    {
+        var batches = new List<IReadOnlyList<Embed>>();
+        var currentBatch = new List<Embed>();
+        var currentBatchLength = 0;
+
+        foreach (var embed in embeds)
+        {
+            var embedLength = EstimateEmbedLength(embed);
+            if (currentBatch.Count > 0
+                && (currentBatch.Count >= DiscordEmbedsPerMessageMaxCount
+                    || currentBatchLength + embedLength > DiscordEmbedsPerMessageMaxCharacters))
+            {
+                batches.Add(currentBatch);
+                currentBatch = new List<Embed>();
+                currentBatchLength = 0;
+            }
+
+            currentBatch.Add(embed);
+            currentBatchLength += embedLength;
+        }
+
+        if (currentBatch.Count > 0)
+        {
+            batches.Add(currentBatch);
+        }
+
+        return batches;
+    }
+
+    private static Embed CreateStatusBlockEmbed(string block)
+    {
+        return new EmbedBuilder()
+            .WithColor(Color.Blue)
+            .WithDescription(block)
+            .Build();
+    }
+
+    private static int EstimateEmbedLength(Embed embed)
+    {
+        var fieldsLength = embed.Fields.Sum(field =>
+        {
+            var fieldValue = Convert.ToString(field.Value, CultureInfo.InvariantCulture);
+            return field.Name.Length + (fieldValue?.Length ?? 0);
+        });
+
+        return (embed.Title?.Length ?? 0)
+            + (embed.Description?.Length ?? 0)
+            + fieldsLength;
     }
 
     private static string JoinBlocks(IReadOnlyList<string> blocks)

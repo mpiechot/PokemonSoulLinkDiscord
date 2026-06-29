@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace PokeSoulLinkBot.Tests;
@@ -75,6 +76,18 @@ public sealed class SlashCommandResponsePatternTests
     }
 
     [Fact]
+    public void StatusCommand_ShouldUseEmbedBatchesForVisualContinuity()
+    {
+        var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "StatusCommand.cs");
+        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
+
+        Assert.Contains("this.embedFactory.CreateStatusEmbedBatches(activeRun, image.AttachmentUrl)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFilesAsync(new[] { image.FileAttachment }, embeds: firstEmbedBatch)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendEmbedsAsync(embedBatch)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("response.SendFollowupsAsync", handleAsyncBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Router_ShouldGuardErrorResponseFailures()
     {
         var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");
@@ -101,10 +114,31 @@ public sealed class SlashCommandResponsePatternTests
         return File.ReadAllText(Path.Combine(new[] { GetRepositoryRoot() }.Concat(pathParts).ToArray()));
     }
 
-    private static string GetRepositoryRoot()
+    private static string GetRepositoryRoot([CallerFilePath] string sourceFilePath = "")
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var sourceFileRoot = FindRepositoryRoot(new FileInfo(sourceFilePath).Directory);
+        if (sourceFileRoot is not null)
+        {
+            return sourceFileRoot;
+        }
 
+        var workingDirectoryRoot = FindRepositoryRoot(new DirectoryInfo(Directory.GetCurrentDirectory()));
+        if (workingDirectoryRoot is not null)
+        {
+            return workingDirectoryRoot;
+        }
+
+        var baseDirectoryRoot = FindRepositoryRoot(new DirectoryInfo(AppContext.BaseDirectory));
+        if (baseDirectoryRoot is not null)
+        {
+            return baseDirectoryRoot;
+        }
+
+        throw new DirectoryNotFoundException("Could not find the repository root.");
+    }
+
+    private static string? FindRepositoryRoot(DirectoryInfo? directory)
+    {
         while (directory is not null)
         {
             if (Directory.Exists(Path.Combine(directory.FullName, "PokeSoulLinkBot"))
@@ -116,7 +150,7 @@ public sealed class SlashCommandResponsePatternTests
             directory = directory.Parent;
         }
 
-        throw new DirectoryNotFoundException("Could not find the repository root.");
+        return null;
     }
 
     private static string ExtractMethodBody(string source, string signature)

@@ -41,6 +41,17 @@ public sealed class DiscordSlashCommandResponse : ISlashCommandResponse
     }
 
     /// <inheritdoc />
+    public Task SendEmbedsAsync(IReadOnlyList<Embed> embeds, bool ephemeral = false)
+    {
+        ArgumentNullException.ThrowIfNull(embeds);
+
+        var embedArray = embeds.ToArray();
+        return this.command.HasResponded
+            ? this.command.FollowupAsync(embeds: embedArray, ephemeral: ephemeral)
+            : this.command.RespondAsync(embeds: embedArray, ephemeral: ephemeral);
+    }
+
+    /// <inheritdoc />
     public Task SendFileAsync(
         FileAttachment fileAttachment,
         string? text = null,
@@ -50,6 +61,22 @@ public sealed class DiscordSlashCommandResponse : ISlashCommandResponse
         return this.command.HasResponded
             ? this.command.FollowupWithFileAsync(fileAttachment, text: text, embed: embed, ephemeral: ephemeral)
             : this.command.RespondWithFileAsync(fileAttachment, text: text, embed: embed, ephemeral: ephemeral);
+    }
+
+    /// <inheritdoc />
+    public Task SendFilesAsync(
+        IEnumerable<FileAttachment> fileAttachments,
+        string? text = null,
+        IReadOnlyList<Embed>? embeds = null,
+        bool ephemeral = false)
+    {
+        ArgumentNullException.ThrowIfNull(fileAttachments);
+
+        var fileAttachmentList = fileAttachments.ToList();
+        var embedArray = embeds?.ToArray() ?? Array.Empty<Embed>();
+        return this.command.HasResponded
+            ? this.command.FollowupWithFilesAsync(fileAttachmentList, text: text, embeds: embedArray, ephemeral: ephemeral)
+            : this.command.RespondWithFilesAsync(fileAttachmentList, text: text, embeds: embedArray, ephemeral: ephemeral);
     }
 
     /// <inheritdoc />

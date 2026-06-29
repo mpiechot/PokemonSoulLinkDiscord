@@ -154,19 +154,106 @@ public sealed class EmbedFactoryStatusTests
         }
     }
 
+    [Fact]
+    public void CreateStatusEmbedBatches_ShouldKeepTypicalStatusInOneDiscordMessage()
+    {
+        var run = CreateRunWithPlayers("marpie1", "beneerdbeermarmelade", "darkstyle4957");
+        for (var routeIndex = 1; routeIndex <= 18; routeIndex++)
+        {
+            var linkGroup = CreateLinkGroup($"route-{routeIndex:000}", routeIndex <= 12, $"Pokemon-{routeIndex:000}");
+            foreach (var player in run.Players.Skip(1))
+            {
+                linkGroup.Entries.Add(new LinkedPokemon
+                {
+                    PlayerUserId = player.UserId,
+                    PlayerName = player.UserName,
+                    PokemonName = $"Pokemon-{player.UserId}-{routeIndex:000}",
+                    IsAlive = routeIndex <= 12,
+                });
+            }
+
+            run.LinkGroups.Add(linkGroup);
+            if (routeIndex <= 6)
+            {
+                run.ActiveLinks[routeIndex - 1] = linkGroup;
+            }
+        }
+
+        var embedFactory = new EmbedFactory();
+
+        var batches = embedFactory.CreateStatusEmbedBatches(run, "attachment://status.png");
+
+        var batch = Assert.Single(batches);
+        Assert.InRange(batch.Count, 1, 10);
+        Assert.Contains(batch, embed => embed.Title == "Run Status");
+        Assert.Contains(batch, embed => embed.Description?.Contains("**Current Team**", StringComparison.Ordinal) == true);
+        Assert.Contains(batch, embed => embed.Description?.Contains("**Box**", StringComparison.Ordinal) == true);
+        Assert.Contains(batch, embed => embed.Description?.Contains("**Dead**", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void CreateStatusEmbedBatches_ShouldRespectDiscordEmbedBatchLimits()
+    {
+        var run = CreateRun();
+        for (var routeIndex = 1; routeIndex <= 180; routeIndex++)
+        {
+            run.LinkGroups.Add(CreateLinkGroup($"route-{routeIndex:000}", true, $"Pokemon-{routeIndex:000}"));
+        }
+
+        var embedFactory = new EmbedFactory();
+
+        var batches = embedFactory.CreateStatusEmbedBatches(run, "attachment://status.png");
+        var fullDescriptions = string.Join(
+            Environment.NewLine,
+            batches.SelectMany(batch => batch).Select(embed => embed.Description));
+
+        Assert.All(batches, batch => Assert.InRange(batch.Count, 1, 10));
+        Assert.All(batches, batch => Assert.InRange(GetEmbedBatchLength(batch), 1, 6000));
+        for (var routeIndex = 1; routeIndex <= 180; routeIndex++)
+        {
+            Assert.Contains($"route-{routeIndex:000}", fullDescriptions, StringComparison.Ordinal);
+        }
+    }
+
     private static SoulLinkRun CreateRun()
     {
-        return new SoulLinkRun
+        return CreateRunWithPlayers("marpie1");
+    }
+
+    private static SoulLinkRun CreateRunWithPlayers(params string[] playerNames)
+    {
+        var run = new SoulLinkRun
         {
             GuildId = "guild-1",
             Name = "Ruby",
             Game = "ruby",
             StartedAtUtc = DateTime.UtcNow,
-            Players = new List<RunPlayer>
-            {
-                new RunPlayer { UserId = 1, UserName = "marpie1" },
-            },
         };
+
+        for (var playerIndex = 0; playerIndex < playerNames.Length; playerIndex++)
+        {
+            run.Players.Add(new RunPlayer
+            {
+                UserId = (ulong)(playerIndex + 1),
+                UserName = playerNames[playerIndex],
+            });
+        }
+
+        return run;
+    }
+
+    private static int GetEmbedBatchLength(IReadOnlyCollection<Discord.Embed> embeds)
+    {
+        return embeds.Sum(embed =>
+            (embed.Title?.Length ?? 0)
+            + (embed.Description?.Length ?? 0)
+            + embed.Fields.Sum(GetEmbedFieldLength));
+    }
+
+    private static int GetEmbedFieldLength(Discord.EmbedField field)
+    {
+        var fieldValue = Convert.ToString(field.Value);
+        return field.Name.Length + (fieldValue?.Length ?? 0);
     }
 
     private static LinkGroup CreateLinkGroup(string route, bool isAlive, string pokemonName)

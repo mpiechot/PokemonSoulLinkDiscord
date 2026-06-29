@@ -33,6 +33,14 @@ public interface ISlashCommandResponse
     Task SendAsync(string? text = null, Embed? embed = null, bool ephemeral = false);
 
     /// <summary>
+    /// Sends an embed response.
+    /// </summary>
+    /// <param name="embeds">The embeds to send in one Discord message.</param>
+    /// <param name="ephemeral">A value indicating whether the response should be visible only to the caller.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    Task SendEmbedsAsync(IReadOnlyList<Embed> embeds, bool ephemeral = false);
+
+    /// <summary>
     /// Sends a file response.
     /// </summary>
     /// <param name="fileAttachment">The file attachment.</param>
@@ -41,6 +49,20 @@ public interface ISlashCommandResponse
     /// <param name="ephemeral">A value indicating whether the response should be visible only to the caller.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
     Task SendFileAsync(FileAttachment fileAttachment, string? text = null, Embed? embed = null, bool ephemeral = false);
+
+    /// <summary>
+    /// Sends a file response with multiple embeds.
+    /// </summary>
+    /// <param name="fileAttachments">The file attachments.</param>
+    /// <param name="text">The response text.</param>
+    /// <param name="embeds">The embeds to send in one Discord message.</param>
+    /// <param name="ephemeral">A value indicating whether the response should be visible only to the caller.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    Task SendFilesAsync(
+        IEnumerable<FileAttachment> fileAttachments,
+        string? text = null,
+        IReadOnlyList<Embed>? embeds = null,
+        bool ephemeral = false);
 
     /// <summary>
     /// Sends supplemental followup messages.
