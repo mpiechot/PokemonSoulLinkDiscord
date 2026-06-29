@@ -76,15 +76,16 @@ public sealed class SlashCommandResponsePatternTests
     }
 
     [Fact]
-    public void StatusCommand_ShouldUseEmbedBatchesForVisualContinuity()
+    public void StatusCommand_ShouldUsePagedFullWidthStatusMessages()
     {
         var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "StatusCommand.cs");
         var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
 
-        Assert.Contains("this.embedFactory.CreateStatusEmbedBatches(activeRun, image.AttachmentUrl)", handleAsyncBody, StringComparison.Ordinal);
-        Assert.Contains("response.SendFilesAsync(new[] { image.FileAttachment }, embeds: firstEmbedBatch)", handleAsyncBody, StringComparison.Ordinal);
-        Assert.Contains("response.SendEmbedsAsync(embedBatch)", handleAsyncBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("response.SendFollowupsAsync", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("this.embedFactory.CreateStatusMessages(activeRun)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFileAsync(image.FileAttachment, text: messages[0], embed: embed)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFollowupsAsync(messages.Skip(1))", handleAsyncBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateStatusEmbedBatches", handleAsyncBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendEmbedsAsync", handleAsyncBody, StringComparison.Ordinal);
     }
 
     [Fact]
