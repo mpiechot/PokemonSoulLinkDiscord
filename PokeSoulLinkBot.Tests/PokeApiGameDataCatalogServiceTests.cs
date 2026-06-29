@@ -82,6 +82,110 @@ public sealed class PokeApiGameDataCatalogServiceTests
         Assert.Contains(editions, edition => edition.Name == "ruby" && edition.DisplayName == "Ruby");
     }
 
+    [Fact]
+    public async Task GetEditionsAsync_ShouldUseFallbackCatalogWhenCacheIsMissing()
+    {
+        var cacheFilePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "game-data-catalog.json");
+        var fallbackFilePath = CreateCacheFile(new GameDataCatalog
+        {
+            RefreshedAtUtc = DateTime.UtcNow,
+            Editions =
+            [
+                new GameEditionInfo
+                {
+                    Name = "sapphire",
+                    DisplayName = "Sapphire",
+                    Routes = ["Route 101"],
+                },
+            ],
+        });
+        using var httpClient = new HttpClient(new FailingHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiGameDataCatalogService(httpClient, cacheFilePath, fallbackFilePath);
+
+        var editions = await service.GetEditionsAsync();
+
+        var edition = Assert.Single(editions);
+        Assert.Equal("sapphire", edition.Name);
+        Assert.Equal(["Route 101"], edition.Routes);
+    }
+
+    [Fact]
+    public async Task GetEditionsAsync_ShouldDiscardEmptyCacheAndUseFallbackCatalog()
+    {
+        var cacheFilePath = CreateCacheFile(new GameDataCatalog
+        {
+            RefreshedAtUtc = DateTime.UtcNow,
+            Editions = [],
+        });
+        var fallbackFilePath = CreateCacheFile(new GameDataCatalog
+        {
+            RefreshedAtUtc = DateTime.UtcNow,
+            Editions =
+            [
+                new GameEditionInfo
+                {
+                    Name = "emerald",
+                    DisplayName = "Emerald",
+                    Routes = ["Route 102"],
+                },
+            ],
+        });
+        using var httpClient = new HttpClient(new FailingHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiGameDataCatalogService(httpClient, cacheFilePath, fallbackFilePath);
+
+        var editions = await service.GetEditionsAsync();
+
+        var edition = Assert.Single(editions);
+        Assert.Equal("emerald", edition.Name);
+    }
+
+    [Fact]
+    public async Task GetEditionsAsync_ShouldDiscardIncompatibleCacheAndUseFallbackCatalog()
+    {
+        var cacheFilePath = CreateCacheFile(new GameDataCatalog
+        {
+            SchemaVersion = 999,
+            RefreshedAtUtc = DateTime.UtcNow,
+            Editions =
+            [
+                new GameEditionInfo
+                {
+                    Name = "ruby",
+                    DisplayName = "Ruby",
+                },
+            ],
+        });
+        var fallbackFilePath = CreateCacheFile(new GameDataCatalog
+        {
+            RefreshedAtUtc = DateTime.UtcNow,
+            Editions =
+            [
+                new GameEditionInfo
+                {
+                    Name = "diamond",
+                    DisplayName = "Diamond",
+                    Routes = ["Route 201"],
+                },
+            ],
+        });
+        using var httpClient = new HttpClient(new FailingHttpMessageHandler())
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiGameDataCatalogService(httpClient, cacheFilePath, fallbackFilePath);
+
+        var editions = await service.GetEditionsAsync();
+
+        var edition = Assert.Single(editions);
+        Assert.Equal("diamond", edition.Name);
+    }
+
     [Theory]
     [InlineData("Ruby")]
     [InlineData("ruby")]
@@ -127,6 +231,7 @@ public sealed class PokeApiGameDataCatalogServiceTests
 
         Assert.True(handler.MaxConcurrentDetailRequests > 1);
         var ruby = Assert.Single(catalog.Editions, edition => edition.Name == "ruby");
+        Assert.Equal(1, catalog.SchemaVersion);
         Assert.Equal(["Route A", "Route B", "Route C"], ruby.Routes);
     }
 
@@ -336,10 +441,10 @@ public sealed class PokeApiGameDataCatalogServiceTests
         private int maxConcurrentDetailRequests;
 
         public TaskCompletionSource AllDetailRequestsStarted { get; } =
-            new (TaskCreationOptions.RunContinuationsAsynchronously);
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public TaskCompletionSource ReleaseDetailRequests { get; } =
-            new (TaskCreationOptions.RunContinuationsAsynchronously);
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int MaxConcurrentDetailRequests => this.maxConcurrentDetailRequests;
 

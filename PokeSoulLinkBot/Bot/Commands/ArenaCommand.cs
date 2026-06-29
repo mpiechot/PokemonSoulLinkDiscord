@@ -55,9 +55,10 @@ public sealed class ArenaCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
         var edition = CommandOptionHelper.GetOptionalStringOption(command, "edition")?.Trim()
@@ -75,7 +76,7 @@ public sealed class ArenaCommand : ISlashCommand
             arenaInfo.Levels,
             image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
+        await response.SendFileAsync(image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

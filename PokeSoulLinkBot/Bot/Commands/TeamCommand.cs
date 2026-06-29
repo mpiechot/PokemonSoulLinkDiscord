@@ -43,16 +43,17 @@ public class TeamCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
         var activeRun = this.runService.GetActiveRun(guildId);
         var messages = this.embedFactory.CreateTeamMessages(activeRun);
-        await SlashCommandResponse.SendAsync(command, messages[0]);
+        await response.SendAsync(messages[0]);
 
-        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
+        await response.SendFollowupsAsync(messages.Skip(1));
     }
 }

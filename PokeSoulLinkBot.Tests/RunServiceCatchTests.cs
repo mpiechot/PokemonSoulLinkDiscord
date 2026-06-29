@@ -11,6 +11,51 @@ public sealed class RunServiceCatchTests
     private const string GuildId = "guild-1";
 
     [Fact]
+    public void StartRun_ShouldRejectEmptyPlayers()
+    {
+        var service = new RunService(new InMemoryRunStore());
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            service.StartRun(GuildId, "Ruby", "ruby", Array.Empty<RunPlayer>()));
+
+        Assert.Equal("At least one player must be provided. (Parameter 'players')", exception.Message);
+    }
+
+    [Fact]
+    public void StartRun_ShouldRejectDuplicateActiveRunForSameGuild()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.StartRun(GuildId, "Sapphire", "sapphire", CreatePlayers()));
+
+        Assert.Equal("An active run already exists for this guild.", exception.Message);
+    }
+
+    [Fact]
+    public void StartRun_ShouldAllowSeparateGuilds()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var secondRun = service.StartRun("guild-2", "Sapphire", "sapphire", CreatePlayers());
+
+        Assert.Equal("guild-2", secondRun.GuildId);
+        Assert.Equal("Sapphire", secondRun.Name);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void StartRun_ShouldRejectBlankRequiredText(string value)
+    {
+        var service = new RunService(new InMemoryRunStore());
+
+        Assert.Throws<ArgumentException>(() => service.StartRun(value, "Ruby", "ruby", CreatePlayers()));
+        Assert.Throws<ArgumentException>(() => service.StartRun(GuildId, value, "ruby", CreatePlayers()));
+        Assert.Throws<ArgumentException>(() => service.StartRun(GuildId, "Ruby", value, CreatePlayers()));
+    }
+
+    [Fact]
     public void RegisterCatch_ShouldCreateLinkGroupWithPokemonTypes()
     {
         var store = new InMemoryRunStore();
@@ -32,6 +77,22 @@ public sealed class RunServiceCatchTests
         Assert.Equal(new[] { "grass", "poison" }, entry.Types);
         Assert.True(entry.IsAlive);
         Assert.True(store.SaveCount > 0);
+    }
+
+    [Fact]
+    public void RegisterCatch_ShouldNormalizeRoute()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var linkGroup = service.RegisterCatch(
+            GuildId,
+            "  Route 101  ",
+            1,
+            "marpie1",
+            "Bisasam",
+            Array.Empty<string>());
+
+        Assert.Equal("route 101", linkGroup.Route);
     }
 
     [Fact]
@@ -219,6 +280,22 @@ public sealed class RunServiceCatchTests
     }
 
     [Fact]
+    public void RegisterCatch_ShouldKeepNewRouteInBoxWhenTeamIsFull()
+    {
+        var service = CreateServiceWithStartedRun();
+        for (var route = 101; route <= 107; route++)
+        {
+            service.RegisterCatch(GuildId, route.ToString(), 1, "marpie1", $"Pokemon {route}", Array.Empty<string>());
+        }
+
+        var activeRun = service.GetActiveRun(GuildId);
+
+        Assert.Equal(6, activeRun.ActiveLinks.Count(linkGroup => linkGroup is not null));
+        Assert.DoesNotContain(activeRun.ActiveLinks, linkGroup => linkGroup?.Route == "107");
+        Assert.Contains(activeRun.LinkGroups, linkGroup => linkGroup.Route == "107");
+    }
+
+    [Fact]
     public void CatchFlow_ShouldAddFirstCatchToEmptyTeamInMemory()
     {
         var store = new InMemoryRunStore();
@@ -358,6 +435,35 @@ public sealed class RunServiceCatchTests
         var exception = Assert.Throws<InvalidOperationException>(() => service.SwapRoute(GuildId, "101", "102"));
 
         Assert.Equal("Route '102' is already in the current team.", exception.Message);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldTrimReasonAndPlayerName()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var linkGroup = service.MarkRouteLost(GuildId, "101", "  Encounter fled.  ", 1, "  marpie1  ");
+
+        Assert.Equal("Encounter fled.", linkGroup.LossReason);
+        Assert.Equal("marpie1", linkGroup.FailedEncounterPlayerName);
+    }
+
+    [Fact]
+    public void MarkRouteLost_ShouldRemoveRouteFromActiveTeam()
+    {
+        var service = CreateServiceWithStartedRun();
+        var activeRun = service.GetActiveRun(GuildId);
+        var linkGroup = new LinkGroup
+        {
+            Id = Guid.NewGuid(),
+            Route = "101",
+        };
+        activeRun.LinkGroups.Add(linkGroup);
+        activeRun.ActiveLinks[0] = linkGroup;
+
+        service.MarkRouteLost(GuildId, "101", "Encounter fled.", null, null);
+
+        Assert.Null(activeRun.ActiveLinks[0]);
     }
 
     private static RunService CreateServiceWithStartedRun()

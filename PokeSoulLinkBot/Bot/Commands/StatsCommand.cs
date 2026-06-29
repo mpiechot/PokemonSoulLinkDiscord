@@ -48,9 +48,10 @@ public class StatsCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
         var runs = this.runService.GetRuns(guildId);
@@ -58,13 +59,13 @@ public class StatsCommand : ISlashCommand
         if (runs.Count == 0)
         {
             var emptyEmbed = this.embedFactory.CreateErrorEmbed("No runs stored yet.");
-            await SlashCommandResponse.SendAsync(command, embed: emptyEmbed, ephemeral: true);
+            await response.SendAsync(embed: emptyEmbed, ephemeral: true);
             return;
         }
 
         var image = this.embedImageFactory.CreateStatsImage();
         var embed = this.embedFactory.CreateStatsEmbed(runs, image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
+        await response.SendFileAsync(image.FileAttachment, embed: embed);
     }
 }

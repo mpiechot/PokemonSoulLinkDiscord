@@ -55,9 +55,10 @@ public class StatusCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
@@ -67,9 +68,9 @@ public class StatusCommand : ISlashCommand
         var messages = this.embedFactory.CreateStatusMessages(activeRun);
         var image = this.embedImageFactory.CreateStatusImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Run Status", activeRun, image.AttachmentUrl);
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
+        await response.SendFileAsync(image.FileAttachment, text: messages[0], embed: embed);
 
-        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
+        await response.SendFollowupsAsync(messages.Skip(1));
     }
 
     private async Task EnrichMissingPokemonTypesAsync(SoulLinkRun run)

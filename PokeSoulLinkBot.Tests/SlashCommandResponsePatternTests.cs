@@ -9,16 +9,16 @@ public sealed class SlashCommandResponsePatternTests
     {
         var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");
 
-        var deferIndex = routerSource.IndexOf("await command.DeferAsync();", StringComparison.Ordinal);
-        var handleIndex = routerSource.IndexOf("await slashCommand.HandleAsync(command);", StringComparison.Ordinal);
+        var deferIndex = routerSource.IndexOf("await response.DeferAsync();", StringComparison.Ordinal);
+        var handleIndex = routerSource.IndexOf("await slashCommand.HandleAsync(command, response);", StringComparison.Ordinal);
 
-        Assert.True(deferIndex >= 0, "SlashCommandRouter must acknowledge known slash commands with DeferAsync.");
+        Assert.True(deferIndex >= 0, "SlashCommandRouter must acknowledge known slash commands through the response adapter.");
         Assert.True(handleIndex >= 0, "SlashCommandRouter must execute the selected slash command handler.");
         Assert.True(deferIndex < handleIndex, "SlashCommandRouter must defer before command handlers can call slow services.");
     }
 
     [Fact]
-    public void SlashCommandHandlers_ShouldUseCentralResponseHelperForInitialResponses()
+    public void SlashCommandHandlers_ShouldUseResponseAdapterForInitialResponses()
     {
         var commandsDirectory = Path.Combine(GetRepositoryRoot(), "PokeSoulLinkBot", "Bot", "Commands");
         var commandFiles = Directory.GetFiles(commandsDirectory, "*Command.cs")
@@ -28,7 +28,7 @@ public sealed class SlashCommandResponsePatternTests
         foreach (var commandFile in commandFiles)
         {
             var source = File.ReadAllText(commandFile);
-            var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command)");
+            var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
 
             if (handleAsyncBody.Contains(".RespondAsync(", StringComparison.Ordinal)
                 || handleAsyncBody.Contains(".RespondWithFileAsync(", StringComparison.Ordinal))
@@ -41,7 +41,7 @@ public sealed class SlashCommandResponsePatternTests
     }
 
     [Fact]
-    public void SlashCommandHandlers_ShouldUseCentralResponseHelperForFollowupResponses()
+    public void SlashCommandHandlers_ShouldUseResponseAdapterForFollowupResponses()
     {
         var commandsDirectory = Path.Combine(GetRepositoryRoot(), "PokeSoulLinkBot", "Bot", "Commands");
         var commandFiles = Directory.GetFiles(commandsDirectory, "*Command.cs")
@@ -51,7 +51,7 @@ public sealed class SlashCommandResponsePatternTests
         foreach (var commandFile in commandFiles)
         {
             var source = File.ReadAllText(commandFile);
-            var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command)");
+            var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
 
             if (handleAsyncBody.Contains(".FollowupAsync(", StringComparison.Ordinal)
                 || handleAsyncBody.Contains(".FollowupWithFileAsync(", StringComparison.Ordinal))
@@ -67,10 +67,10 @@ public sealed class SlashCommandResponsePatternTests
     public void CatchCommand_ShouldUsePagedStatusFollowups()
     {
         var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "CatchCommand.cs");
-        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command)");
+        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
 
         Assert.Contains("this.embedFactory.CreateStatusMessages(activeRun)", handleAsyncBody, StringComparison.Ordinal);
-        Assert.Contains("SlashCommandResponse.SendFollowupsAsync(command, statusMessages)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFollowupsAsync(statusMessages)", handleAsyncBody, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateStatusMessage(activeRun)", handleAsyncBody, StringComparison.Ordinal);
     }
 
@@ -79,8 +79,21 @@ public sealed class SlashCommandResponsePatternTests
     {
         var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");
 
-        Assert.Contains("TrySendErrorResponseAsync(command, errorEmbed, exception)", routerSource, StringComparison.Ordinal);
+        Assert.Contains("TrySendErrorResponseAsync(response, errorEmbed, exception)", routerSource, StringComparison.Ordinal);
         Assert.Contains("Could not send error response for slash command", routerSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Router_ShouldLogStableTelemetryEventNames()
+    {
+        var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");
+
+        Assert.Contains("\"SlashCommandStarted\"", routerSource, StringComparison.Ordinal);
+        Assert.Contains("\"SlashCommandCompleted\"", routerSource, StringComparison.Ordinal);
+        Assert.Contains("\"SlashCommandFailed\"", routerSource, StringComparison.Ordinal);
+        Assert.Contains("\"AutocompleteStarted\"", routerSource, StringComparison.Ordinal);
+        Assert.Contains("\"AutocompleteCompleted\"", routerSource, StringComparison.Ordinal);
+        Assert.Contains("\"AutocompleteFailed\"", routerSource, StringComparison.Ordinal);
     }
 
     private static string ReadSourceFile(params string[] pathParts)

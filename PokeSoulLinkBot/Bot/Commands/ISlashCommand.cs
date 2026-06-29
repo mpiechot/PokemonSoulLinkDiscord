@@ -1,5 +1,6 @@
 using Discord;
 using Discord.WebSocket;
+using PokeSoulLinkBot.Bot.Helpers;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -23,8 +24,9 @@ public interface ISlashCommand
     /// Executes the slash command.
     /// </summary>
     /// <param name="command">The incoming slash command.</param>
+    /// <param name="response">The response adapter for this command.</param>
     /// <returns>A task that represents the asynchronous operation.</returns>
-    Task HandleAsync(SocketSlashCommand command);
+    Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response);
 
     /// <summary>
     /// Handles autocomplete interactions for this slash command.

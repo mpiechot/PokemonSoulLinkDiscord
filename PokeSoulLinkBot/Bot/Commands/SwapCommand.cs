@@ -50,9 +50,10 @@ public sealed class SwapCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
         var teamRoute = CommandOptionHelper.GetRequiredStringOption(command, "team-route").ToLowerInvariant().Trim();
@@ -63,8 +64,8 @@ public sealed class SwapCommand : ISlashCommand
         var image = this.embedImageFactory.CreateSwapImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Team Swapped", activeRun, image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
-        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
+        await response.SendFileAsync(image.FileAttachment, text: messages[0], embed: embed);
+        await response.SendFollowupsAsync(messages.Skip(1));
     }
 
     /// <inheritdoc />
