@@ -295,6 +295,52 @@ public sealed class RunService : IRunService
     }
 
     /// <inheritdoc />
+    public CompletedArena CompleteArena(
+        string guildId,
+        int arenaNumber,
+        string edition,
+        string leaderName,
+        string location)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(edition);
+        ArgumentException.ThrowIfNullOrWhiteSpace(leaderName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(location);
+
+        if (arenaNumber is < 1 or > 8)
+        {
+            throw new InvalidOperationException($"Arena '{arenaNumber}' ist ungültig. Bitte wähle eine Arena zwischen 1 und 8.");
+        }
+
+        lock (this.operationLock)
+        {
+            SoulLinkRun activeRun = this.GetActiveRun(guildId);
+            var normalizedEdition = this.NormalizeEdition(edition);
+
+            if (activeRun.CompletedArenas.Any(arena =>
+                arena.ArenaNumber == arenaNumber &&
+                string.Equals(this.NormalizeEdition(arena.Edition), normalizedEdition, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($"Arena {arenaNumber} für '{edition.Trim()}' wurde bereits als erledigt markiert.");
+            }
+
+            var completedArena = new CompletedArena
+            {
+                ArenaNumber = arenaNumber,
+                Edition = edition.Trim(),
+                LeaderName = leaderName.Trim(),
+                Location = location.Trim(),
+                CompletedAtUtc = DateTime.UtcNow,
+            };
+
+            activeRun.CompletedArenas.Add(completedArena);
+            this.runStore.Save();
+
+            return completedArena;
+        }
+    }
+
+    /// <inheritdoc />
     public SoulLinkRun GetActiveRun(string guildId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
@@ -367,5 +413,12 @@ public sealed class RunService : IRunService
         ArgumentException.ThrowIfNullOrWhiteSpace(route);
 
         return route.ToLowerInvariant().Trim();
+    }
+
+    private string NormalizeEdition(string edition)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(edition);
+
+        return edition.ToLowerInvariant().Trim();
     }
 }

@@ -15,6 +15,7 @@ public sealed class CommandDefinitionTests
         new()
         {
             { new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
+            { new ArenaCompleteCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena-complete", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
             { new CatchCheckCommand(new StubCatchEligibilityService(), new EmbedFactory()), "catch-check", new[] { "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route", "reason", "player" } },
@@ -52,6 +53,21 @@ public sealed class CommandDefinitionTests
     public void ArenaCommandDefinition_ShouldEnableAutocompleteForEditionOption()
     {
         var command = new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService());
+
+        var definition = command.BuildDefinition();
+
+        var slashDefinition = Assert.IsType<SlashCommandProperties>(definition);
+        var editionOption = Assert.Single(
+            slashDefinition.Options.Value,
+            option => option.Name == "edition");
+
+        Assert.True(editionOption.IsAutocomplete);
+    }
+
+    [Fact]
+    public void ArenaCompleteCommandDefinition_ShouldEnableAutocompleteForEditionOption()
+    {
+        var command = new ArenaCompleteCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService());
 
         var definition = command.BuildDefinition();
 
@@ -156,6 +172,16 @@ public sealed class CommandDefinitionTests
             string reason,
             ulong? playerId,
             string? playerName)
+        {
+            throw new NotSupportedException();
+        }
+
+        public CompletedArena CompleteArena(
+            string guildId,
+            int arenaNumber,
+            string edition,
+            string leaderName,
+            string location)
         {
             throw new NotSupportedException();
         }

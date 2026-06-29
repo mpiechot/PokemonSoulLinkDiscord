@@ -254,6 +254,7 @@ public sealed class EmbedFactory
             .WithColor(Color.Blue)
             .AddField("Run", run.Name, true)
             .AddField("Edition", run.Game, true)
+            .AddField("Arenas", $"{run.CompletedArenas.Count}/8", true)
             .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
@@ -359,6 +360,7 @@ public sealed class EmbedFactory
     /// <param name="location">The arena location.</param>
     /// <param name="levels">The Pokémon levels in the arena.</param>
     /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
+    /// <param name="isCompleted">A value indicating whether the arena is already completed in the active run.</param>
     /// <returns>The created embed.</returns>
     public Embed CreateArenaInfoEmbed(
         string edition,
@@ -366,7 +368,8 @@ public sealed class EmbedFactory
         string leaderName,
         string location,
         IReadOnlyCollection<int> levels,
-        string thumbnailUrl)
+        string thumbnailUrl,
+        bool isCompleted = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(edition);
         ArgumentException.ThrowIfNullOrWhiteSpace(leaderName);
@@ -382,6 +385,33 @@ public sealed class EmbedFactory
             .AddField("Leader", leaderName, true)
             .AddField("Location", location, true)
             .AddField("Pokemon Levels", string.Join(", ", levels), true)
+            .AddField("Progress", isCompleted ? "Completed" : "Open", true)
+            .WithThumbnailUrl(thumbnailUrl)
+            .Build();
+    }
+
+    /// <summary>
+    /// Creates an embed for a completed arena.
+    /// </summary>
+    /// <param name="completedArena">The completed arena.</param>
+    /// <param name="run">The active run.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the thumbnail shown in the embed.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateArenaCompletedEmbed(CompletedArena completedArena, SoulLinkRun run, string thumbnailUrl)
+    {
+        ArgumentNullException.ThrowIfNull(completedArena);
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
+
+        return new EmbedBuilder()
+            .WithTitle("Arena Completed")
+            .WithColor(Color.Green)
+            .WithDescription($"Arena **{completedArena.ArenaNumber}** has been marked as completed.")
+            .AddField("Run", run.Name, true)
+            .AddField("Edition", completedArena.Edition, true)
+            .AddField("Leader", completedArena.LeaderName, true)
+            .AddField("Location", completedArena.Location, true)
+            .AddField("Progress", $"{run.CompletedArenas.Count}/8", true)
             .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
@@ -416,6 +446,9 @@ public sealed class EmbedFactory
         var teamAndBoxSummary = activeRun is null
             ? "No run data."
             : CreateTeamAndBoxSummary(activeRun);
+        var arenaProgressSummary = activeRun is null
+            ? "No active run."
+            : CreateArenaProgressSummary(activeRun);
 
         return new EmbedBuilder()
             .WithTitle("Run Statistics")
@@ -426,6 +459,7 @@ public sealed class EmbedFactory
                 $"Caught: {caughtRoutes}{Environment.NewLine}Alive: {livingRoutes}{Environment.NewLine}Dead: {deadRoutes}{Environment.NewLine}Lost: {lostRoutes}",
                 true)
             .AddField("Team / Box", teamAndBoxSummary, true)
+            .AddField("Arena Progress", arenaProgressSummary, true)
             .AddField("Deaths by Reason", CreateDeathReasonSummary(deadEntries))
             .AddField("Player Stats", CreatePlayerStatsSummary(runs))
             .AddField("Death Log", CreateDeathLogSummary(runs))
@@ -563,6 +597,22 @@ public sealed class EmbedFactory
         var boxSize = run.LinkGroups.Count(group => group.IsAlive && !activeTeamRoutes.Contains(group.Route));
 
         return $"Run: {run.Name}{Environment.NewLine}Team: {teamSize}/6{Environment.NewLine}Box: {boxSize}";
+    }
+
+    private static string CreateArenaProgressSummary(SoulLinkRun run)
+    {
+        if (run.CompletedArenas.Count == 0)
+        {
+            return "Completed: 0/8";
+        }
+
+        var latestArena = run.CompletedArenas
+            .OrderByDescending(arena => arena.CompletedAtUtc)
+            .First();
+
+        return TruncateFieldValue(
+            $"Completed: {run.CompletedArenas.Count}/8{Environment.NewLine}" +
+            $"Latest: #{latestArena.ArenaNumber} {latestArena.LeaderName} ({latestArena.Location})");
     }
 
     private static string CreateDeathReasonSummary(IReadOnlyCollection<LinkedPokemon> deadEntries)

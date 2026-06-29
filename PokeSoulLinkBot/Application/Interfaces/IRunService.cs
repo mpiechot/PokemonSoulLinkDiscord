@@ -94,6 +94,22 @@ public interface IRunService
         string? playerName);
 
     /// <summary>
+    /// Marks an arena as completed for the active run.
+    /// </summary>
+    /// <param name="guildId">The Discord guild identifier.</param>
+    /// <param name="arenaNumber">The arena number.</param>
+    /// <param name="edition">The game edition used for the arena data.</param>
+    /// <param name="leaderName">The arena leader name.</param>
+    /// <param name="location">The arena location.</param>
+    /// <returns>The completed arena entry.</returns>
+    CompletedArena CompleteArena(
+        string guildId,
+        int arenaNumber,
+        string edition,
+        string leaderName,
+        string location);
+
+    /// <summary>
     /// Gets the currently active run for the specified guild.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>

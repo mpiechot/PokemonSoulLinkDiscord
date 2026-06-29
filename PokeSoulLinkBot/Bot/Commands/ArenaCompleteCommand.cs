@@ -8,9 +8,9 @@ using Serilog;
 namespace PokeSoulLinkBot.Bot.Commands;
 
 /// <summary>
-/// Handles the "arena" slash command.
+/// Handles the "arena-complete" slash command.
 /// </summary>
-public sealed class ArenaCommand : ISlashCommand
+public sealed class ArenaCompleteCommand : ISlashCommand
 {
     private readonly IArenaInfoService arenaInfoService;
     private readonly EmbedFactory embedFactory;
@@ -19,14 +19,14 @@ public sealed class ArenaCommand : ISlashCommand
     private readonly IRunService runService;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ArenaCommand"/> class.
+    /// Initializes a new instance of the <see cref="ArenaCompleteCommand"/> class.
     /// </summary>
     /// <param name="arenaInfoService">The arena info service.</param>
     /// <param name="embedFactory">The embed factory.</param>
     /// <param name="embedImageFactory">The embed image factory.</param>
     /// <param name="gameDataCatalogService">The game data catalog service.</param>
     /// <param name="runService">The run service.</param>
-    public ArenaCommand(
+    public ArenaCompleteCommand(
         IArenaInfoService arenaInfoService,
         EmbedFactory embedFactory,
         EmbedImageFactory embedImageFactory,
@@ -41,14 +41,14 @@ public sealed class ArenaCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public string CommandName => "arena";
+    public string CommandName => "arena-complete";
 
     /// <inheritdoc />
     public ApplicationCommandProperties BuildDefinition()
     {
         return new SlashCommandBuilder()
             .WithName(this.CommandName)
-            .WithDescription("Zeigt die Level der Pokémon in einer Arena.")
+            .WithDescription("Markiert eine Arena im aktuellen Run als erledigt.")
             .AddOption("number", ApplicationCommandOptionType.Integer, "Die Arena-Nummer (1-8).", isRequired: true)
             .AddOption("edition", ApplicationCommandOptionType.String, "Die Edition, falls sie vom aktuellen Run abweicht.", isRequired: false, isAutocomplete: true)
             .Build();
@@ -64,22 +64,17 @@ public sealed class ArenaCommand : ISlashCommand
         var activeRun = this.runService.GetActiveRun(guildId);
         var edition = CommandOptionHelper.GetOptionalStringOption(command, "edition")?.Trim()
             ?? activeRun.Game;
-
         var arenaNumber = CommandOptionHelper.GetRequiredIntegerOption(command, "number");
 
         var arenaInfo = await this.arenaInfoService.GetArenaInfoAsync(edition, arenaNumber);
-        var isCompleted = activeRun.CompletedArenas.Any(arena =>
-            arena.ArenaNumber == arenaNumber &&
-            string.Equals(arena.Edition.Trim(), edition.Trim(), StringComparison.OrdinalIgnoreCase));
-        var image = this.embedImageFactory.CreateArenaImage();
-        var embed = this.embedFactory.CreateArenaInfoEmbed(
-            edition,
+        var completedArena = this.runService.CompleteArena(
+            guildId,
             arenaNumber,
+            edition,
             arenaInfo.LeaderName,
-            arenaInfo.Location,
-            arenaInfo.Levels,
-            image.AttachmentUrl,
-            isCompleted);
+            arenaInfo.Location);
+        var image = this.embedImageFactory.CreateArenaImage();
+        var embed = this.embedFactory.CreateArenaCompletedEmbed(completedArena, activeRun, image.AttachmentUrl);
 
         await response.SendFileAsync(image.FileAttachment, embed: embed);
     }
@@ -95,7 +90,7 @@ public sealed class ArenaCommand : ISlashCommand
             AutocompleteHelper.GetCurrentValue(interaction));
 
         Log.Debug(
-            "Arena autocomplete returned {ResultCount} edition suggestions for value '{CurrentValue}'.",
+            "Arena complete autocomplete returned {ResultCount} edition suggestions for value '{CurrentValue}'.",
             results.Count,
             AutocompleteHelper.GetCurrentValue(interaction));
 

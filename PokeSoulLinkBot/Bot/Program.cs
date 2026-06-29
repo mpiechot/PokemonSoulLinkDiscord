@@ -101,6 +101,7 @@ internal sealed class Program
             new UseCommand(runService, embedFactory, embedImageFactory),
             new PokedexCommand(pokedexService, pokedexPresenter),
             new ArenaCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
+            new ArenaCompleteCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
         };
 
         var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);

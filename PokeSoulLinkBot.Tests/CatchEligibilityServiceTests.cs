@@ -225,6 +225,16 @@ public sealed class CatchEligibilityServiceTests
             throw new NotSupportedException();
         }
 
+        public CompletedArena CompleteArena(
+            string guildId,
+            int arenaNumber,
+            string edition,
+            string leaderName,
+            string location)
+        {
+            throw new NotSupportedException();
+        }
+
         public SoulLinkRun GetActiveRun(string guildId)
         {
             return this.run;

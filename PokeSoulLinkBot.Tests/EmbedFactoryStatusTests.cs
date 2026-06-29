@@ -117,15 +117,63 @@ public sealed class EmbedFactoryStatusTests
         deadEntry.DiedAtUtc = DateTime.UtcNow;
         run.LinkGroups.AddRange(new[] { teamRoute, deadRoute });
         run.ActiveLinks[0] = teamRoute;
+        run.CompletedArenas.Add(new CompletedArena
+        {
+            ArenaNumber = 1,
+            Edition = "ruby",
+            LeaderName = "Roxanne",
+            Location = "Rustboro City",
+            CompletedAtUtc = DateTime.UtcNow,
+        });
         var embedFactory = new EmbedFactory();
 
         var embed = embedFactory.CreateStatsEmbed([run], "attachment://stats.png");
 
         Assert.Contains(embed.Fields, field => field.Name == "Routes" && field.Value.Contains("Caught: 2", StringComparison.Ordinal));
         Assert.Contains(embed.Fields, field => field.Name == "Team / Box" && field.Value.Contains("Team: 1/6", StringComparison.Ordinal));
+        Assert.Contains(embed.Fields, field => field.Name == "Arena Progress" && field.Value.Contains("Completed: 1/8", StringComparison.Ordinal));
         Assert.Contains(embed.Fields, field => field.Name == "Deaths by Reason" && field.Value.Contains("Critical hit.: 1", StringComparison.Ordinal));
         Assert.Contains(embed.Fields, field => field.Name == "Player Stats" && field.Value.Contains("marpie1: 2 caught, 1 alive, 1 dead", StringComparison.Ordinal));
         Assert.Contains(embed.Fields, field => field.Name == "Death Log" && field.Value.Contains("Pichu (102) - Critical hit.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CreateArenaInfoEmbed_ShouldIncludeProgressStatus()
+    {
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateArenaInfoEmbed(
+            "ruby",
+            1,
+            "Roxanne",
+            "Rustboro City",
+            new[] { 14, 15 },
+            "attachment://arena.png",
+            isCompleted: true);
+
+        Assert.Contains(embed.Fields, field => field.Name == "Progress" && field.Value == "Completed");
+    }
+
+    [Fact]
+    public void CreateArenaCompletedEmbed_ShouldIncludeRunAndProgress()
+    {
+        var run = CreateRun();
+        var completedArena = new CompletedArena
+        {
+            ArenaNumber = 1,
+            Edition = "ruby",
+            LeaderName = "Roxanne",
+            Location = "Rustboro City",
+            CompletedAtUtc = DateTime.UtcNow,
+        };
+        run.CompletedArenas.Add(completedArena);
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateArenaCompletedEmbed(completedArena, run, "attachment://arena.png");
+
+        Assert.Equal("Arena Completed", embed.Title);
+        Assert.Contains(embed.Fields, field => field.Name == "Run" && field.Value == "Ruby");
+        Assert.Contains(embed.Fields, field => field.Name == "Progress" && field.Value == "1/8");
     }
 
     [Fact]

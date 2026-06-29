@@ -466,6 +466,65 @@ public sealed class RunServiceCatchTests
         Assert.Null(activeRun.ActiveLinks[0]);
     }
 
+    [Fact]
+    public void CompleteArena_ShouldPersistArenaProgress()
+    {
+        var store = new InMemoryRunStore();
+        var service = new RunService(store);
+        service.StartRun(GuildId, "Ruby", "ruby", CreatePlayers());
+
+        var completedArena = service.CompleteArena(GuildId, 1, "ruby", "Roxanne", "Rustboro City");
+        var activeRun = service.GetActiveRun(GuildId);
+
+        Assert.Equal(1, completedArena.ArenaNumber);
+        Assert.Equal("ruby", completedArena.Edition);
+        Assert.Equal("Roxanne", completedArena.LeaderName);
+        Assert.Equal("Rustboro City", completedArena.Location);
+        Assert.NotNull(Assert.Single(activeRun.CompletedArenas));
+        Assert.True(store.SaveCount > 0);
+    }
+
+    [Fact]
+    public void CompleteArena_ShouldRejectDuplicateArenaForSameEdition()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.CompleteArena(GuildId, 1, "ruby", "Roxanne", "Rustboro City");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            service.CompleteArena(GuildId, 1, "Ruby", "Roxanne", "Rustboro City"));
+
+        Assert.Equal("Arena 1 für 'Ruby' wurde bereits als erledigt markiert.", exception.Message);
+    }
+
+    [Fact]
+    public void CompleteArena_ShouldPersistAfterReload()
+    {
+        var filePath = CreateTemporaryRunStorePath();
+        try
+        {
+            var store = new RunStore(filePath);
+            var service = new RunService(store);
+            service.StartRun(GuildId, "Ruby", "ruby", CreatePlayers());
+
+            service.CompleteArena(GuildId, 1, "ruby", "Roxanne", "Rustboro City");
+
+            var reloadedStore = new RunStore(filePath);
+            var reloadedRun = reloadedStore.GetActiveRun(GuildId);
+
+            Assert.NotNull(reloadedRun);
+            var completedArena = Assert.Single(reloadedRun.CompletedArenas);
+            Assert.Equal(1, completedArena.ArenaNumber);
+            Assert.Equal("Roxanne", completedArena.LeaderName);
+        }
+        finally
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+    }
+
     private static RunService CreateServiceWithStartedRun()
     {
         var service = new RunService(new InMemoryRunStore());

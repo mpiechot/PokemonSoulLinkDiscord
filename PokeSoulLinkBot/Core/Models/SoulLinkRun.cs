@@ -58,6 +58,11 @@ public sealed class SoulLinkRun
     [JsonPropertyName("activeLinks")]
     public LinkGroup?[] ActiveLinks { get; set; } = new LinkGroup?[6];
 
+    /// <summary>
+    /// Gets or sets the completed arenas for this run.
+    /// </summary>
+    public List<CompletedArena> CompletedArenas { get; set; } = new ();
+
     public void TryAddToActive(LinkGroup linkGroup)
     {
         ArgumentNullException.ThrowIfNull(linkGroup);
