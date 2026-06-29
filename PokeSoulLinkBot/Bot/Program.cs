@@ -53,6 +53,7 @@ internal sealed class Program
             "PokeSoulLinkBot",
             "Data",
             "game-data-catalog.json");
+        var gameDataFallbackCatalogPath = Path.Combine(AppContext.BaseDirectory, "Data", "game-data-fallback.json");
         var pokemonDataCachePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "PokeSoulLinkBot",
@@ -74,7 +75,10 @@ internal sealed class Program
         var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver, pokemonDataCacheStore);
         var pokedexPresenter = new PokedexPresenter();
         var arenaInfoService = new PokemonDbArenaInfoService(httpClient);
-        var gameDataCatalogService = new PokeApiGameDataCatalogService(httpClient, gameDataCachePath);
+        var gameDataCatalogService = new PokeApiGameDataCatalogService(
+            httpClient,
+            gameDataCachePath,
+            gameDataFallbackCatalogPath);
 
         var runStore = new RunStore(filePath);
         var runService = new RunService(runStore);

@@ -99,6 +99,7 @@ public sealed class RunService : IRunService
         lock (this.operationLock)
         {
             SoulLinkRun activeRun = this.GetActiveRun(guildId);
+            var normalizedRoute = this.NormalizeRoute(route);
 
             RunPlayer? runPlayer = activeRun.Players.FirstOrDefault(player => player.UserId == playerId);
             if (runPlayer is null)
@@ -107,9 +108,9 @@ public sealed class RunService : IRunService
             }
 
             LinkGroup? existingGroup = activeRun.LinkGroups.FirstOrDefault(group =>
-                string.Equals(group.Route, route, StringComparison.OrdinalIgnoreCase));
+                string.Equals(group.Route, normalizedRoute, StringComparison.OrdinalIgnoreCase));
 
-            LinkGroup linkGroup = existingGroup ?? this.CreateLinkGroup(activeRun, route);
+            LinkGroup linkGroup = existingGroup ?? this.CreateLinkGroup(activeRun, normalizedRoute);
 
             bool playerAlreadyRegistered = linkGroup.Entries.Any(entry => entry.PlayerUserId == playerId);
             if (playerAlreadyRegistered)
@@ -261,6 +262,7 @@ public sealed class RunService : IRunService
         lock (this.operationLock)
         {
             SoulLinkRun activeRun = this.GetActiveRun(guildId);
+            var normalizedRoute = this.NormalizeRoute(route);
 
             if (playerId.HasValue && activeRun.Players.All(player => player.UserId != playerId.Value))
             {
@@ -268,7 +270,7 @@ public sealed class RunService : IRunService
             }
 
             LinkGroup? linkGroup = activeRun.LinkGroups.FirstOrDefault(group =>
-                group.Route.Equals(route, StringComparison.OrdinalIgnoreCase));
+                group.Route.Equals(normalizedRoute, StringComparison.OrdinalIgnoreCase));
 
             if (linkGroup is null)
             {

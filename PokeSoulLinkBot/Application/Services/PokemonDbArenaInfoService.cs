@@ -2,6 +2,7 @@
 // Copyright (c) PlaceholderCompany. All rights reserved.
 // </copyright>
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.RegularExpressions;
 using PokeSoulLinkBot.Application.Interfaces;
@@ -76,8 +77,11 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
             ["shield"] = "sword-shield",
         };
 
-    private readonly Dictionary<string, IReadOnlyDictionary<int, ArenaInfo>> cachedArenaInfosBySlug =
-        new Dictionary<string, IReadOnlyDictionary<int, ArenaInfo>>(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, IReadOnlyDictionary<int, ArenaInfo>> cachedArenaInfosBySlug =
+        new ConcurrentDictionary<string, IReadOnlyDictionary<int, ArenaInfo>>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<int, ArenaInfo>>>> pendingArenaInfoRequests =
+        new ConcurrentDictionary<string, Lazy<Task<IReadOnlyDictionary<int, ArenaInfo>>>>(StringComparer.OrdinalIgnoreCase);
 
     private readonly HttpClient httpClient;
 
@@ -192,6 +196,24 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
             return cachedArenaInfos;
         }
 
+        var pendingRequest = this.pendingArenaInfoRequests.GetOrAdd(
+            sourceSlug,
+            _ => new Lazy<Task<IReadOnlyDictionary<int, ArenaInfo>>>(
+                () => this.LoadArenaInfosByNumberAsync(sourceSlug, edition),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            return await pendingRequest.Value;
+        }
+        finally
+        {
+            this.pendingArenaInfoRequests.TryRemove(sourceSlug, out _);
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<int, ArenaInfo>> LoadArenaInfosByNumberAsync(string sourceSlug, string edition)
+    {
         var sourceUri = new Uri(BaseUri, $"{sourceSlug}/gymleaders-elitefour");
         var html = await HttpRequestHelper.GetStringAsync(this.httpClient, sourceUri);
         var arenaInfos = ParseArenaInfos(html, edition);
@@ -201,7 +223,7 @@ public sealed class PokemonDbArenaInfoService : IArenaInfoService
             throw new InvalidOperationException($"Für '{edition}' konnten keine Arenadaten geladen werden.");
         }
 
-        this.cachedArenaInfosBySlug[sourceSlug] = arenaInfos;
+        this.cachedArenaInfosBySlug.TryAdd(sourceSlug, arenaInfos);
         return arenaInfos;
     }
 }

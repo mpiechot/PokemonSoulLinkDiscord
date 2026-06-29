@@ -6,6 +6,11 @@ namespace PokeSoulLinkBot.Core.Models;
 public sealed class GameDataCatalog
 {
     /// <summary>
+    /// Gets or sets the catalog schema version.
+    /// </summary>
+    public int SchemaVersion { get; set; } = 1;
+
+    /// <summary>
     /// Gets or sets the UTC date and time when the catalog was refreshed.
     /// </summary>
     public DateTime RefreshedAtUtc { get; set; }

@@ -63,6 +63,65 @@ public sealed class CommandDefinitionTests
         Assert.True(editionOption.IsAutocomplete);
     }
 
+    [Fact]
+    public void RunStartCommandDefinition_ShouldSetRequiredAndAutocompleteFlags()
+    {
+        var command = new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService());
+
+        var options = GetOptions(command);
+
+        AssertOption(options, "name", isRequired: true, isAutocomplete: false);
+        AssertOption(options, "edition", isRequired: true, isAutocomplete: true);
+        AssertOption(options, "player1", isRequired: true, isAutocomplete: false);
+        AssertOption(options, "player2", isRequired: true, isAutocomplete: false);
+        AssertOption(options, "player3", isRequired: true, isAutocomplete: false);
+    }
+
+    [Fact]
+    public void CatchCommandDefinition_ShouldSetRequiredAndAutocompleteFlags()
+    {
+        var command = new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService());
+
+        var options = GetOptions(command);
+
+        AssertOption(options, "route", isRequired: true, isAutocomplete: true);
+        AssertOption(options, "player", isRequired: true, isAutocomplete: false);
+        AssertOption(options, "pokemon", isRequired: true, isAutocomplete: false);
+    }
+
+    [Fact]
+    public void RouteDeathCommandDefinition_ShouldSetRequiredAndAutocompleteFlags()
+    {
+        var command = new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService());
+
+        var options = GetOptions(command);
+
+        AssertOption(options, "route", isRequired: true, isAutocomplete: true);
+        AssertOption(options, "reason", isRequired: false, isAutocomplete: false);
+        AssertOption(options, "player", isRequired: false, isAutocomplete: false);
+    }
+
+    private static IReadOnlyCollection<ApplicationCommandOptionProperties> GetOptions(ISlashCommand command)
+    {
+        var slashDefinition = Assert.IsType<SlashCommandProperties>(command.BuildDefinition());
+
+        return slashDefinition.Options.IsSpecified
+            ? slashDefinition.Options.Value
+            : Array.Empty<ApplicationCommandOptionProperties>();
+    }
+
+    private static void AssertOption(
+        IReadOnlyCollection<ApplicationCommandOptionProperties> options,
+        string optionName,
+        bool isRequired,
+        bool isAutocomplete)
+    {
+        var option = Assert.Single(options, candidate => candidate.Name == optionName);
+
+        Assert.Equal(isRequired, option.IsRequired ?? false);
+        Assert.Equal(isAutocomplete, option.IsAutocomplete);
+    }
+
     private static EmbedImageFactory CreateImageFactory()
     {
         return new EmbedImageFactory(AppContext.BaseDirectory);

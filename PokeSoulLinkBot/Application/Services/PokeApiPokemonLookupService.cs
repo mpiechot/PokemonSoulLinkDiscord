@@ -21,6 +21,9 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
     private readonly ConcurrentDictionary<string, PokemonInfo> pokemonInfoCache =
         new ConcurrentDictionary<string, PokemonInfo>(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, Lazy<Task<PokemonInfo?>>> pendingPokemonInfoRequests =
+        new ConcurrentDictionary<string, Lazy<Task<PokemonInfo?>>>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokemonLookupService"/> class.
     /// </summary>
@@ -76,6 +79,24 @@ public sealed class PokeApiPokemonLookupService : IPokemonLookupService
             return persistedInfo;
         }
 
+        var pendingRequest = this.pendingPokemonInfoRequests.GetOrAdd(
+            resolvedName,
+            key => new Lazy<Task<PokemonInfo?>>(
+                () => this.FetchPokemonInfoAsync(pokemonName, key),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            return await pendingRequest.Value;
+        }
+        finally
+        {
+            this.pendingPokemonInfoRequests.TryRemove(resolvedName, out _);
+        }
+    }
+
+    private async Task<PokemonInfo?> FetchPokemonInfoAsync(string pokemonName, string resolvedName)
+    {
         var requestUri = $"pokemon/{Uri.EscapeDataString(resolvedName)}";
         PokemonDto? dto;
 

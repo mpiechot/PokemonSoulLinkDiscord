@@ -11,6 +11,7 @@ namespace PokeSoulLinkBot.Application.Services;
 /// </summary>
 public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
 {
+    private const int CurrentSchemaVersion = 1;
     private const int MaxParallelLocationAreaRequests = 8;
 
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -19,6 +20,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     };
 
     private readonly string cacheFilePath;
+    private readonly string? fallbackCatalogFilePath;
     private readonly HttpClient httpClient;
     private readonly SemaphoreSlim initializationLock = new SemaphoreSlim(1, 1);
     private GameDataCatalog? catalog;
@@ -29,10 +31,15 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     /// </summary>
     /// <param name="httpClient">The HTTP client used to access PokéAPI.</param>
     /// <param name="cacheFilePath">The local cache file path.</param>
-    public PokeApiGameDataCatalogService(HttpClient httpClient, string cacheFilePath)
+    /// <param name="fallbackCatalogFilePath">The bundled fallback catalog file path.</param>
+    public PokeApiGameDataCatalogService(
+        HttpClient httpClient,
+        string cacheFilePath,
+        string? fallbackCatalogFilePath = null)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         this.cacheFilePath = cacheFilePath ?? throw new ArgumentNullException(nameof(cacheFilePath));
+        this.fallbackCatalogFilePath = fallbackCatalogFilePath;
     }
 
     /// <inheritdoc />
@@ -50,18 +57,30 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
             }
 
             Log.Information("Initializing game data catalog. Cache path: {CacheFilePath}.", this.cacheFilePath);
-            this.catalog = await this.LoadCatalogFromCacheAsync();
+            this.catalog = await this.LoadCatalogFromFileAsync(this.cacheFilePath, "cache");
             if (this.catalog is not null)
             {
-                Log.Information(
+                Log.ForContext("EventName", "GameDataCatalogLoaded").Information(
                     "Using game data catalog source cache with {EditionCount} editions and {RouteCount} routes.",
                     this.catalog.Editions.Count,
                     this.catalog.Editions.Sum(edition => edition.Routes.Count));
+                this.StartRefreshInBackground();
+                return;
+            }
+
+            this.catalog = await this.LoadFallbackCatalogAsync();
+            if (this.catalog is not null)
+            {
+                Log.ForContext("EventName", "GameDataCatalogLoaded").Information(
+                    "Using game data catalog source fallback with {EditionCount} editions and {RouteCount} routes.",
+                    this.catalog.Editions.Count,
+                    this.catalog.Editions.Sum(edition => edition.Routes.Count));
+                this.StartRefreshInBackground();
                 return;
             }
 
             this.StartRefreshInBackground();
-            Log.Information(
+            Log.ForContext("EventName", "GameDataCatalogUnavailable").Information(
                 "Game data catalog is not ready. No cache was found, and PokeAPI refresh is running in the background.");
         }
         finally
@@ -171,32 +190,67 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         return exception is IOException or UnauthorizedAccessException or NotSupportedException;
     }
 
-    private async Task<GameDataCatalog?> LoadCatalogFromCacheAsync()
+    private static bool IsValidCatalog(GameDataCatalog? catalog)
     {
-        if (!File.Exists(this.cacheFilePath))
+        return catalog is { SchemaVersion: CurrentSchemaVersion } &&
+            catalog.Editions.Count > 0 &&
+            catalog.Editions.All(edition =>
+                !string.IsNullOrWhiteSpace(edition.Name) &&
+                !string.IsNullOrWhiteSpace(edition.DisplayName));
+    }
+
+    private async Task<GameDataCatalog?> LoadCatalogFromFileAsync(string filePath, string sourceName)
+    {
+        if (!File.Exists(filePath))
         {
-            Log.Debug("Game data catalog cache file does not exist: {CacheFilePath}.", this.cacheFilePath);
+            Log.Debug(
+                "Game data catalog {SourceName} file does not exist: {CatalogFilePath}.",
+                sourceName,
+                filePath);
             return null;
         }
 
-        await using var stream = File.OpenRead(this.cacheFilePath);
+        await using var stream = File.OpenRead(filePath);
         try
         {
-            return await JsonSerializer.DeserializeAsync<GameDataCatalog>(stream, JsonOptions);
+            var loadedCatalog = await JsonSerializer.DeserializeAsync<GameDataCatalog>(stream, JsonOptions);
+            if (!IsValidCatalog(loadedCatalog))
+            {
+                Log.Warning(
+                    "Game data catalog {SourceName} file is empty or incompatible: {CatalogFilePath}.",
+                    sourceName,
+                    filePath);
+                return null;
+            }
+
+            return loadedCatalog;
         }
         catch (JsonException exception)
         {
             Log.Warning(
                 exception,
-                "Game data catalog cache could not be read from {CacheFilePath}.",
-                this.cacheFilePath);
+                "Game data catalog {SourceName} file could not be read from {CatalogFilePath}.",
+                sourceName,
+                filePath);
             return null;
         }
     }
 
+    private async Task<GameDataCatalog?> LoadFallbackCatalogAsync()
+    {
+        if (string.IsNullOrWhiteSpace(this.fallbackCatalogFilePath))
+        {
+            Log.Debug("No bundled game data fallback catalog path was configured.");
+            return null;
+        }
+
+        return await this.LoadCatalogFromFileAsync(this.fallbackCatalogFilePath, "fallback");
+    }
+
     private async Task<GameDataCatalog> RefreshCatalogAsync()
     {
-        Log.Information("Using game data catalog source PokeAPI for refresh.");
+        Log.ForContext("EventName", "GameDataCatalogRefreshStarted").Information(
+            "Using game data catalog source PokeAPI for refresh.");
         Log.Debug("Fetching Pokemon versions from PokeAPI.");
         var versionList = await HttpRequestHelper.GetFromJsonAsync<NamedApiResourceListDto>(
             this.httpClient,
@@ -217,6 +271,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
 
         return new GameDataCatalog
         {
+            SchemaVersion = CurrentSchemaVersion,
             RefreshedAtUtc = DateTime.UtcNow,
             Editions = editionsByName.Values.OrderBy(edition => edition.DisplayName).ToList(),
         };
@@ -341,7 +396,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
                 return;
             }
 
-            Log.Information(
+            Log.ForContext("EventName", "GameDataCatalogLoaded").Information(
                 "Using game data catalog source PokeAPI with {EditionCount} editions and {RouteCount} routes. Saved cache to {CacheFilePath}.",
                 refreshedCatalog.Editions.Count,
                 refreshedCatalog.Editions.Sum(edition => edition.Routes.Count),
@@ -349,9 +404,9 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         }
         catch (Exception exception) when (exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            Log.Warning(
+            Log.ForContext("EventName", "GameDataCatalogRefreshFailed").Warning(
                 exception,
-                "Game data catalog PokeAPI refresh failed. Catalog remains unavailable until cache or API refresh succeeds.");
+                "Game data catalog PokeAPI refresh failed. The current catalog remains unchanged.");
         }
         finally
         {

@@ -52,6 +52,20 @@ public sealed class CatchEligibilityServiceTests
     }
 
     [Fact]
+    public async Task CheckCatchAsync_ShouldBlockExactStoredPokemonWithoutPokedexLookup()
+    {
+        var linkGroup = CreateLinkGroup("route 1", 1, "Ash", "Pikachu", isAlive: true);
+        var pokedexService = new CountingPokedexService();
+        var service = new CatchEligibilityService(new StubRunService(CreateRun(linkGroup)), pokedexService);
+
+        var result = await service.CheckCatchAsync(GuildId, "pikachu");
+
+        Assert.False(result.IsAllowed);
+        Assert.Equal("Pikachu", result.Match?.PokemonName);
+        Assert.Equal(0, pokedexService.RequestCount);
+    }
+
+    [Fact]
     public async Task CheckCatchAsync_ShouldAllowPokemonWithoutEvolutionLineMatch()
     {
         var linkGroup = CreateLinkGroup("route 1", 1, "Ash", "Bulbasaur", isAlive: true);
@@ -251,6 +265,17 @@ public sealed class CatchEligibilityServiceTests
             };
 
             return Task.FromResult(entry);
+        }
+    }
+
+    private sealed class CountingPokedexService : IPokedexService
+    {
+        public int RequestCount { get; private set; }
+
+        public Task<PokedexEntry> GetPokedexEntryAsync(string pokemonName)
+        {
+            this.RequestCount++;
+            throw new InvalidOperationException("Pokedex should not be called for exact matches.");
         }
     }
 }

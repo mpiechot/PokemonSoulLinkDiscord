@@ -59,9 +59,10 @@ public class CatchCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
@@ -84,10 +85,10 @@ public class CatchCommand : ISlashCommand
             image.AttachmentUrl,
             pokemonInfo);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: catchEmbed);
+        await response.SendFileAsync(image.FileAttachment, embed: catchEmbed);
 
         var statusMessages = this.embedFactory.CreateStatusMessages(activeRun);
-        await SlashCommandResponse.SendFollowupsAsync(command, statusMessages);
+        await response.SendFollowupsAsync(statusMessages);
     }
 
     /// <inheritdoc />

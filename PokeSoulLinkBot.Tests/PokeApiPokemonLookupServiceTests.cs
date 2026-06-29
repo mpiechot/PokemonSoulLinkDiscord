@@ -28,6 +28,25 @@ public sealed class PokeApiPokemonLookupServiceTests
     }
 
     [Fact]
+    public async Task GetPokemonInfoAsync_ShouldCoalesceConcurrentLookupsByResolvedName()
+    {
+        var handler = new SlowCountingPokemonHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiPokemonLookupService(httpClient, new StubPokemonNameResolver("bulbasaur"));
+
+        var firstTask = service.GetPokemonInfoAsync("Bisasam");
+        var secondTask = service.GetPokemonInfoAsync("Bulbasaur");
+        var results = await Task.WhenAll(firstTask, secondTask);
+
+        Assert.NotNull(results[0]);
+        Assert.Same(results[0], results[1]);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task GetPokemonInfoAsync_ShouldRetryTransientHttpFailures()
     {
         var handler = new TransientThenSuccessfulPokemonHttpMessageHandler();
@@ -197,6 +216,23 @@ public sealed class PokeApiPokemonLookupServiceTests
             this.RequestCount++;
 
             return Task.FromResult(CreatePokemonResponse());
+        }
+    }
+
+    private sealed class SlowCountingPokemonHttpMessageHandler : HttpMessageHandler
+    {
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref this.requestCount);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref this.requestCount);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+
+            return CreatePokemonResponse();
         }
     }
 

@@ -49,9 +49,10 @@ public class RunEndCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
@@ -61,6 +62,6 @@ public class RunEndCommand : ISlashCommand
         var image = this.embedImageFactory.CreateRunEndImage();
         var embed = this.embedFactory.CreateRunEndedEmbed(run, image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
+        await response.SendFileAsync(image.FileAttachment, embed: embed);
     }
 }

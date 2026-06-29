@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
 using PokeSoulLinkBot.Core.Models;
@@ -52,6 +54,27 @@ public sealed class PokeApiPokedexServiceTests
         }
     }
 
+    [Fact]
+    public async Task GetPokedexEntryAsync_ShouldCoalesceConcurrentRequests()
+    {
+        var handler = new SuccessfulPokedexHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://pokeapi.co/api/v2/"),
+        };
+        var service = new PokeApiPokedexService(
+            httpClient,
+            new StubPokemonNameResolver("bulbasaur"));
+
+        var firstTask = service.GetPokedexEntryAsync("Bisasam");
+        var secondTask = service.GetPokedexEntryAsync("Bulbasaur");
+        var results = await Task.WhenAll(firstTask, secondTask);
+
+        Assert.Same(results[0], results[1]);
+        Assert.Equal("Bulbasaur", results[0].PokemonName);
+        Assert.Equal(3, handler.RequestCount);
+    }
+
     private static string CreateTemporaryCacheFilePath()
     {
         string directoryPath = Path.Combine(
@@ -96,6 +119,82 @@ public sealed class PokeApiPokedexServiceTests
         {
             this.RequestCount++;
             return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError));
+        }
+    }
+
+    private sealed class SuccessfulPokedexHttpMessageHandler : HttpMessageHandler
+    {
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref this.requestCount);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref this.requestCount);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            if (path.EndsWith("/pokemon/bulbasaur", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateJsonResponse(
+                    """
+                    {
+                      "name": "bulbasaur",
+                      "sprites": {
+                        "other": {
+                          "official-artwork": {
+                            "front_default": "https://img.example/bulbasaur.png"
+                          }
+                        }
+                      },
+                      "types": [
+                        {
+                          "slot": 1,
+                          "type": { "name": "grass" }
+                        }
+                      ]
+                    }
+                    """);
+            }
+
+            if (path.EndsWith("/pokemon-species/bulbasaur", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateJsonResponse(
+                    """
+                    {
+                      "name": "bulbasaur",
+                      "evolution_chain": {
+                        "url": "https://pokeapi.co/api/v2/evolution-chain/1/"
+                      }
+                    }
+                    """);
+            }
+
+            if (path.TrimEnd('/').EndsWith("/evolution-chain/1", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateJsonResponse(
+                    """
+                    {
+                      "chain": {
+                        "species": { "name": "bulbasaur" },
+                        "evolution_details": [],
+                        "evolves_to": []
+                      }
+                    }
+                    """);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
+
+        private static HttpResponseMessage CreateJsonResponse(string json)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            };
         }
     }
 }

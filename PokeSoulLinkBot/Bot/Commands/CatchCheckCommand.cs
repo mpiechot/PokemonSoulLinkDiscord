@@ -41,15 +41,16 @@ public sealed class CatchCheckCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
         var pokemonName = CommandOptionHelper.GetRequiredStringOption(command, "pokemon");
         var result = await this.catchEligibilityService.CheckCatchAsync(guildId, pokemonName);
         var embed = this.embedFactory.CreateCatchCheckEmbed(result);
 
-        await SlashCommandResponse.SendAsync(command, embed: embed);
+        await response.SendAsync(embed: embed);
     }
 }

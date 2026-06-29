@@ -13,6 +13,9 @@ namespace PokeSoulLinkBot.Bot.Handlers;
 /// </summary>
 public sealed class SlashCommandRouter
 {
+    private const long SlowCommandThresholdMilliseconds = 1500;
+    private const long SlowAutocompleteThresholdMilliseconds = 500;
+
     private readonly IReadOnlyDictionary<string, ISlashCommand> commands;
     private readonly EmbedFactory embedFactory;
 
@@ -53,43 +56,61 @@ public sealed class SlashCommandRouter
 
         var startedAt = DateTimeOffset.UtcNow;
         var parameterText = FormatCommandOptions(command);
+        ISlashCommandResponse? response = null;
 
         try
         {
-            Log.Information(
+            Log.ForContext("EventName", "SlashCommandStarted").Information(
                 "Executing slash command /{CommandName} with parameters: {Parameters}.",
                 command.CommandName,
                 parameterText);
 
+            response = new DiscordSlashCommandResponse(command);
             if (!this.commands.TryGetValue(command.CommandName, out var slashCommand))
             {
-                Log.Warning("Unknown slash command /{CommandName}.", command.CommandName);
+                Log.ForContext("EventName", "SlashCommandUnknown").Warning(
+                    "Unknown slash command /{CommandName}.",
+                    command.CommandName);
                 var errorEmbed = this.embedFactory.CreateErrorEmbed("Unknown command.");
-                await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
+                await response.SendAsync(embed: errorEmbed, ephemeral: true);
                 return;
             }
 
-            await command.DeferAsync();
-            await slashCommand.HandleAsync(command);
+            await response.DeferAsync();
+            await slashCommand.HandleAsync(command, response);
 
-            Log.Information(
-                "Slash command /{CommandName} completed in {ElapsedMilliseconds} ms.",
-                command.CommandName,
-                GetElapsedMilliseconds(startedAt));
+            var elapsedMilliseconds = GetElapsedMilliseconds(startedAt);
+            var completionLogger = Log.ForContext("EventName", "SlashCommandCompleted");
+            if (elapsedMilliseconds >= SlowCommandThresholdMilliseconds)
+            {
+                completionLogger.Warning(
+                    "Slash command /{CommandName} completed slowly in {ElapsedMilliseconds} ms.",
+                    command.CommandName,
+                    elapsedMilliseconds);
+            }
+            else
+            {
+                completionLogger.Information(
+                    "Slash command /{CommandName} completed in {ElapsedMilliseconds} ms.",
+                    command.CommandName,
+                    elapsedMilliseconds);
+            }
         }
         catch (Exception exception)
         {
-            Log.Error(
+            var elapsedMilliseconds = GetElapsedMilliseconds(startedAt);
+            Log.ForContext("EventName", "SlashCommandFailed").Error(
                 exception,
                 "Slash command /{CommandName} failed after {ElapsedMilliseconds} ms with parameters: {Parameters}.",
                 command.CommandName,
-                GetElapsedMilliseconds(startedAt),
+                elapsedMilliseconds,
                 parameterText);
 
             var errorMessage = CreateUserFacingErrorMessage(command, exception);
             var errorEmbed = this.embedFactory.CreateErrorEmbed(errorMessage);
 
-            await TrySendErrorResponseAsync(command, errorEmbed, exception);
+            response ??= new DiscordSlashCommandResponse(command);
+            await TrySendErrorResponseAsync(response, errorEmbed, exception);
         }
     }
 
@@ -108,7 +129,7 @@ public sealed class SlashCommandRouter
 
         try
         {
-            Log.Debug(
+            Log.ForContext("EventName", "AutocompleteStarted").Debug(
                 "Handling autocomplete for /{CommandName}, option {OptionName}, value '{CurrentValue}'.",
                 interaction.Data.CommandName,
                 currentOptionName,
@@ -116,22 +137,37 @@ public sealed class SlashCommandRouter
 
             if (!this.commands.TryGetValue(interaction.Data.CommandName, out var slashCommand))
             {
-                Log.Warning("Unknown autocomplete command /{CommandName}.", interaction.Data.CommandName);
+                Log.ForContext("EventName", "AutocompleteUnknown").Warning(
+                    "Unknown autocomplete command /{CommandName}.",
+                    interaction.Data.CommandName);
                 await interaction.RespondAsync(Array.Empty<AutocompleteResult>());
                 return;
             }
 
             await slashCommand.HandleAutocompleteAsync(interaction);
 
-            Log.Debug(
-                "Autocomplete for /{CommandName}, option {OptionName} completed in {ElapsedMilliseconds} ms.",
-                interaction.Data.CommandName,
-                currentOptionName,
-                GetElapsedMilliseconds(startedAt));
+            var elapsedMilliseconds = GetElapsedMilliseconds(startedAt);
+            var completionLogger = Log.ForContext("EventName", "AutocompleteCompleted");
+            if (elapsedMilliseconds >= SlowAutocompleteThresholdMilliseconds)
+            {
+                completionLogger.Warning(
+                    "Autocomplete for /{CommandName}, option {OptionName} completed slowly in {ElapsedMilliseconds} ms.",
+                    interaction.Data.CommandName,
+                    currentOptionName,
+                    elapsedMilliseconds);
+            }
+            else
+            {
+                completionLogger.Debug(
+                    "Autocomplete for /{CommandName}, option {OptionName} completed in {ElapsedMilliseconds} ms.",
+                    interaction.Data.CommandName,
+                    currentOptionName,
+                    elapsedMilliseconds);
+            }
         }
         catch (Exception exception)
         {
-            Log.Error(
+            Log.ForContext("EventName", "AutocompleteFailed").Error(
                 exception,
                 "Autocomplete for /{CommandName}, option {OptionName}, value '{CurrentValue}' failed after {ElapsedMilliseconds} ms.",
                 interaction.Data.CommandName,
@@ -152,20 +188,20 @@ public sealed class SlashCommandRouter
     }
 
     private static async Task TrySendErrorResponseAsync(
-        SocketSlashCommand command,
+        ISlashCommandResponse response,
         Embed errorEmbed,
         Exception originalException)
     {
         try
         {
-            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
+            await response.SendAsync(embed: errorEmbed, ephemeral: true);
         }
         catch (Exception responseException)
         {
-            Log.Warning(
+            Log.ForContext("EventName", "SlashCommandErrorResponseFailed").Warning(
                 responseException,
                 "Could not send error response for slash command /{CommandName}. OriginalException={OriginalExceptionType}.",
-                command.CommandName,
+                response.CommandName,
                 originalException.GetType().Name);
         }
     }

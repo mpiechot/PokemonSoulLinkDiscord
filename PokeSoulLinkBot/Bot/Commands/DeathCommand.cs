@@ -52,9 +52,10 @@ public class DeathCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
@@ -71,7 +72,7 @@ public class DeathCommand : ISlashCommand
         var image = this.embedImageFactory.CreateDeathImage();
         var embed = this.embedFactory.CreateDeathRegisteredEmbed(linkGroup, image.AttachmentUrl);
 
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, embed: embed);
+        await response.SendFileAsync(image.FileAttachment, embed: embed);
     }
 
     /// <inheritdoc />

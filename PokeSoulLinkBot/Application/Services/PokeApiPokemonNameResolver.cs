@@ -24,6 +24,9 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
     private readonly ConcurrentDictionary<string, string> resolvedNameCache =
         new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, bool> directLookupMissCache =
+        new ConcurrentDictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
     private IReadOnlyDictionary<string, string>? localizedNameIndex;
 
     /// <summary>
@@ -54,6 +57,13 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
             return cachedName;
         }
 
+        var indexedName = await this.TryResolveFromAvailableIndexAsync(lookupKey);
+        if (!string.IsNullOrWhiteSpace(indexedName))
+        {
+            this.resolvedNameCache.TryAdd(lookupKey, indexedName);
+            return indexedName;
+        }
+
         var directName = await this.TryResolveDirectPokemonNameAsync(normalizedName);
 
         if (!string.IsNullOrWhiteSpace(directName))
@@ -63,8 +73,8 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
         }
 
         var nameIndex = await this.GetLocalizedNameIndexAsync();
-        var resolvedName = nameIndex.TryGetValue(lookupKey, out var indexedName)
-            ? indexedName
+        var resolvedName = nameIndex.TryGetValue(lookupKey, out var nameFromIndex)
+            ? nameFromIndex
             : normalizedName;
 
         this.resolvedNameCache.TryAdd(lookupKey, resolvedName);
@@ -165,18 +175,57 @@ public sealed class PokeApiPokemonNameResolver : IPokemonNameResolver
 
     private async Task<string?> TryResolveDirectPokemonNameAsync(string pokemonName)
     {
+        if (this.directLookupMissCache.ContainsKey(pokemonName))
+        {
+            return null;
+        }
+
         var requestUri = $"pokemon/{Uri.EscapeDataString(pokemonName)}";
 
         try
         {
             var pokemon = await this.GetFromApiAsync<PokemonDto>(requestUri);
-            return pokemon?.Name;
+            if (!string.IsNullOrWhiteSpace(pokemon?.Name))
+            {
+                return pokemon.Name;
+            }
+
+            this.directLookupMissCache.TryAdd(pokemonName, true);
+            return null;
         }
         catch (InvalidOperationException exception)
         {
             Log.Debug(exception, "Direct Pokemon name lookup failed for '{PokemonName}'.", pokemonName);
+            this.directLookupMissCache.TryAdd(pokemonName, true);
             return null;
         }
+    }
+
+    private async Task<string?> TryResolveFromAvailableIndexAsync(string lookupKey)
+    {
+        if (this.localizedNameIndex is not null)
+        {
+            return this.localizedNameIndex.TryGetValue(lookupKey, out var indexedName)
+                ? indexedName
+                : null;
+        }
+
+        IReadOnlyDictionary<string, string>? persistedIndex = this.pokemonDataCacheStore is null
+            ? null
+            : await this.pokemonDataCacheStore.GetNameIndexAsync();
+        if (persistedIndex is null || persistedIndex.Count == 0)
+        {
+            return null;
+        }
+
+        Log.Information(
+            "Using Pokemon localized name index from persistent cache with {NameCount} names.",
+            persistedIndex.Count);
+        this.localizedNameIndex = persistedIndex;
+
+        return persistedIndex.TryGetValue(lookupKey, out var persistedName)
+            ? persistedName
+            : null;
     }
 
     private async Task<IReadOnlyDictionary<string, string>> GetLocalizedNameIndexAsync()

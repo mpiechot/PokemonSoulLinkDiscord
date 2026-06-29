@@ -50,9 +50,10 @@ public class UseCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
 
@@ -62,7 +63,7 @@ public class UseCommand : ISlashCommand
         if (position < 1 || position > 6)
         {
             var errorEmbed = this.embedFactory.CreateErrorEmbed("Position must be between 1 and 6.");
-            await SlashCommandResponse.SendAsync(command, embed: errorEmbed, ephemeral: true);
+            await response.SendAsync(embed: errorEmbed, ephemeral: true);
             return;
         }
 
@@ -71,8 +72,8 @@ public class UseCommand : ISlashCommand
         var messages = this.embedFactory.CreateUseMessages(activeRun);
         var image = this.embedImageFactory.CreateUseImage();
         var embed = this.embedFactory.CreateRunSummaryEmbed("Active Team Updated", activeRun, image.AttachmentUrl);
-        await SlashCommandResponse.SendFileAsync(command, image.FileAttachment, text: messages[0], embed: embed);
+        await response.SendFileAsync(image.FileAttachment, text: messages[0], embed: embed);
 
-        await SlashCommandResponse.SendFollowupsAsync(command, messages.Skip(1));
+        await response.SendFollowupsAsync(messages.Skip(1));
     }
 }

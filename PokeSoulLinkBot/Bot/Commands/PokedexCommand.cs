@@ -41,9 +41,10 @@ public sealed class PokedexCommand : ISlashCommand
     }
 
     /// <inheritdoc />
-    public async Task HandleAsync(SocketSlashCommand command)
+    public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)
     {
         ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(response);
 
         var pokemonName = CommandOptionHelper.GetRequiredStringOption(command, "name");
         var entry = await this.pokedexService.GetPokedexEntryAsync(pokemonName);
@@ -51,6 +52,6 @@ public sealed class PokedexCommand : ISlashCommand
         var embed = this.pokedexPresenter.CreateEmbed(entry, pokemonName);
         var tableMessage = this.pokedexPresenter.CreateTableMessage(entry);
 
-        await SlashCommandResponse.SendAsync(command, tableMessage, embed: embed);
+        await response.SendAsync(tableMessage, embed: embed);
     }
 }

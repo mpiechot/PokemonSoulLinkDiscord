@@ -379,34 +379,32 @@ public sealed class EmbedFactory
         ArgumentNullException.ThrowIfNull(runs);
         ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
 
+        var activeRun = runs.FirstOrDefault(run => run.EndedAtUtc is null)
+            ?? runs.OrderByDescending(run => run.StartedAtUtc).FirstOrDefault();
         var completedRuns = runs.Count(run => run.EndedAtUtc is not null);
-        var totalDeaths = runs
-            .SelectMany(run => run.LinkGroups)
-            .SelectMany(group => group.Entries)
-            .Count(entry => !entry.IsAlive);
-
-        var topDeaths = string.Join(
-            ", ",
-            runs.SelectMany(run => run.LinkGroups)
-                .SelectMany(group => group.Entries)
-                .Where(entry => !entry.IsAlive)
-                .GroupBy(entry => entry.PlayerName)
-                .OrderByDescending(group => group.Count())
-                .Take(3)
-                .Select(group => $"{group.Key}: {group.Count()}"));
-
-        if (string.IsNullOrWhiteSpace(topDeaths))
-        {
-            topDeaths = "None";
-        }
+        var allGroups = runs.SelectMany(run => run.LinkGroups).ToList();
+        var allEntries = allGroups.SelectMany(group => group.Entries).ToList();
+        var deadEntries = allEntries.Where(entry => !entry.IsAlive).ToList();
+        var caughtRoutes = allGroups.Count(group => group.Entries.Count > 0);
+        var livingRoutes = allGroups.Count(group => group.IsAlive);
+        var deadRoutes = allGroups.Count(group => group.Entries.Count > 0 && !group.IsAlive);
+        var lostRoutes = allGroups.Count(group => group.IsLostWithoutEncounter);
+        var teamAndBoxSummary = activeRun is null
+            ? "No run data."
+            : CreateTeamAndBoxSummary(activeRun);
 
         return new EmbedBuilder()
             .WithTitle("Run Statistics")
             .WithColor(Color.Blue)
-            .AddField("Stored Runs", runs.Count)
-            .AddField("Completed Runs", completedRuns)
-            .AddField("Total Recorded Deaths", totalDeaths)
-            .AddField("Top Deaths by Player", topDeaths)
+            .AddField("Runs", $"Stored: {runs.Count}{Environment.NewLine}Completed: {completedRuns}", true)
+            .AddField(
+                "Routes",
+                $"Caught: {caughtRoutes}{Environment.NewLine}Alive: {livingRoutes}{Environment.NewLine}Dead: {deadRoutes}{Environment.NewLine}Lost: {lostRoutes}",
+                true)
+            .AddField("Team / Box", teamAndBoxSummary, true)
+            .AddField("Deaths by Reason", CreateDeathReasonSummary(deadEntries))
+            .AddField("Player Stats", CreatePlayerStatsSummary(runs))
+            .AddField("Death Log", CreateDeathLogSummary(runs))
             .WithThumbnailUrl(thumbnailUrl)
             .Build();
     }
@@ -478,6 +476,95 @@ public sealed class EmbedFactory
             "Box" => "Box",
             _ => status,
         };
+    }
+
+    private static string CreateTeamAndBoxSummary(SoulLinkRun run)
+    {
+        var activeTeamRoutes = run.ActiveLinks
+            .Where(group => group is not null && group.IsAlive)
+            .Select(group => group!.Route)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var teamSize = activeTeamRoutes.Count;
+        var boxSize = run.LinkGroups.Count(group => group.IsAlive && !activeTeamRoutes.Contains(group.Route));
+
+        return $"Run: {run.Name}{Environment.NewLine}Team: {teamSize}/6{Environment.NewLine}Box: {boxSize}";
+    }
+
+    private static string CreateDeathReasonSummary(IReadOnlyCollection<LinkedPokemon> deadEntries)
+    {
+        var summary = string.Join(
+            Environment.NewLine,
+            deadEntries
+                .Select(entry => string.IsNullOrWhiteSpace(entry.DeathReason) ? "No reason given." : entry.DeathReason.Trim())
+                .GroupBy(reason => reason, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(group => group.Count())
+                .ThenBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Take(5)
+                .Select(group => $"{group.Key}: {group.Count()}"));
+
+        return TruncateFieldValue(string.IsNullOrWhiteSpace(summary) ? "None" : summary);
+    }
+
+    private static string CreatePlayerStatsSummary(IReadOnlyCollection<SoulLinkRun> runs)
+    {
+        var playerNames = runs
+            .SelectMany(run => run.Players)
+            .Select(player => player.UserName)
+            .Where(playerName => !string.IsNullOrWhiteSpace(playerName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(playerName => playerName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (playerNames.Count == 0)
+        {
+            return "No players recorded.";
+        }
+
+        var entries = runs.SelectMany(run => run.LinkGroups).SelectMany(group => group.Entries).ToList();
+        var lines = playerNames.Select(playerName =>
+        {
+            var playerEntries = entries
+                .Where(entry => string.Equals(entry.PlayerName, playerName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var deaths = playerEntries.Count(entry => !entry.IsAlive);
+            var alive = playerEntries.Count(entry => entry.IsAlive);
+
+            return $"{playerName}: {playerEntries.Count} caught, {alive} alive, {deaths} dead";
+        });
+
+        return TruncateFieldValue(string.Join(Environment.NewLine, lines));
+    }
+
+    private static string CreateDeathLogSummary(IReadOnlyCollection<SoulLinkRun> runs)
+    {
+        var lines = runs
+            .SelectMany(run => run.LinkGroups.Select(group => new { Run = run, Group = group }))
+            .SelectMany(item => item.Group.Entries.Select(entry => new { item.Run, item.Group, Entry = entry }))
+            .Where(item => !item.Entry.IsAlive)
+            .OrderByDescending(item => item.Entry.DiedAtUtc ?? item.Entry.CaughtAtUtc)
+            .Take(12)
+            .Select(item =>
+            {
+                var reason = string.IsNullOrWhiteSpace(item.Entry.DeathReason)
+                    ? "No reason given."
+                    : item.Entry.DeathReason.Trim();
+                return $"{item.Entry.PlayerName}: {item.Entry.PokemonName} ({item.Group.Route}) - {reason}";
+            });
+        var summary = string.Join(Environment.NewLine, lines);
+
+        return TruncateFieldValue(string.IsNullOrWhiteSpace(summary) ? "None" : summary);
+    }
+
+    private static string TruncateFieldValue(string value)
+    {
+        const int maxFieldLength = 1024;
+
+        if (value.Length <= maxFieldLength)
+        {
+            return value;
+        }
+
+        return string.Concat(value.AsSpan(0, maxFieldLength - 3), "...");
     }
 
     private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)

@@ -107,6 +107,28 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateStatsEmbed_ShouldIncludeRouteTeamReasonAndPlayerStatistics()
+    {
+        var run = CreateRun();
+        var teamRoute = CreateLinkGroup("101", true, "Bisasam");
+        var deadRoute = CreateLinkGroup("102", false, "Pichu");
+        var deadEntry = Assert.Single(deadRoute.Entries);
+        deadEntry.DeathReason = "Critical hit.";
+        deadEntry.DiedAtUtc = DateTime.UtcNow;
+        run.LinkGroups.AddRange(new[] { teamRoute, deadRoute });
+        run.ActiveLinks[0] = teamRoute;
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateStatsEmbed([run], "attachment://stats.png");
+
+        Assert.Contains(embed.Fields, field => field.Name == "Routes" && field.Value.Contains("Caught: 2", StringComparison.Ordinal));
+        Assert.Contains(embed.Fields, field => field.Name == "Team / Box" && field.Value.Contains("Team: 1/6", StringComparison.Ordinal));
+        Assert.Contains(embed.Fields, field => field.Name == "Deaths by Reason" && field.Value.Contains("Critical hit.: 1", StringComparison.Ordinal));
+        Assert.Contains(embed.Fields, field => field.Name == "Player Stats" && field.Value.Contains("marpie1: 2 caught, 1 alive, 1 dead", StringComparison.Ordinal));
+        Assert.Contains(embed.Fields, field => field.Name == "Death Log" && field.Value.Contains("Pichu (102) - Critical hit.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CreateStatusMessages_ShouldKeepAllTableRowsWithoutContinuationSections()
     {
         var run = CreateRun();
