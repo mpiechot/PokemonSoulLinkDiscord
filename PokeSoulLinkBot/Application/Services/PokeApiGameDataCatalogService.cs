@@ -24,6 +24,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
     private readonly HttpClient httpClient;
     private readonly SemaphoreSlim initializationLock = new SemaphoreSlim(1, 1);
     private GameDataCatalog? catalog;
+    private string catalogSource = "none";
     private Task? refreshTask;
 
     /// <summary>
@@ -64,6 +65,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
                     "Using game data catalog source cache with {EditionCount} editions and {RouteCount} routes.",
                     this.catalog.Editions.Count,
                     this.catalog.Editions.Sum(edition => edition.Routes.Count));
+                this.catalogSource = "cache";
                 this.StartRefreshInBackground();
                 return;
             }
@@ -75,6 +77,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
                     "Using game data catalog source fallback with {EditionCount} editions and {RouteCount} routes.",
                     this.catalog.Editions.Count,
                     this.catalog.Editions.Sum(edition => edition.Routes.Count));
+                this.catalogSource = "fallback";
                 this.StartRefreshInBackground();
                 return;
             }
@@ -87,6 +90,22 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         {
             this.initializationLock.Release();
         }
+    }
+
+    /// <inheritdoc />
+    public GameDataCatalogStatus GetStatus()
+    {
+        var currentCatalog = this.catalog;
+        return new GameDataCatalogStatus
+        {
+            IsReady = currentCatalog is not null,
+            Source = currentCatalog is null ? "none" : this.catalogSource,
+            IsRefreshRunning = this.refreshTask is not null,
+            SchemaVersion = currentCatalog?.SchemaVersion,
+            RefreshedAtUtc = currentCatalog?.RefreshedAtUtc,
+            EditionCount = currentCatalog?.Editions.Count ?? 0,
+            RouteCount = currentCatalog?.Editions.Sum(edition => edition.Routes.Count) ?? 0,
+        };
     }
 
     /// <inheritdoc />
@@ -382,6 +401,7 @@ public sealed class PokeApiGameDataCatalogService : IGameDataCatalogService
         {
             var refreshedCatalog = await this.RefreshCatalogAsync();
             this.catalog = refreshedCatalog;
+            this.catalogSource = "PokeAPI";
 
             try
             {

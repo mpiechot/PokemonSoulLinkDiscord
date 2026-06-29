@@ -1,9 +1,11 @@
 using System.Text.Json;
 using Discord;
 using Discord.WebSocket;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Bot.Commands;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
+using PokeSoulLinkBot.Core.Models;
 using Serilog;
 
 namespace PokeSoulLinkBot.Bot.Handlers;
@@ -17,6 +19,7 @@ public sealed class SlashCommandRouter
     private const long SlowAutocompleteThresholdMilliseconds = 500;
 
     private readonly IReadOnlyDictionary<string, ISlashCommand> commands;
+    private readonly IBotDiagnosticsService diagnosticsService;
     private readonly EmbedFactory embedFactory;
 
     /// <summary>
@@ -24,14 +27,17 @@ public sealed class SlashCommandRouter
     /// </summary>
     /// <param name="commands">The available slash commands.</param>
     /// <param name="embedFactory">The embed factory used for error messages.</param>
+    /// <param name="diagnosticsService">The diagnostics service.</param>
     public SlashCommandRouter(
         IReadOnlyCollection<ISlashCommand> commands,
-        EmbedFactory embedFactory)
+        EmbedFactory embedFactory,
+        IBotDiagnosticsService diagnosticsService)
     {
         ArgumentNullException.ThrowIfNull(commands);
 
         this.commands = commands.ToDictionary(command => command.CommandName, StringComparer.OrdinalIgnoreCase);
         this.embedFactory = embedFactory ?? throw new ArgumentNullException(nameof(embedFactory));
+        this.diagnosticsService = diagnosticsService ?? throw new ArgumentNullException(nameof(diagnosticsService));
     }
 
     /// <summary>
@@ -87,6 +93,16 @@ public sealed class SlashCommandRouter
                     "Slash command /{CommandName} completed slowly in {ElapsedMilliseconds} ms.",
                     command.CommandName,
                     elapsedMilliseconds);
+                this.diagnosticsService.Record(new DiagnosticEvent
+                {
+                    OccurredAtUtc = DateTimeOffset.UtcNow,
+                    Severity = "Warning",
+                    Source = "SlashCommandRouter",
+                    Message = "Slash command completed slowly.",
+                    CommandName = command.CommandName,
+                    Parameters = parameterText,
+                    ElapsedMilliseconds = elapsedMilliseconds,
+                });
             }
             else
             {
@@ -105,12 +121,20 @@ public sealed class SlashCommandRouter
                 command.CommandName,
                 elapsedMilliseconds,
                 parameterText);
+            this.diagnosticsService.RecordException(
+                "Error",
+                "SlashCommandRouter",
+                "Slash command failed.",
+                exception,
+                command.CommandName,
+                parameterText,
+                elapsedMilliseconds);
 
             var errorMessage = CreateUserFacingErrorMessage(command, exception);
             var errorEmbed = this.embedFactory.CreateErrorEmbed(errorMessage);
 
             response ??= new DiscordSlashCommandResponse(command);
-            await TrySendErrorResponseAsync(response, errorEmbed, exception);
+            await this.TrySendErrorResponseAsync(response, errorEmbed, exception);
         }
     }
 
@@ -174,6 +198,14 @@ public sealed class SlashCommandRouter
                 currentOptionName,
                 currentValue,
                 GetElapsedMilliseconds(startedAt));
+            this.diagnosticsService.RecordException(
+                "Error",
+                "SlashCommandRouter",
+                "Autocomplete failed.",
+                exception,
+                interaction.Data.CommandName,
+                $"{currentOptionName}={currentValue}",
+                GetElapsedMilliseconds(startedAt));
 
             if (!interaction.HasResponded)
             {
@@ -185,25 +217,6 @@ public sealed class SlashCommandRouter
     private static long GetElapsedMilliseconds(DateTimeOffset startedAt)
     {
         return (long)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds;
-    }
-
-    private static async Task TrySendErrorResponseAsync(
-        ISlashCommandResponse response,
-        Embed errorEmbed,
-        Exception originalException)
-    {
-        try
-        {
-            await response.SendAsync(embed: errorEmbed, ephemeral: true);
-        }
-        catch (Exception responseException)
-        {
-            Log.ForContext("EventName", "SlashCommandErrorResponseFailed").Warning(
-                responseException,
-                "Could not send error response for slash command /{CommandName}. OriginalException={OriginalExceptionType}.",
-                response.CommandName,
-                originalException.GetType().Name);
-        }
     }
 
     private static string FormatCommandOptions(SocketSlashCommand command)
@@ -308,5 +321,30 @@ public sealed class SlashCommandRouter
         }
 
         return fallbackMessage;
+    }
+
+    private async Task TrySendErrorResponseAsync(
+        ISlashCommandResponse response,
+        Embed errorEmbed,
+        Exception originalException)
+    {
+        try
+        {
+            await response.SendAsync(embed: errorEmbed, ephemeral: true);
+        }
+        catch (Exception responseException)
+        {
+            Log.ForContext("EventName", "SlashCommandErrorResponseFailed").Warning(
+                responseException,
+                "Could not send error response for slash command /{CommandName}. OriginalException={OriginalExceptionType}.",
+                response.CommandName,
+                originalException.GetType().Name);
+            this.diagnosticsService.RecordException(
+                "Warning",
+                "SlashCommandRouter",
+                "Could not send slash-command error response.",
+                responseException,
+                response.CommandName);
+        }
     }
 }

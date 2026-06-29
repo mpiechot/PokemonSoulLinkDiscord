@@ -18,6 +18,7 @@ public sealed class CommandDefinitionTests
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
             { new CatchCheckCommand(new StubCatchEligibilityService(), new EmbedFactory()), "catch-check", new[] { "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route", "reason", "player" } },
+            { new HealthCommand(new StubBotHealthService(), new EmbedFactory()), "health", Array.Empty<string>() },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
             { new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "route-death", new[] { "route", "reason", "player" } },
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
@@ -215,6 +216,14 @@ public sealed class CommandDefinitionTests
         }
     }
 
+    private sealed class StubBotHealthService : IBotHealthService
+    {
+        public Task<BotHealthReport> GetReportAsync(string guildId)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
     private sealed class StubArenaInfoService : IArenaInfoService
     {
         public Task<ArenaInfo> GetArenaInfoAsync(string edition, int arenaNumber)
@@ -225,6 +234,11 @@ public sealed class CommandDefinitionTests
 
     private sealed class StubGameDataCatalogService : IGameDataCatalogService
     {
+        public GameDataCatalogStatus GetStatus()
+        {
+            return new GameDataCatalogStatus();
+        }
+
         public Task InitializeAsync()
         {
             return Task.CompletedTask;

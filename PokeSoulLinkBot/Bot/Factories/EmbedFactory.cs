@@ -434,6 +434,26 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates an embed for bot diagnostics.
+    /// </summary>
+    /// <param name="report">The health report.</param>
+    /// <returns>The created embed.</returns>
+    public Embed CreateHealthEmbed(BotHealthReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        return new EmbedBuilder()
+            .WithTitle("Bot Diagnostics")
+            .WithColor(GetHealthColor(report))
+            .AddField("Discord", CreateDiscordHealthSummary(report), true)
+            .AddField("Active Run", CreateActiveRunHealthSummary(report.ActiveRun), true)
+            .AddField("Data", CreateDataHealthSummary(report), true)
+            .AddField("Recent Diagnostics", CreateRecentDiagnosticsSummary(report.RecentEvents))
+            .AddField("Report", $"Created: {report.CreatedAtUtc:yyyy-MM-dd HH:mm:ss} UTC")
+            .Build();
+    }
+
+    /// <summary>
     /// Creates an error embed.
     /// </summary>
     /// <param name="message">The error message.</param>
@@ -640,6 +660,109 @@ public sealed class EmbedFactory
         }
 
         return string.Concat(value.AsSpan(0, maxFieldLength - 3), "...");
+    }
+
+    private static Color GetHealthColor(BotHealthReport report)
+    {
+        if (report.RecentEvents.Any(diagnosticEvent =>
+            string.Equals(diagnosticEvent.Severity, "Error", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(diagnosticEvent.Severity, "Fatal", StringComparison.OrdinalIgnoreCase)))
+        {
+            return Color.Red;
+        }
+
+        if (!string.Equals(report.DiscordConnectionState, "Connected", StringComparison.OrdinalIgnoreCase) ||
+            !report.GameDataCatalog.IsReady)
+        {
+            return Color.Orange;
+        }
+
+        return Color.Green;
+    }
+
+    private static string CreateDiscordHealthSummary(BotHealthReport report)
+    {
+        return
+            $"State: {report.DiscordConnectionState}{Environment.NewLine}" +
+            $"Latency: {report.DiscordLatencyMilliseconds} ms{Environment.NewLine}" +
+            $"Guilds: {report.GuildCount}";
+    }
+
+    private static string CreateActiveRunHealthSummary(ActiveRunHealthStatus? activeRun)
+    {
+        if (activeRun is null)
+        {
+            return "No active run.";
+        }
+
+        return TruncateFieldValue(
+            $"Run: {activeRun.Name}{Environment.NewLine}" +
+            $"Edition: {activeRun.Game}{Environment.NewLine}" +
+            $"Players: {activeRun.PlayerCount}{Environment.NewLine}" +
+            $"Routes: {activeRun.LinkGroupCount}{Environment.NewLine}" +
+            $"Team: {activeRun.ActiveTeamCount}/6{Environment.NewLine}" +
+            $"Dead: {activeRun.DeadGroupCount}{Environment.NewLine}" +
+            $"Lost: {activeRun.LostRouteCount}");
+    }
+
+    private static string CreateDataHealthSummary(BotHealthReport report)
+    {
+        var gameData = report.GameDataCatalog;
+        var pokemonCache = report.PokemonDataCache;
+
+        return TruncateFieldValue(
+            $"Game catalog: {FormatReady(gameData.IsReady)} ({gameData.Source}){Environment.NewLine}" +
+            $"Editions/routes: {gameData.EditionCount}/{gameData.RouteCount}{Environment.NewLine}" +
+            $"Refresh running: {FormatYesNo(gameData.IsRefreshRunning)}{Environment.NewLine}" +
+            $"Pokemon cache: {FormatReady(pokemonCache.IsLoaded)} v{pokemonCache.Version}{Environment.NewLine}" +
+            $"Names/info/dex: {pokemonCache.NameIndexCount}/{pokemonCache.PokemonInfoCount}/{pokemonCache.PokedexEntryCount}");
+    }
+
+    private static string CreateRecentDiagnosticsSummary(IReadOnlyList<DiagnosticEvent> recentEvents)
+    {
+        if (recentEvents.Count == 0)
+        {
+            return "No recent warnings or errors recorded.";
+        }
+
+        var lines = recentEvents
+            .Take(8)
+            .Select(FormatDiagnosticEvent);
+
+        return TruncateFieldValue(string.Join(Environment.NewLine, lines));
+    }
+
+    private static string FormatDiagnosticEvent(DiagnosticEvent diagnosticEvent)
+    {
+        var commandText = string.IsNullOrWhiteSpace(diagnosticEvent.CommandName)
+            ? diagnosticEvent.Source
+            : $"/{diagnosticEvent.CommandName}";
+        var exceptionText = string.IsNullOrWhiteSpace(diagnosticEvent.ExceptionType)
+            ? string.Empty
+            : $" · {diagnosticEvent.ExceptionType}";
+        var elapsedText = diagnosticEvent.ElapsedMilliseconds is null
+            ? string.Empty
+            : $" · {diagnosticEvent.ElapsedMilliseconds} ms";
+        var parametersText = string.IsNullOrWhiteSpace(diagnosticEvent.Parameters)
+            ? string.Empty
+            : $" · {diagnosticEvent.Parameters}";
+        var messageText = string.IsNullOrWhiteSpace(diagnosticEvent.ExceptionMessage)
+            ? diagnosticEvent.Message
+            : diagnosticEvent.ExceptionMessage;
+
+        return
+            $"{diagnosticEvent.OccurredAtUtc:HH:mm:ss} UTC · {diagnosticEvent.Severity} · {commandText}" +
+            $"{exceptionText}{elapsedText}{parametersText} · {messageText}";
+    }
+
+    private static string FormatReady(bool isReady)
+    {
+        return isReady ? "ready" : "not ready";
+    }
+
+    private static string FormatYesNo(bool value)
+    {
+        return value ? "yes" : "no";
     }
 
     private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)

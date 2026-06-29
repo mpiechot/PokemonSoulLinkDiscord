@@ -14,6 +14,12 @@ public interface IGameDataCatalogService
     Task InitializeAsync();
 
     /// <summary>
+    /// Gets the current catalog status without exposing local file paths.
+    /// </summary>
+    /// <returns>The current catalog status.</returns>
+    GameDataCatalogStatus GetStatus();
+
+    /// <summary>
     /// Gets all known game editions.
     /// </summary>
     /// <returns>A read-only collection of game editions.</returns>
