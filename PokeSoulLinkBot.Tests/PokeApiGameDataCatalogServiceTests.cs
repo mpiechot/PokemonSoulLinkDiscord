@@ -166,14 +166,30 @@ public sealed class PokeApiGameDataCatalogServiceTests
         {
             if (File.Exists(cacheFilePath))
             {
-                await using var stream = File.OpenRead(cacheFilePath);
-                var catalog = await JsonSerializer.DeserializeAsync<GameDataCatalog>(
-                    stream,
-                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-                if (catalog is not null)
+                try
                 {
-                    return catalog;
+                    await using var stream = new FileStream(
+                        cacheFilePath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite);
+
+                    var catalog = await JsonSerializer.DeserializeAsync<GameDataCatalog>(
+                        stream,
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+                    if (catalog is not null)
+                    {
+                        return catalog;
+                    }
+                }
+                catch (IOException)
+                {
+                    // The background refresh may still be writing the cache file.
+                }
+                catch (JsonException)
+                {
+                    // The cache file may exist but not be fully written yet.
                 }
             }
 
