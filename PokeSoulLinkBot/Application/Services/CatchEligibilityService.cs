@@ -31,6 +31,12 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
         var activeRun = this.runService.GetActiveRun(guildId);
+        var directMatch = FindDirectMatch(activeRun, pokemonName);
+        if (directMatch is not null)
+        {
+            return directMatch;
+        }
+
         var familyCache = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         var requestedFamily = await this.GetEvolutionFamilyAsync(pokemonName, familyCache);
 
@@ -64,6 +70,40 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
             RequestedPokemonName = pokemonName,
             IsAllowed = true,
         };
+    }
+
+    private static CatchCheckResult? FindDirectMatch(SoulLinkRun activeRun, string pokemonName)
+    {
+        var normalizedRequestedName = NormalizePokemonName(pokemonName);
+
+        foreach (var linkGroup in activeRun.LinkGroups)
+        {
+            foreach (var entry in linkGroup.Entries)
+            {
+                if (!string.Equals(
+                    NormalizePokemonName(entry.PokemonName),
+                    normalizedRequestedName,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return new CatchCheckResult
+                {
+                    RequestedPokemonName = pokemonName,
+                    IsAllowed = false,
+                    Match = new CatchCheckMatch
+                    {
+                        Route = linkGroup.Route,
+                        PlayerName = entry.PlayerName,
+                        PokemonName = entry.PokemonName,
+                        Status = GetStatus(activeRun, linkGroup, entry),
+                    },
+                };
+            }
+        }
+
+        return null;
     }
 
     private static string GetStatus(SoulLinkRun run, LinkGroup linkGroup, LinkedPokemon pokemon)

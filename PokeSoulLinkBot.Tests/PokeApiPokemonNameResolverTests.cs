@@ -47,7 +47,7 @@ public sealed class PokeApiPokemonNameResolverTests
             var resolvedName = await resolver.ResolvePokemonNameAsync("Bisasam");
 
             Assert.Equal("bulbasaur", resolvedName);
-            Assert.Equal(1, handler.DirectRequestCount);
+            Assert.Equal(0, handler.DirectRequestCount);
             Assert.Equal(0, handler.SpeciesIndexRequestCount);
         }
         finally

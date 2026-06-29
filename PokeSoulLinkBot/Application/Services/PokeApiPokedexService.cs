@@ -21,6 +21,27 @@ public sealed class PokeApiPokedexService : IPokedexService
     private readonly ConcurrentDictionary<string, PokedexEntry> pokedexEntryCache =
         new ConcurrentDictionary<string, PokedexEntry>(StringComparer.OrdinalIgnoreCase);
 
+    private readonly ConcurrentDictionary<string, PokemonDto> pokemonDtoCache =
+        new ConcurrentDictionary<string, PokemonDto>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, PokemonSpeciesDto> pokemonSpeciesCache =
+        new ConcurrentDictionary<string, PokemonSpeciesDto>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, EvolutionChainDto> evolutionChainCache =
+        new ConcurrentDictionary<string, EvolutionChainDto>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<PokedexEntry>>> pendingPokedexEntryRequests =
+        new ConcurrentDictionary<string, Lazy<Task<PokedexEntry>>>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<PokemonDto?>>> pendingPokemonRequests =
+        new ConcurrentDictionary<string, Lazy<Task<PokemonDto?>>>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<PokemonSpeciesDto?>>> pendingSpeciesRequests =
+        new ConcurrentDictionary<string, Lazy<Task<PokemonSpeciesDto?>>>(StringComparer.OrdinalIgnoreCase);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<EvolutionChainDto?>>> pendingEvolutionChainRequests =
+        new ConcurrentDictionary<string, Lazy<Task<EvolutionChainDto?>>>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PokeApiPokedexService"/> class.
     /// </summary>
@@ -70,51 +91,20 @@ public sealed class PokeApiPokedexService : IPokedexService
             return persistedEntry;
         }
 
-        var requestedPokemon = await this.GetPokemonAsync(normalizedPokemonName)
-            ?? throw CreatePokemonNotFoundException(pokemonName, normalizedPokemonName);
+        var pendingRequest = this.pendingPokedexEntryRequests.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<Task<PokedexEntry>>(
+                () => this.CreatePokedexEntryAsync(pokemonName, normalizedPokemonName, cacheKey),
+                LazyThreadSafetyMode.ExecutionAndPublication));
 
-        var species = await this.GetPokemonSpeciesAsync(normalizedPokemonName)
-            ?? throw new InvalidOperationException($"Species data for '{pokemonName}' was not found.");
-
-        var evolutionChainUrl = species.EvolutionChain?.Url
-            ?? throw new InvalidOperationException($"Evolution chain for '{pokemonName}' was not found.");
-
-        var evolutionChain = await this.GetEvolutionChainAsync(evolutionChainUrl)
-            ?? throw new InvalidOperationException($"Evolution chain for '{pokemonName}' was not found.");
-
-        var rows = new List<PokedexTableRow>();
-
-        if (evolutionChain.Chain is null)
+        try
         {
-            throw new InvalidOperationException($"Evolution chain for '{pokemonName}' is invalid.");
+            return await pendingRequest.Value;
         }
-
-        await this.AddEvolutionRowsAsync(evolutionChain.Chain, "Basis", rows);
-
-        var imageUrl = requestedPokemon.Sprites?.Other?.OfficialArtwork?.FrontDefault;
-
-        if (string.IsNullOrWhiteSpace(imageUrl))
+        finally
         {
-            Log.Debug(
-                "Pokedex image lookup found no image for '{PokemonName}' resolved as '{ResolvedPokemonName}'.",
-                pokemonName,
-                normalizedPokemonName);
+            this.pendingPokedexEntryRequests.TryRemove(cacheKey, out _);
         }
-
-        var pokedexEntry = new PokedexEntry
-        {
-            PokemonName = FormatResourceName(requestedPokemon.Name ?? normalizedPokemonName),
-            ImageUrl = imageUrl,
-            Rows = rows,
-        };
-
-        this.pokedexEntryCache.TryAdd(cacheKey, pokedexEntry);
-        if (this.pokemonDataCacheStore is not null)
-        {
-            await this.pokemonDataCacheStore.SavePokedexEntryAsync(cacheKey, pokedexEntry);
-        }
-
-        return pokedexEntry;
     }
 
     private static IReadOnlyList<string> GetFormattedTypes(PokemonDto pokemon)
@@ -320,6 +310,58 @@ public sealed class PokeApiPokedexService : IPokedexService
                 .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
     }
 
+    private async Task<PokedexEntry> CreatePokedexEntryAsync(
+        string pokemonName,
+        string normalizedPokemonName,
+        string cacheKey)
+    {
+        var requestedPokemon = await this.GetPokemonAsync(normalizedPokemonName)
+            ?? throw CreatePokemonNotFoundException(pokemonName, normalizedPokemonName);
+
+        var species = await this.GetPokemonSpeciesAsync(normalizedPokemonName)
+            ?? throw new InvalidOperationException($"Species data for '{pokemonName}' was not found.");
+
+        var evolutionChainUrl = species.EvolutionChain?.Url
+            ?? throw new InvalidOperationException($"Evolution chain for '{pokemonName}' was not found.");
+
+        var evolutionChain = await this.GetEvolutionChainAsync(evolutionChainUrl)
+            ?? throw new InvalidOperationException($"Evolution chain for '{pokemonName}' was not found.");
+
+        var rows = new List<PokedexTableRow>();
+
+        if (evolutionChain.Chain is null)
+        {
+            throw new InvalidOperationException($"Evolution chain for '{pokemonName}' is invalid.");
+        }
+
+        await this.AddEvolutionRowsAsync(evolutionChain.Chain, "Basis", rows);
+
+        var imageUrl = requestedPokemon.Sprites?.Other?.OfficialArtwork?.FrontDefault;
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            Log.Debug(
+                "Pokedex image lookup found no image for '{PokemonName}' resolved as '{ResolvedPokemonName}'.",
+                pokemonName,
+                normalizedPokemonName);
+        }
+
+        var pokedexEntry = new PokedexEntry
+        {
+            PokemonName = FormatResourceName(requestedPokemon.Name ?? normalizedPokemonName),
+            ImageUrl = imageUrl,
+            Rows = rows,
+        };
+
+        this.pokedexEntryCache.TryAdd(cacheKey, pokedexEntry);
+        if (this.pokemonDataCacheStore is not null)
+        {
+            await this.pokemonDataCacheStore.SavePokedexEntryAsync(cacheKey, pokedexEntry);
+        }
+
+        return pokedexEntry;
+    }
+
     private async Task AddEvolutionRowsAsync(
         EvolutionChainLinkDto chainLink,
         string requirementText,
@@ -357,23 +399,98 @@ public sealed class PokeApiPokedexService : IPokedexService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
-        var requestUri = $"pokemon/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
-        return await this.GetFromApiAsync<PokemonDto>(requestUri);
+        var cacheKey = NormalizePokemonName(pokemonName);
+        if (this.pokemonDtoCache.TryGetValue(cacheKey, out var cachedPokemon))
+        {
+            return cachedPokemon;
+        }
+
+        var requestUri = $"pokemon/{Uri.EscapeDataString(cacheKey)}";
+        var pendingRequest = this.pendingPokemonRequests.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<Task<PokemonDto?>>(
+                () => this.GetFromApiAsync<PokemonDto>(requestUri),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            var pokemon = await pendingRequest.Value;
+            if (pokemon is not null)
+            {
+                this.pokemonDtoCache.TryAdd(cacheKey, pokemon);
+            }
+
+            return pokemon;
+        }
+        finally
+        {
+            this.pendingPokemonRequests.TryRemove(cacheKey, out _);
+        }
     }
 
     private async Task<PokemonSpeciesDto?> GetPokemonSpeciesAsync(string pokemonName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
 
-        var requestUri = $"pokemon-species/{Uri.EscapeDataString(NormalizePokemonName(pokemonName))}";
-        return await this.GetFromApiAsync<PokemonSpeciesDto>(requestUri);
+        var cacheKey = NormalizePokemonName(pokemonName);
+        if (this.pokemonSpeciesCache.TryGetValue(cacheKey, out var cachedSpecies))
+        {
+            return cachedSpecies;
+        }
+
+        var requestUri = $"pokemon-species/{Uri.EscapeDataString(cacheKey)}";
+        var pendingRequest = this.pendingSpeciesRequests.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<Task<PokemonSpeciesDto?>>(
+                () => this.GetFromApiAsync<PokemonSpeciesDto>(requestUri),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            var species = await pendingRequest.Value;
+            if (species is not null)
+            {
+                this.pokemonSpeciesCache.TryAdd(cacheKey, species);
+            }
+
+            return species;
+        }
+        finally
+        {
+            this.pendingSpeciesRequests.TryRemove(cacheKey, out _);
+        }
     }
 
     private async Task<EvolutionChainDto?> GetEvolutionChainAsync(string requestUri)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(requestUri);
 
-        return await this.GetFromApiAsync<EvolutionChainDto>(requestUri);
+        var cacheKey = requestUri.Trim();
+        if (this.evolutionChainCache.TryGetValue(cacheKey, out var cachedEvolutionChain))
+        {
+            return cachedEvolutionChain;
+        }
+
+        var pendingRequest = this.pendingEvolutionChainRequests.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<Task<EvolutionChainDto?>>(
+                () => this.GetFromApiAsync<EvolutionChainDto>(cacheKey),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+
+        try
+        {
+            var evolutionChain = await pendingRequest.Value;
+            if (evolutionChain is not null)
+            {
+                this.evolutionChainCache.TryAdd(cacheKey, evolutionChain);
+            }
+
+            return evolutionChain;
+        }
+        finally
+        {
+            this.pendingEvolutionChainRequests.TryRemove(cacheKey, out _);
+        }
     }
 
     private async Task<T?> GetFromApiAsync<T>(string requestUri)
