@@ -8,6 +8,8 @@ using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Handlers;
 using PokeSoulLinkBot.Bot.Presentation;
 using PokeSoulLinkBot.Bot.Registration;
+using PokeSoulLinkBot.Bot.Services;
+using PokeSoulLinkBot.Core.Models;
 using PokeSoulLinkBot.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -83,6 +85,13 @@ internal sealed class Program
         var runStore = new RunStore(filePath);
         var runService = new RunService(runStore);
         var catchEligibilityService = new CatchEligibilityService(runService, pokedexService);
+        var diagnosticsService = new BotDiagnosticsService();
+        var healthService = new BotHealthService(
+            client,
+            runService,
+            gameDataCatalogService,
+            pokemonDataCacheStore,
+            diagnosticsService);
         var embedFactory = new EmbedFactory();
         var embedImageFactory = new EmbedImageFactory(resourcesDirectoryPath);
 
@@ -104,11 +113,11 @@ internal sealed class Program
             new ArenaCompleteCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
         };
 
-        var slashCommandRouter = new SlashCommandRouter(commands, embedFactory);
+        var slashCommandRouter = new SlashCommandRouter(commands, embedFactory, diagnosticsService);
         var slashCommandRegistrationService = new SlashCommandRegistrationService();
         var readyStartupTaskRunner = new ReadyStartupTaskRunner(RegisterCommandsAfterReadyAsync);
 
-        client.Log += OnLogAsync;
+        client.Log += logMessage => OnLogAsync(logMessage, diagnosticsService);
         client.Ready += readyStartupTaskRunner.HandleReadyAsync;
         client.SlashCommandExecuted += slashCommandRouter.HandleAsync;
         client.AutocompleteExecuted += slashCommandRouter.HandleAutocompleteAsync;
@@ -144,6 +153,11 @@ internal sealed class Program
             catch (Exception exception)
             {
                 Log.Error(exception, "Ready startup failed.");
+                diagnosticsService.RecordException(
+                    "Error",
+                    "ReadyStartup",
+                    "Ready startup failed.",
+                    exception);
             }
         }
 
@@ -159,6 +173,11 @@ internal sealed class Program
             catch (Exception exception)
             {
                 Log.Warning(exception, "Pokemon data cache warmup failed.");
+                diagnosticsService.RecordException(
+                    "Warning",
+                    "PokemonDataWarmup",
+                    "Pokemon data cache warmup failed.",
+                    exception);
             }
         }
 
@@ -243,7 +262,7 @@ internal sealed class Program
         }
     }
 
-    private static Task OnLogAsync(LogMessage logMessage)
+    private static Task OnLogAsync(LogMessage logMessage, BotDiagnosticsService diagnosticsService)
     {
         var level = MapDiscordLogLevel(logMessage.Severity);
         var message = string.IsNullOrWhiteSpace(logMessage.Message)
@@ -253,12 +272,54 @@ internal sealed class Program
         if (logMessage.Exception is not null)
         {
             Log.Write(level, logMessage.Exception, "Discord {Source}: {Message}", logMessage.Source, message);
+            RecordDiscordDiagnostic(logMessage, diagnosticsService, message);
             return Task.CompletedTask;
         }
 
         Log.Write(level, "Discord {Source}: {Message}", logMessage.Source, message);
+        RecordDiscordDiagnostic(logMessage, diagnosticsService, message);
 
         return Task.CompletedTask;
+    }
+
+    private static void RecordDiscordDiagnostic(
+        LogMessage logMessage,
+        BotDiagnosticsService diagnosticsService,
+        string message)
+    {
+        if (logMessage.Severity is not LogSeverity.Critical and not LogSeverity.Error and not LogSeverity.Warning)
+        {
+            return;
+        }
+
+        if (logMessage.Exception is not null)
+        {
+            diagnosticsService.RecordException(
+                MapDiagnosticSeverity(logMessage.Severity),
+                $"Discord:{logMessage.Source}",
+                message,
+                logMessage.Exception);
+            return;
+        }
+
+        diagnosticsService.Record(new DiagnosticEvent
+        {
+            OccurredAtUtc = DateTimeOffset.UtcNow,
+            Severity = MapDiagnosticSeverity(logMessage.Severity),
+            Source = $"Discord:{logMessage.Source}",
+            Message = message,
+        });
+    }
+
+    private static string MapDiagnosticSeverity(LogSeverity severity)
+    {
+        return severity switch
+        {
+            LogSeverity.Critical => "Fatal",
+            LogSeverity.Error => "Error",
+            LogSeverity.Warning => "Warning",
+            _ => "Info",
+        };
     }
 
     private static LogEventLevel MapDiscordLogLevel(LogSeverity severity)

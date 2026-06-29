@@ -39,6 +39,32 @@ public sealed class PokemonDataCacheStore
     }
 
     /// <summary>
+    /// Gets a shareable status summary for the cache.
+    /// </summary>
+    /// <returns>The cache status.</returns>
+    public async Task<PokemonDataCacheStatus> GetStatusAsync()
+    {
+        _ = await this.GetCacheAsync();
+        await this.cacheLock.WaitAsync();
+        try
+        {
+            return new PokemonDataCacheStatus
+            {
+                IsLoaded = this.cache is not null,
+                Version = this.cache!.Version,
+                RefreshedAtUtc = this.cache.RefreshedAtUtc,
+                NameIndexCount = this.cache.NameIndex.Count,
+                PokemonInfoCount = this.cache.PokemonInfos.Count,
+                PokedexEntryCount = this.cache.PokedexEntries.Count,
+            };
+        }
+        finally
+        {
+            this.cacheLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Gets the cached localized name index.
     /// </summary>
     /// <returns>The cached index, or <see langword="null"/> when no index exists.</returns>
