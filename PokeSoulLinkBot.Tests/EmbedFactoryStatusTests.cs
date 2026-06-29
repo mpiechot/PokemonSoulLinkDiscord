@@ -19,9 +19,9 @@ public sealed class EmbedFactoryStatusTests
 
         var message = embedFactory.CreateStatusMessage(run);
 
-        Assert.Contains("Current Team", message, StringComparison.Ordinal);
-        Assert.Contains("Box", message, StringComparison.Ordinal);
-        Assert.Contains("Dead", message, StringComparison.Ordinal);
+        Assert.Contains("⚔️ Current Team", message, StringComparison.Ordinal);
+        Assert.Contains("📦 Box", message, StringComparison.Ordinal);
+        Assert.Contains("💀 Dead", message, StringComparison.Ordinal);
         Assert.DoesNotContain("Alive", message, StringComparison.Ordinal);
         Assert.Contains("101", message, StringComparison.Ordinal);
         Assert.Contains("102", message, StringComparison.Ordinal);
@@ -190,76 +190,16 @@ public sealed class EmbedFactoryStatusTests
         var messages = embedFactory.CreateStatusMessages(run);
         var fullMessage = string.Join(Environment.NewLine, messages);
 
-        Assert.Contains("**Current Team**", fullMessage, StringComparison.Ordinal);
-        Assert.Contains("**Box**", fullMessage, StringComparison.Ordinal);
-        Assert.Contains("**Dead**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**⚔️ Current Team**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**📦 Box**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("**💀 Dead**", fullMessage, StringComparison.Ordinal);
+        Assert.Contains("```", fullMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("(continued)", fullMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("...```", fullMessage, StringComparison.Ordinal);
         Assert.All(messages, message => Assert.InRange(message.Length, 1, 2000));
         for (var routeIndex = 1; routeIndex <= 80; routeIndex++)
         {
             Assert.Contains($"route-{routeIndex:000}", fullMessage, StringComparison.Ordinal);
-        }
-    }
-
-    [Fact]
-    public void CreateStatusEmbedBatches_ShouldKeepTypicalStatusInOneDiscordMessage()
-    {
-        var run = CreateRunWithPlayers("marpie1", "beneerdbeermarmelade", "darkstyle4957");
-        for (var routeIndex = 1; routeIndex <= 18; routeIndex++)
-        {
-            var linkGroup = CreateLinkGroup($"route-{routeIndex:000}", routeIndex <= 12, $"Pokemon-{routeIndex:000}");
-            foreach (var player in run.Players.Skip(1))
-            {
-                linkGroup.Entries.Add(new LinkedPokemon
-                {
-                    PlayerUserId = player.UserId,
-                    PlayerName = player.UserName,
-                    PokemonName = $"Pokemon-{player.UserId}-{routeIndex:000}",
-                    IsAlive = routeIndex <= 12,
-                });
-            }
-
-            run.LinkGroups.Add(linkGroup);
-            if (routeIndex <= 6)
-            {
-                run.ActiveLinks[routeIndex - 1] = linkGroup;
-            }
-        }
-
-        var embedFactory = new EmbedFactory();
-
-        var batches = embedFactory.CreateStatusEmbedBatches(run, "attachment://status.png");
-
-        var batch = Assert.Single(batches);
-        Assert.InRange(batch.Count, 1, 10);
-        Assert.Contains(batch, embed => embed.Title == "Run Status");
-        Assert.Contains(batch, embed => embed.Description?.Contains("**Current Team**", StringComparison.Ordinal) == true);
-        Assert.Contains(batch, embed => embed.Description?.Contains("**Box**", StringComparison.Ordinal) == true);
-        Assert.Contains(batch, embed => embed.Description?.Contains("**Dead**", StringComparison.Ordinal) == true);
-    }
-
-    [Fact]
-    public void CreateStatusEmbedBatches_ShouldRespectDiscordEmbedBatchLimits()
-    {
-        var run = CreateRun();
-        for (var routeIndex = 1; routeIndex <= 180; routeIndex++)
-        {
-            run.LinkGroups.Add(CreateLinkGroup($"route-{routeIndex:000}", true, $"Pokemon-{routeIndex:000}"));
-        }
-
-        var embedFactory = new EmbedFactory();
-
-        var batches = embedFactory.CreateStatusEmbedBatches(run, "attachment://status.png");
-        var fullDescriptions = string.Join(
-            Environment.NewLine,
-            batches.SelectMany(batch => batch).Select(embed => embed.Description));
-
-        Assert.All(batches, batch => Assert.InRange(batch.Count, 1, 10));
-        Assert.All(batches, batch => Assert.InRange(GetEmbedBatchLength(batch), 1, 6000));
-        for (var routeIndex = 1; routeIndex <= 180; routeIndex++)
-        {
-            Assert.Contains($"route-{routeIndex:000}", fullDescriptions, StringComparison.Ordinal);
         }
     }
 
@@ -288,20 +228,6 @@ public sealed class EmbedFactoryStatusTests
         }
 
         return run;
-    }
-
-    private static int GetEmbedBatchLength(IReadOnlyCollection<Discord.Embed> embeds)
-    {
-        return embeds.Sum(embed =>
-            (embed.Title?.Length ?? 0)
-            + (embed.Description?.Length ?? 0)
-            + embed.Fields.Sum(GetEmbedFieldLength));
-    }
-
-    private static int GetEmbedFieldLength(Discord.EmbedField field)
-    {
-        var fieldValue = Convert.ToString(field.Value);
-        return field.Name.Length + (fieldValue?.Length ?? 0);
     }
 
     private static LinkGroup CreateLinkGroup(string route, bool isAlive, string pokemonName)
