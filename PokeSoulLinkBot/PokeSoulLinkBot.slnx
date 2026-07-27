@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="../PokeSoulLinkBot.Tests/PokeSoulLinkBot.Tests.csproj" />
+  <Project Path="../tools/GameDataCatalogGenerator/GameDataCatalogGenerator.csproj" />
   <Project Path="PokeSoulLinkBot.csproj" />
 </Solution>

@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PokeSoulLinkBot\PokeSoulLinkBot.csproj" />
+    <ProjectReference Include="..\tools\GameDataCatalogGenerator\GameDataCatalogGenerator.csproj" />
   </ItemGroup>
 
 </Project>
