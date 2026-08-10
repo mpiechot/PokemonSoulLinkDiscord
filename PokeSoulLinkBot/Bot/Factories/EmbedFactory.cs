@@ -740,6 +740,40 @@ public sealed class EmbedFactory
         return value ? "yes" : "no";
     }
 
+    private static IReadOnlyDictionary<string, int> CreateTeamPositions(SoulLinkRun run)
+    {
+        var positions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < run.ActiveLinks.Length; index++)
+        {
+            LinkGroup? group = run.ActiveLinks[index];
+            if (group is not null && group.IsAlive && !positions.ContainsKey(group.Route))
+            {
+                positions[group.Route] = index + 1;
+            }
+        }
+
+        return positions;
+    }
+
+    private static int GetTeamPosition(
+        LinkGroup group,
+        IReadOnlyDictionary<string, int>? teamPositions)
+    {
+        return teamPositions is not null && teamPositions.TryGetValue(group.Route, out var position)
+            ? position
+            : int.MaxValue;
+    }
+
+    private static string FormatRoute(
+        LinkGroup group,
+        IReadOnlyDictionary<string, int>? teamPositions)
+    {
+        return teamPositions is not null && teamPositions.TryGetValue(group.Route, out var position)
+            ? $"{position}: {group.Route}"
+            : group.Route;
+    }
+
     private IReadOnlyList<string> CreateStatusBlocks(SoulLinkRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -750,7 +784,11 @@ public sealed class EmbedFactory
         var playerNames = run.Players.Select(player => player.UserName).ToList();
         var blocks = new List<string>();
 
-        blocks.AddRange(this.CreateTableSections("⚔️ Current Team", currentTeam, playerNames));
+        blocks.AddRange(this.CreateTableSections(
+            "⚔️ Current Team",
+            currentTeam,
+            playerNames,
+            CreateTeamPositions(run)));
         blocks.AddRange(this.CreateTableSections("📦 Box", box, playerNames));
         blocks.AddRange(this.CreateTableSections("💀 Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
 
@@ -775,7 +813,8 @@ public sealed class EmbedFactory
         return this.CreateTableSections(
             "Team",
             run.ActiveLinks.Where(group => group is not null && group.IsAlive),
-            playerNames);
+            playerNames,
+            CreateTeamPositions(run));
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)
@@ -789,9 +828,10 @@ public sealed class EmbedFactory
     private IReadOnlyList<string> CreateTableSections(
         string title,
         IEnumerable<LinkGroup?> linkedGroups,
-        IReadOnlyList<string> playerNames)
+        IReadOnlyList<string> playerNames,
+        IReadOnlyDictionary<string, int>? teamPositions = null)
     {
-        var tableRows = this.BuildStringTableRows(linkedGroups, playerNames);
+        var tableRows = this.BuildStringTableRows(linkedGroups, playerNames, teamPositions);
         var headerRows = tableRows.Take(2).ToList();
         var rows = tableRows.Skip(2).ToList();
 
@@ -829,12 +869,18 @@ public sealed class EmbedFactory
 
     private IReadOnlyList<string> BuildStringTableRows(
         IEnumerable<LinkGroup?> linkedGroups,
-        IReadOnlyList<string> playerNames)
+        IReadOnlyList<string> playerNames,
+        IReadOnlyDictionary<string, int>? teamPositions)
     {
         const int routeWidth = 14;
         const int playerColumnWidth = 24;
+        var groups = linkedGroups
+            .Where(group => group != null)
+            .Select(group => group!)
+            .OrderBy(group => GetTeamPosition(group, teamPositions))
+            .ThenBy(group => group.Route, StringComparer.OrdinalIgnoreCase);
 
-        var header = $"{this.PadRight("Route", routeWidth)}" +
+        var header = $"{this.PadRight(teamPositions is null ? "Route" : "Pos. Route", routeWidth)}" +
                      string.Concat(playerNames.Select(player => this.PadRight(player, playerColumnWidth)));
 
         var separator = new string('-', routeWidth + (playerNames.Count * playerColumnWidth));
@@ -845,9 +891,9 @@ public sealed class EmbedFactory
             separator,
         };
 
-        foreach (var group in linkedGroups.Where(group => group != null).OrderBy(group => group!.Route))
+        foreach (var group in groups)
         {
-            var row = this.PadRight(group!.Route, routeWidth);
+            var row = this.PadRight(FormatRoute(group, teamPositions), routeWidth);
 
             foreach (var player in playerNames)
             {

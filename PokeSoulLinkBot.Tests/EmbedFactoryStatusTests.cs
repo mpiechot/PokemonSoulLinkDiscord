@@ -62,6 +62,24 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateTeamAndStatusMessages_ShouldShowCurrentTeamPositionsInSlotOrder()
+    {
+        var run = CreateRun();
+        var firstSlotRoute = CreateLinkGroup("102", true, "Pichu");
+        var secondSlotRoute = CreateLinkGroup("101", true, "Bisasam");
+        run.LinkGroups.AddRange(new[] { firstSlotRoute, secondSlotRoute });
+        run.ActiveLinks[0] = firstSlotRoute;
+        run.ActiveLinks[1] = secondSlotRoute;
+        var embedFactory = new EmbedFactory();
+
+        var teamMessage = embedFactory.CreateTeamMessage(run);
+        var statusMessage = embedFactory.CreateStatusMessage(run);
+
+        AssertCurrentTeamPositions(teamMessage);
+        AssertCurrentTeamPositions(statusMessage);
+    }
+
+    [Fact]
     public void CreateDeathRegisteredEmbed_ShouldIncludeReasonAndCausingPlayer()
     {
         var linkGroup = CreateLinkGroup("101", false, "Bisasam");
@@ -261,5 +279,14 @@ public sealed class EmbedFactoryStatusTests
                 },
             },
         };
+    }
+
+    private static void AssertCurrentTeamPositions(string message)
+    {
+        Assert.Contains("1: 102", message, StringComparison.Ordinal);
+        Assert.Contains("2: 101", message, StringComparison.Ordinal);
+        Assert.True(
+            message.IndexOf("1: 102", StringComparison.Ordinal) <
+            message.IndexOf("2: 101", StringComparison.Ordinal));
     }
 }
