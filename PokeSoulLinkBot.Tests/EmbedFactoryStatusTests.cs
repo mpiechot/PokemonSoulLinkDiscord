@@ -48,6 +48,20 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateTeamMessage_ShouldHideDeadActiveLinks()
+    {
+        var run = CreateRun();
+        var deadRoute = CreateLinkGroup("101", false, "Bisasam");
+        run.LinkGroups.Add(deadRoute);
+        run.ActiveLinks[0] = deadRoute;
+        var embedFactory = new EmbedFactory();
+
+        var message = embedFactory.CreateTeamMessage(run);
+
+        Assert.DoesNotContain("101", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateDeathRegisteredEmbed_ShouldIncludeReasonAndCausingPlayer()
     {
         var linkGroup = CreateLinkGroup("101", false, "Bisasam");

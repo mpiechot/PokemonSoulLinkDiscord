@@ -384,6 +384,18 @@ public sealed class RunServiceCatchTests
     }
 
     [Fact]
+    public void UseRoute_ShouldRemoveRouteFromOtherTeamPositions()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+
+        var activeRun = service.UseRoute(GuildId, "101", 2);
+
+        Assert.Null(activeRun.ActiveLinks[0]);
+        Assert.Equal("101", activeRun.ActiveLinks[1]?.Route);
+    }
+
+    [Fact]
     public void UseRoute_ShouldRejectDeadRoute()
     {
         var service = CreateServiceWithStartedRun();
@@ -393,6 +405,18 @@ public sealed class RunServiceCatchTests
         var exception = Assert.Throws<InvalidOperationException>(() => service.UseRoute(GuildId, "101", 1));
 
         Assert.Equal("Route '101' is dead and cannot be used.", exception.Message);
+    }
+
+    [Fact]
+    public void RegisterDeath_ShouldRemoveRouteFromActiveTeam()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+
+        service.RegisterDeath(GuildId, "101", "Critical hit.", null, null);
+
+        var activeRun = service.GetActiveRun(GuildId);
+        Assert.DoesNotContain(activeRun.ActiveLinks, group => group?.Route == "101");
     }
 
     [Fact]

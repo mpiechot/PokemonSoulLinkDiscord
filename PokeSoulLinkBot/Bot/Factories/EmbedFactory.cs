@@ -772,7 +772,10 @@ public sealed class EmbedFactory
     {
         var playerNames = run.Players.Select(player => player.UserName).ToList();
 
-        return this.CreateTableSections("Team", run.ActiveLinks, playerNames);
+        return this.CreateTableSections(
+            "Team",
+            run.ActiveLinks.Where(group => group is not null && group.IsAlive),
+            playerNames);
     }
 
     private string CreateRunHeader(string title, SoulLinkRun run)
