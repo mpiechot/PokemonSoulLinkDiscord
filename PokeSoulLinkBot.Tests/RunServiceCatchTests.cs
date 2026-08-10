@@ -396,6 +396,31 @@ public sealed class RunServiceCatchTests
     }
 
     [Fact]
+    public void UseRoute_ShouldSupportSixthPositionWhenPersistedSlotsWereShorter()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "104", 1, "marpie1", "Kleinstein", Array.Empty<string>());
+        var activeRun = service.GetActiveRun(GuildId);
+        activeRun.ActiveLinks = activeRun.ActiveLinks.Take(5).ToArray();
+
+        var updatedRun = service.UseRoute(GuildId, "104", 6);
+
+        Assert.Equal(6, updatedRun.ActiveLinks.Length);
+        Assert.Equal("104", updatedRun.ActiveLinks[5]?.Route);
+    }
+
+    [Fact]
+    public void UseRoute_ShouldRejectZeroBasedPosition()
+    {
+        var service = CreateServiceWithStartedRun();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            service.UseRoute(GuildId, "104", 0));
+
+        Assert.Equal("position", exception.ParamName);
+    }
+
+    [Fact]
     public void UseRoute_ShouldRejectDeadRoute()
     {
         var service = CreateServiceWithStartedRun();

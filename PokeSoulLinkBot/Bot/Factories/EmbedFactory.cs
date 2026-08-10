@@ -872,7 +872,7 @@ public sealed class EmbedFactory
         IReadOnlyList<string> playerNames,
         IReadOnlyDictionary<string, int>? teamPositions)
     {
-        const int routeWidth = 14;
+        var routeWidth = teamPositions is null ? 14 : 18;
         const int playerColumnWidth = 24;
         var groups = linkedGroups
             .Where(group => group != null)

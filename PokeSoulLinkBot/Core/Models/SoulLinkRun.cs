@@ -7,6 +7,8 @@ namespace PokeSoulLinkBot.Core.Models;
 /// </summary>
 public sealed class SoulLinkRun
 {
+    private LinkGroup?[] activeLinks = new LinkGroup?[6];
+
     /// <summary>
     /// Gets or sets the unique identifier of the run.
     /// </summary>
@@ -56,7 +58,18 @@ public sealed class SoulLinkRun
     /// Gets or sets the collection of active link groups.
     /// </summary>
     [JsonPropertyName("activeLinks")]
-    public LinkGroup?[] ActiveLinks { get; set; } = new LinkGroup?[6];
+    public LinkGroup?[] ActiveLinks
+    {
+        get => this.activeLinks;
+        set
+        {
+            this.activeLinks = new LinkGroup?[6];
+            if (value is not null)
+            {
+                Array.Copy(value, this.activeLinks, Math.Min(value.Length, this.activeLinks.Length));
+            }
+        }
+    }
 
     /// <summary>
     /// Gets or sets the completed arenas for this run.
