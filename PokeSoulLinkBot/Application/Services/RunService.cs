@@ -202,8 +202,17 @@ public sealed class RunService : IRunService
         {
             SoulLinkRun activeRun = this.GetActiveRun(guildId);
             LinkGroup linkGroup = this.GetAliveLinkGroup(activeRun, route);
+            var targetIndex = position - 1;
 
-            activeRun.ActiveLinks[position - 1] = linkGroup;
+            for (var index = 0; index < activeRun.ActiveLinks.Length; index++)
+            {
+                if (index != targetIndex && IsSameLinkGroup(activeRun.ActiveLinks[index], linkGroup))
+                {
+                    activeRun.ActiveLinks[index] = null;
+                }
+            }
+
+            activeRun.ActiveLinks[targetIndex] = linkGroup;
             this.runStore.Save();
 
             return activeRun;
@@ -288,6 +297,7 @@ public sealed class RunService : IRunService
                     : playerName.Trim();
             }
 
+            this.RemoveFromActiveLinks(activeRun, linkGroup);
             this.runStore.Save();
 
             return linkGroup;
@@ -361,6 +371,18 @@ public sealed class RunService : IRunService
         {
             return this.runStore.GetRunsForGuild(guildId);
         }
+    }
+
+    private static bool IsSameLinkGroup(LinkGroup? activeLink, LinkGroup linkGroup)
+    {
+        if (activeLink is null)
+        {
+            return false;
+        }
+
+        return ReferenceEquals(activeLink, linkGroup) ||
+            (activeLink.Id != Guid.Empty && activeLink.Id == linkGroup.Id) ||
+            string.Equals(activeLink.Route, linkGroup.Route, StringComparison.OrdinalIgnoreCase);
     }
 
     private LinkGroup CreateLinkGroup(SoulLinkRun run, string route)
