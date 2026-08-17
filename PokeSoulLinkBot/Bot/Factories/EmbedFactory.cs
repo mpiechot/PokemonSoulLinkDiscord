@@ -13,6 +13,70 @@ public sealed class EmbedFactory
     private const int DiscordMessageMaxLength = 2000;
 
     /// <summary>
+    /// Creates an embed with type effectiveness information.
+    /// </summary>
+    public Embed CreateTypeInfoEmbed(TypeInfo typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+
+        return new EmbedBuilder()
+            .WithTitle($"Typ: {PokemonTypeVisualizer.FormatType(typeInfo.Name)} {typeInfo.Name}")
+            .WithColor(Color.Blue)
+            .AddField("Sehr effektiv gegen", FormatTypes(typeInfo.DoubleDamageTo), true)
+            .AddField("Wenig effektiv gegen", FormatTypes(typeInfo.HalfDamageTo), true)
+            .AddField("Keine Wirkung gegen", FormatTypes(typeInfo.NoDamageTo), true)
+            .Build();
+    }
+
+    /// <summary>
+    /// Creates an embed with move information.
+    /// </summary>
+    public Embed CreateAttackInfoEmbed(AttackInfo attackInfo)
+    {
+        ArgumentNullException.ThrowIfNull(attackInfo);
+        var displayName = attackInfo.GermanName ?? attackInfo.Name;
+        var stats = $"Typ: {FormatTypeName(attackInfo.Type)}\n" +
+                    $"Kategorie: {attackInfo.DamageClass ?? "unbekannt"}\n" +
+                    $"Stärke: {attackInfo.Power?.ToString() ?? "—"}\n" +
+                    $"Genauigkeit: {FormatPercent(attackInfo.Accuracy)}\n" +
+                    $"AP: {attackInfo.Pp?.ToString() ?? "—"}";
+
+        return new EmbedBuilder()
+            .WithTitle($"Attacke: {displayName}")
+            .WithColor(Color.Orange)
+            .AddField("Daten", stats)
+            .AddField("Effekt", string.IsNullOrWhiteSpace(attackInfo.Effect) ? "Keine Beschreibung verfügbar." : attackInfo.Effect)
+            .Build();
+    }
+
+    /// <summary>
+    /// Creates an embed for team type coverage and the recommended team.
+    /// </summary>
+    public Embed CreateTeamCheckEmbed(SoulLinkRun run, TeamCheckAnalysis analysis)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(analysis);
+
+        var current = string.Join(
+            "\n",
+            analysis.CurrentCoverage.Select(coverage => $"**{coverage.PlayerName}**: {FormatTypes(coverage.Types)}"));
+        var optimal = string.Join(
+            "\n",
+            analysis.OptimalCoverage.Select(coverage => $"**{coverage.PlayerName}**: {FormatTypes(coverage.Types)}"));
+        var routes = analysis.OptimalLinkGroups.Count == 0
+            ? "Keine lebenden Link-Gruppen verfügbar."
+            : string.Join(", ", analysis.OptimalLinkGroups.Select(group => group.Route));
+
+        return new EmbedBuilder()
+            .WithTitle("Team-Check")
+            .WithColor(Color.Blue)
+            .AddField("Aktuelles Team", string.IsNullOrWhiteSpace(current) ? "Keine aktiven Pokémon." : current)
+            .AddField("Optimale Auswahl", $"Routen: {routes}\n{optimal}")
+            .AddField("Hinweis", "Die Empfehlung maximiert die Typvielfalt über alle Spieler und berücksichtigt nur lebende Link-Gruppen.")
+            .Build();
+    }
+
+    /// <summary>
     /// Creates an embed for a newly started run.
     /// </summary>
     /// <param name="run">The started run.</param>
@@ -328,6 +392,41 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates an overview embed for all arenas.
+    /// </summary>
+    public Embed CreateArenasOverviewEmbed(
+        string edition,
+        IReadOnlyCollection<ArenaInfo> arenas,
+        IReadOnlySet<int> completedArenaNumbers,
+        string thumbnailUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(edition);
+        ArgumentNullException.ThrowIfNull(arenas);
+        ArgumentNullException.ThrowIfNull(completedArenaNumbers);
+        ArgumentException.ThrowIfNullOrWhiteSpace(thumbnailUrl);
+
+        var builder = new EmbedBuilder()
+            .WithTitle("Arenen")
+            .WithColor(Color.Blue)
+            .WithDescription($"{edition} · {completedArenaNumbers.Count}/8 Arenen erledigt")
+            .WithThumbnailUrl(thumbnailUrl);
+
+        foreach (var arena in arenas.OrderBy(arena => arena.ArenaNumber))
+        {
+            var status = completedArenaNumbers.Contains(arena.ArenaNumber) ? "✅" : "⬜";
+            var levels = arena.Levels.Count == 0
+                ? "Keine Leveldaten"
+                : string.Join(", ", arena.Levels.Select(level => $"Lv. {level}"));
+            builder.AddField(
+                $"{status} Arena {arena.ArenaNumber} – {arena.LeaderName}",
+                $"Ort: {arena.Location}\nLevel: {levels}",
+                inline: false);
+        }
+
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Creates an embed for arena information.
     /// </summary>
     /// <param name="edition">The edition name.</param>
@@ -464,6 +563,21 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates a generic successful action result embed.
+    /// </summary>
+    public Embed CreateActionEmbed(string title, string description)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        ArgumentException.ThrowIfNullOrWhiteSpace(description);
+
+        return new EmbedBuilder()
+            .WithTitle(title)
+            .WithColor(Color.Green)
+            .WithDescription(description)
+            .Build();
+    }
+
+    /// <summary>
     /// Creates an error embed.
     /// </summary>
     /// <param name="message">The error message.</param>
@@ -480,6 +594,23 @@ public sealed class EmbedFactory
             .WithColor(Color.Red)
             .WithDescription(message)
             .Build();
+    }
+
+    private static string FormatTypeName(string? type)
+    {
+        return string.IsNullOrWhiteSpace(type) ? "unbekannt" : $"{PokemonTypeVisualizer.FormatType(type)} {type}";
+    }
+
+    private static string FormatPercent(int? value)
+    {
+        return value is null ? "—" : $"{value}%";
+    }
+
+    private static string FormatTypes(IReadOnlyList<string> types)
+    {
+        return types.Count == 0
+            ? "Keine Daten"
+            : string.Join(", ", types.Select(PokemonTypeVisualizer.FormatType));
     }
 
     private static IReadOnlyList<string> CombineBlocks(IReadOnlyList<string> blocks, int maxLength)

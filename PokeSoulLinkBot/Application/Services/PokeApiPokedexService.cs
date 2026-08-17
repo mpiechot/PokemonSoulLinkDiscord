@@ -107,6 +107,144 @@ public sealed class PokeApiPokedexService : IPokedexService
         }
     }
 
+#pragma warning disable SA1204
+
+    /// <summary>
+    /// Gets the level-up and TM/HM moves for a Pokémon.
+    /// </summary>
+    /// <param name="pokemonName">The Pokémon name.</param>
+    /// <returns>The move learnset.</returns>
+    public async Task<PokemonMoveLearnset> GetMoveLearnsetAsync(string pokemonName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
+
+        var normalizedPokemonName = await this.pokemonNameResolver.ResolvePokemonNameAsync(pokemonName);
+        var pokemon = await this.GetPokemonAsync(normalizedPokemonName)
+            ?? throw CreatePokemonNotFoundException(pokemonName, normalizedPokemonName);
+        var moveEntries = pokemon.Moves ?? new List<PokemonMoveDto>();
+
+        var levelUpCandidates = await Task.WhenAll(moveEntries.Select(async move => new
+        {
+            Move = move,
+            Details = await this.GetFromApiAsync<MoveDto>(move.Move?.Url ?? string.Empty),
+        }));
+        var levelUpMoves = levelUpCandidates
+            .SelectMany(candidate => (candidate.Move.VersionGroupDetails ?? new List<PokemonMoveVersionGroupDetailDto>())
+                .Where(detail => string.Equals(detail.MoveLearnMethod?.Name, "level-up", StringComparison.OrdinalIgnoreCase))
+                .Select(detail => new
+                {
+                    MoveName = GetGermanName(candidate.Details?.Names, candidate.Move.Move?.Name),
+                    detail.LevelLearnedAt,
+                }))
+            .Where(move => !string.IsNullOrWhiteSpace(move.MoveName))
+            .GroupBy(move => move.MoveName!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new LevelUpMove
+            {
+                Level = group.Min(move => move.LevelLearnedAt),
+                MoveName = FormatResourceName(group.Key),
+            })
+            .OrderBy(move => move.Level)
+            .ThenBy(move => move.MoveName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var machineMoveEntries = moveEntries
+            .Where(move => (move.VersionGroupDetails ?? new List<PokemonMoveVersionGroupDetailDto>())
+                .Any(detail => string.Equals(detail.MoveLearnMethod?.Name, "machine", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        var machineMoveResults = await Task.WhenAll(machineMoveEntries.Select(this.GetMachineMovesAsync));
+
+        return new PokemonMoveLearnset
+        {
+            PokemonName = FormatResourceName(pokemon.Name ?? normalizedPokemonName),
+            LevelUpMoves = levelUpMoves,
+            MachineMoves = machineMoveResults
+                .SelectMany(moves => moves)
+                .GroupBy(move => $"{move.MachineName}|{move.MoveName}", StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(move => move.MachineName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(move => move.MoveName, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+        };
+    }
+
+    private static string GetGermanName(IReadOnlyList<LocalizedNameDto>? names, string? fallback)
+    {
+        return names?
+            .FirstOrDefault(localizedName => string.Equals(
+                localizedName.Language?.Name,
+                "de",
+                StringComparison.OrdinalIgnoreCase))?.Name
+            ?? fallback
+            ?? string.Empty;
+    }
+
+    private static string FormatMachineName(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        var normalizedValue = value.Trim();
+        return normalizedValue.Length >= 2
+            ? normalizedValue[..2].ToUpperInvariant() + normalizedValue[2..]
+            : normalizedValue.ToUpperInvariant();
+    }
+
+    private async Task<IReadOnlyCollection<MachineMove>> GetMachineMovesAsync(PokemonMoveDto pokemonMove)
+    {
+        var moveUrl = pokemonMove.Move?.Url;
+        if (string.IsNullOrWhiteSpace(moveUrl))
+        {
+            return Array.Empty<MachineMove>();
+        }
+
+        var move = await this.GetFromApiAsync<MoveDto>(moveUrl);
+        if (move?.Machines is null)
+        {
+            return Array.Empty<MachineMove>();
+        }
+
+        var supportedVersionGroups = (pokemonMove.VersionGroupDetails ?? new List<PokemonMoveVersionGroupDetailDto>())
+            .Where(detail => string.Equals(detail.MoveLearnMethod?.Name, "machine", StringComparison.OrdinalIgnoreCase))
+            .Select(detail => detail.VersionGroup?.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var machineReferences = move.Machines
+            .Where(machine => machine.Machine?.Url is not null)
+            .Where(machine => supportedVersionGroups.Count == 0 ||
+                supportedVersionGroups.Contains(machine.VersionGroup?.Name ?? string.Empty))
+            .ToList();
+        var machineData = await Task.WhenAll(machineReferences.Select(async machineReference =>
+            new
+            {
+                Machine = await this.GetFromApiAsync<MachineDto>(machineReference.Machine!.Url!),
+                Move = move,
+            }));
+        var localizedMachineData = await Task.WhenAll(machineData.Select(async result => new
+        {
+            result.Machine,
+            Item = result.Machine?.Item?.Url is null
+                ? null
+                : await this.GetFromApiAsync<ItemDto>(result.Machine.Item.Url),
+            MoveName = GetGermanName(result.Move.Names, pokemonMove.Move?.Name),
+        }));
+
+        return localizedMachineData
+            .Where(result => !string.IsNullOrWhiteSpace(result.Machine?.Item?.Name) && !string.IsNullOrWhiteSpace(result.MoveName))
+            .Select(result => new MachineMove
+            {
+                MachineName = string.IsNullOrWhiteSpace(result.Item?.Names?.FirstOrDefault(name =>
+                    string.Equals(name.Language?.Name, "de", StringComparison.OrdinalIgnoreCase))?.Name)
+                    ? FormatMachineName(result.Machine!.Item!.Name!)
+                    : result.Item!.Names!.First(name => string.Equals(
+                        name.Language?.Name,
+                        "de",
+                        StringComparison.OrdinalIgnoreCase)).Name!,
+                MoveName = FormatResourceName(result.MoveName!),
+            })
+            .Where(move => move.MachineName.StartsWith("TM", StringComparison.OrdinalIgnoreCase) ||
+                move.MachineName.StartsWith("HM", StringComparison.OrdinalIgnoreCase) ||
+                move.MachineName.StartsWith("VM", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     private static IReadOnlyList<string> GetFormattedTypes(PokemonDto pokemon)
     {
         ArgumentNullException.ThrowIfNull(pokemon);
@@ -310,6 +448,7 @@ public sealed class PokeApiPokedexService : IPokedexService
                 .Select(part => char.ToUpperInvariant(part[0]) + part[1..]));
     }
 
+#pragma warning restore SA1204
     private async Task<PokedexEntry> CreatePokedexEntryAsync(
         string pokemonName,
         string normalizedPokemonName,

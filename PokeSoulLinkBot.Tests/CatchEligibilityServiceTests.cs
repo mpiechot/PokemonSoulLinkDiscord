@@ -235,6 +235,21 @@ public sealed class CatchEligibilityServiceTests
             throw new NotSupportedException();
         }
 
+        public LinkGroup EditCatch(string guildId, string route, ulong playerId, string pokemon, IReadOnlyList<string> pokemonTypes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkGroup RemoveCatch(string guildId, string route, ulong playerId)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkGroup UndoDeath(string guildId, string route)
+        {
+            throw new NotSupportedException();
+        }
+
         public SoulLinkRun GetActiveRun(string guildId)
         {
             return this.run;
@@ -276,6 +291,11 @@ public sealed class CatchEligibilityServiceTests
 
             return Task.FromResult(entry);
         }
+
+        public Task<PokemonMoveLearnset> GetMoveLearnsetAsync(string pokemonName)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class CountingPokedexService : IPokedexService
@@ -286,6 +306,11 @@ public sealed class CatchEligibilityServiceTests
         {
             this.RequestCount++;
             throw new InvalidOperationException("Pokedex should not be called for exact matches.");
+        }
+
+        public Task<PokemonMoveLearnset> GetMoveLearnsetAsync(string pokemonName)
+        {
+            throw new NotSupportedException();
         }
     }
 }

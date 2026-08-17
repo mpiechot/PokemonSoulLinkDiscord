@@ -286,6 +286,11 @@ public sealed class RunService : IRunService
                 throw new InvalidOperationException("The specified Pokémon was not found in the active run.");
             }
 
+            if (linkGroup.Entries.Count == 0 || linkGroup.Entries.All(entry => !entry.IsAlive))
+            {
+                throw new InvalidOperationException("The specified route has no living Pokémon to mark as dead.");
+            }
+
             foreach (LinkedPokemon entry in linkGroup.Entries)
             {
                 entry.IsAlive = false;
@@ -300,6 +305,100 @@ public sealed class RunService : IRunService
             this.RemoveFromActiveLinks(activeRun, linkGroup);
             this.runStore.Save();
 
+            return linkGroup;
+        }
+    }
+
+    /// <inheritdoc />
+    public LinkGroup EditCatch(
+        string guildId,
+        string route,
+        ulong playerId,
+        string pokemon,
+        IReadOnlyList<string> pokemonTypes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pokemon);
+        ArgumentNullException.ThrowIfNull(pokemonTypes);
+
+        lock (this.operationLock)
+        {
+            var activeRun = this.GetActiveRun(guildId);
+            var linkGroup = this.GetLinkGroup(activeRun, route);
+            var entry = linkGroup.Entries.FirstOrDefault(entry => entry.PlayerUserId == playerId)
+                ?? throw new InvalidOperationException("The specified player has no catch on this route.");
+
+            entry.PokemonName = pokemon.Trim();
+            entry.Types = pokemonTypes.ToList();
+            this.runStore.Save();
+            return linkGroup;
+        }
+    }
+
+    /// <inheritdoc />
+    public LinkGroup RemoveCatch(string guildId, string route, ulong playerId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+
+        lock (this.operationLock)
+        {
+            var activeRun = this.GetActiveRun(guildId);
+            var linkGroup = this.GetLinkGroup(activeRun, route);
+            var entry = linkGroup.Entries.FirstOrDefault(entry => entry.PlayerUserId == playerId)
+                ?? throw new InvalidOperationException("The specified player has no catch on this route.");
+
+            linkGroup.Entries.Remove(entry);
+            if (linkGroup.Entries.Count == 0)
+            {
+                this.RemoveFromActiveLinks(activeRun, linkGroup);
+                activeRun.LinkGroups.Remove(linkGroup);
+            }
+
+            this.runStore.Save();
+            return linkGroup;
+        }
+    }
+
+    /// <inheritdoc />
+    public LinkGroup UndoDeath(string guildId, string route)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(route);
+
+        lock (this.operationLock)
+        {
+            var activeRun = this.GetActiveRun(guildId);
+            var linkGroup = this.GetLinkGroup(activeRun, route);
+
+            if (linkGroup.IsLostWithoutEncounter)
+            {
+                linkGroup.IsLostWithoutEncounter = false;
+                linkGroup.LossReason = null;
+                linkGroup.FailedEncounterPlayerUserId = null;
+                linkGroup.FailedEncounterPlayerName = null;
+                linkGroup.LostAtUtc = null;
+            }
+            else if (linkGroup.Entries.Count == 0 || linkGroup.Entries.All(entry => entry.IsAlive))
+            {
+                throw new InvalidOperationException("The specified route has no registered death to undo.");
+            }
+            else
+            {
+                foreach (var entry in linkGroup.Entries)
+                {
+                    entry.IsAlive = true;
+                    entry.DiedAtUtc = null;
+                    entry.DeathReason = null;
+                    entry.DeathCausedByPlayerUserId = null;
+                    entry.DeathCausedByPlayerName = null;
+                }
+
+                activeRun.TryAddToActive(linkGroup);
+            }
+
+            this.runStore.Save();
             return linkGroup;
         }
     }
@@ -409,6 +508,14 @@ public sealed class RunService : IRunService
                 run.ActiveLinks[index] = null;
             }
         }
+    }
+
+    private LinkGroup GetLinkGroup(SoulLinkRun run, string route)
+    {
+        var normalizedRoute = this.NormalizeRoute(route);
+        return run.LinkGroups.FirstOrDefault(group =>
+                string.Equals(group.Route, normalizedRoute, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Route '{normalizedRoute}' was not found in the active run.");
     }
 
     private LinkGroup GetAliveLinkGroup(SoulLinkRun run, string route)

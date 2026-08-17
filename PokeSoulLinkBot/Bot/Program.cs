@@ -74,8 +74,10 @@ internal sealed class Program
             httpClient,
             pokemonNameResolver,
             pokemonDataCacheStore);
+        var pokemonReferenceService = new PokeApiPokemonReferenceService(httpClient);
         var pokedexService = new PokeApiPokedexService(httpClient, pokemonNameResolver, pokemonDataCacheStore);
         var pokedexPresenter = new PokedexPresenter();
+        var movesPresenter = new PokemonMoveLearnsetPresenter();
         var arenaInfoService = new PokemonDbArenaInfoService(httpClient);
         var gameDataCatalogService = new PokeApiGameDataCatalogService(
             httpClient,
@@ -84,6 +86,7 @@ internal sealed class Program
 
         var runStore = new RunStore(filePath);
         var runService = new RunService(runStore);
+        var teamCheckAnalyzer = new TeamCheckAnalyzer();
         var catchEligibilityService = new CatchEligibilityService(runService, pokedexService);
         var diagnosticsService = new BotDiagnosticsService();
         var healthService = new BotHealthService(
@@ -100,16 +103,24 @@ internal sealed class Program
             new RunStartCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
             new RunEndCommand(runService, embedFactory, embedImageFactory),
             new CatchCommand(runService, embedFactory, embedImageFactory, pokemonLookupService, gameDataCatalogService),
+            new CatchEditCommand(runService, embedFactory, pokemonLookupService, gameDataCatalogService),
+            new CatchRemoveCommand(runService, embedFactory, gameDataCatalogService),
             new CatchCheckCommand(catchEligibilityService, embedFactory),
             new DeathCommand(runService, embedFactory, embedImageFactory),
+            new DeathUndoCommand(runService, embedFactory, gameDataCatalogService),
             new RouteDeathCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
             new StatusCommand(runService, embedFactory, embedImageFactory, pokemonLookupService),
             new StatsCommand(runService, embedFactory, embedImageFactory),
             new TeamCommand(runService, embedFactory),
+            new TeamCheckCommand(runService, embedFactory, teamCheckAnalyzer),
             new SwapCommand(runService, embedFactory, embedImageFactory),
             new UseCommand(runService, embedFactory, embedImageFactory),
             new PokedexCommand(pokedexService, pokedexPresenter),
+            new MovesCommand(pokedexService, movesPresenter),
+            new TypeCommand(pokemonReferenceService, embedFactory),
+            new AttackInfoCommand(pokemonReferenceService, embedFactory),
             new ArenaCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
+            new ArenasCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
             new ArenaCompleteCommand(arenaInfoService, embedFactory, embedImageFactory, gameDataCatalogService, runService),
         };
 

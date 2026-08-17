@@ -127,9 +127,67 @@ public sealed class RunServiceCatchTests
     }
 
     [Fact]
-    public void RegisterCatch_ShouldRejectPlayerOutsideRun()
+    public void EditCatch_ShouldUpdatePokemonAndTypesForSelectedPlayer()
     {
         var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", new[] { "grass" });
+
+        var editedGroup = service.EditCatch(GuildId, "101", 1, "Bisaflor", new[] { "grass", "poison" });
+
+        var entry = Assert.Single(editedGroup.Entries);
+        Assert.Equal("Bisaflor", entry.PokemonName);
+        Assert.Equal(new[] { "grass", "poison" }, entry.Types);
+    }
+
+    [Fact]
+    public void RemoveCatch_ShouldDeleteEmptyRouteGroup()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+
+        service.RemoveCatch(GuildId, "101", 1);
+
+        var activeRun = service.GetActiveRun(GuildId);
+        Assert.Empty(activeRun.LinkGroups);
+        Assert.DoesNotContain(activeRun.ActiveLinks, link => link?.Route == "101");
+    }
+
+    [Fact]
+    public void UndoDeath_ShouldReviveLinkAndAllowItToBeUsedAgain()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.RegisterCatch(GuildId, "101", 1, "marpie1", "Bisasam", Array.Empty<string>());
+        service.RegisterDeath(GuildId, "101", "Critical hit.", null, null);
+
+        var restoredGroup = service.UndoDeath(GuildId, "101");
+
+        Assert.True(restoredGroup.IsAlive);
+        Assert.All(restoredGroup.Entries, entry =>
+        {
+            Assert.True(entry.IsAlive);
+            Assert.Null(entry.DiedAtUtc);
+            Assert.Null(entry.DeathReason);
+        });
+        Assert.Same(restoredGroup, service.UseRoute(GuildId, "101", 1).ActiveLinks[0]);
+    }
+
+    [Fact]
+    public void UndoDeath_ShouldReopenRouteWithoutCatch()
+    {
+        var service = CreateServiceWithStartedRun();
+        service.MarkRouteLost(GuildId, "101", "Missed.", null, null);
+
+        var restoredGroup = service.UndoDeath(GuildId, "101");
+
+        Assert.False(restoredGroup.IsLostWithoutEncounter);
+        Assert.Null(restoredGroup.LostAtUtc);
+        Assert.Null(restoredGroup.LossReason);
+        Assert.Empty(restoredGroup.Entries);
+    }
+    [Fact]
+    public void RegisterCatch_ShouldRejectPlayerOutsideRun()
+        {
+            var service = CreateServiceWithStartedRun();
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             service.RegisterCatch(GuildId, "101", 99, "outsider", "Bisasam", Array.Empty<string>()));
