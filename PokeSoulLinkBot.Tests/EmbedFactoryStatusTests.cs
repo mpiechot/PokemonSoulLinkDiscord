@@ -187,6 +187,44 @@ public sealed class EmbedFactoryStatusTests
     }
 
     [Fact]
+    public void CreateArenasOverview_ShouldUseCompactFullWidthTableWithStatusIcons()
+    {
+        var arenas = new[]
+        {
+            new ArenaInfo { ArenaNumber = 1, LeaderName = "Roxanne", Levels = new[] { 14, 15 } },
+            new ArenaInfo { ArenaNumber = 2, LeaderName = "Brawly", Levels = new[] { 17, 18 } },
+            new ArenaInfo
+            {
+                ArenaNumber = 3,
+                LeaderName = "An Arena Leader With A Very Long Name",
+                Levels = new[] { 22, 20, 23 },
+            },
+        };
+        var completedArenaNumbers = new HashSet<int> { 1 };
+        var embedFactory = new EmbedFactory();
+
+        var embed = embedFactory.CreateArenasOverviewEmbed(
+            "Ruby",
+            arenas,
+            completedArenaNumbers,
+            "attachment://arena.png");
+        var message = embedFactory.CreateArenasOverviewMessage(arenas, completedArenaNumbers);
+        var tableRows = message
+            .Split(Environment.NewLine)
+            .Where(line => line.Contains(" | ", StringComparison.Ordinal));
+
+        Assert.Empty(embed.Fields);
+        Assert.Contains("✅", message, StringComparison.Ordinal);
+        Assert.Contains("➡️", message, StringComparison.Ordinal);
+        Assert.Contains("⬜", message, StringComparison.Ordinal);
+        Assert.Contains("Roxanne", message, StringComparison.Ordinal);
+        Assert.Contains("14, 15", message, StringComparison.Ordinal);
+        Assert.All(
+            tableRows,
+            row => Assert.True(row.Trim('`').Length <= 49, $"Arena table row is too long: {row}"));
+    }
+
+    [Fact]
     public void CreateArenaCompletedEmbed_ShouldIncludeRunAndProgress()
     {
         var run = CreateRun();

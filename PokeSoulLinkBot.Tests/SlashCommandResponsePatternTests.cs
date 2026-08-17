@@ -89,6 +89,28 @@ public sealed class SlashCommandResponsePatternTests
     }
 
     [Fact]
+    public void ArenasCommand_ShouldUseFullWidthArenaTableMessage()
+    {
+        var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "ArenasCommand.cs");
+        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
+
+        Assert.Contains("this.embedFactory.CreateArenasOverviewMessage", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFileAsync(image.FileAttachment, text: message, embed: embed)", handleAsyncBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MovesCommand_ShouldUsePagedFullWidthTableMessages()
+    {
+        var source = ReadSourceFile("PokeSoulLinkBot", "Bot", "Commands", "MovesCommand.cs");
+        var handleAsyncBody = ExtractMethodBody(source, "public async Task HandleAsync(SocketSlashCommand command, ISlashCommandResponse response)");
+
+        Assert.Contains("this.presenter.CreateTableMessages(learnset, pokemonName)", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendAsync(messages[0])", handleAsyncBody, StringComparison.Ordinal);
+        Assert.Contains("response.SendFollowupsAsync(messages.Skip(1))", handleAsyncBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendEmbedsAsync", handleAsyncBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Router_ShouldGuardErrorResponseFailures()
     {
         var routerSource = ReadSourceFile("PokeSoulLinkBot", "Bot", "SlashCommandRouter.cs");

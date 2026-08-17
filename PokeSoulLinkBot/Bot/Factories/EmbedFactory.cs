@@ -405,6 +405,11 @@ public sealed class EmbedFactory
     /// <summary>
     /// Creates an overview embed for all arenas.
     /// </summary>
+    /// <param name="edition">The displayed game edition.</param>
+    /// <param name="arenas">The arenas available for the edition.</param>
+    /// <param name="completedArenaNumbers">The arena numbers completed in the active run.</param>
+    /// <param name="thumbnailUrl">The attachment URL of the arena thumbnail.</param>
+    /// <returns>The summary embed.</returns>
     public Embed CreateArenasOverviewEmbed(
         string edition,
         IReadOnlyCollection<ArenaInfo> arenas,
@@ -422,27 +427,61 @@ public sealed class EmbedFactory
             .WithDescription($"{edition} · {completedArenaNumbers.Count}/8 Arenen erledigt")
             .WithThumbnailUrl(thumbnailUrl);
 
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Creates a compact, full-width table for all arenas.
+    /// </summary>
+    /// <param name="arenas">The arenas available for the edition.</param>
+    /// <param name="completedArenaNumbers">The arena numbers completed in the active run.</param>
+    /// <returns>The formatted arena table.</returns>
+    public string CreateArenasOverviewMessage(
+        IReadOnlyCollection<ArenaInfo> arenas,
+        IReadOnlySet<int> completedArenaNumbers)
+    {
+        ArgumentNullException.ThrowIfNull(arenas);
+        ArgumentNullException.ThrowIfNull(completedArenaNumbers);
+
         var nextArenaNumber = arenas
             .Where(arena => !completedArenaNumbers.Contains(arena.ArenaNumber))
             .Select(arena => arena.ArenaNumber)
             .DefaultIfEmpty()
             .Min();
 
-        foreach (var arena in arenas.OrderBy(arena => arena.ArenaNumber))
+        const int statusWidth = 2;
+        const int numberWidth = 2;
+        const int leaderWidth = 18;
+        const int levelWidth = 18;
+        var rows = new List<string>
         {
-            var status = completedArenaNumbers.Contains(arena.ArenaNumber)
-                ? "Abgeschlossen"
-                : arena.ArenaNumber == nextArenaNumber ? "Als Nächstes" : "Offen";
-            var levels = arena.Levels.Count == 0
-                ? "Keine Leveldaten"
-                : string.Join(", ", arena.Levels.Select(level => $"Lv. {level}"));
-            builder.AddField(
-                $"Arena {arena.ArenaNumber} – {arena.LeaderName}",
-                $"Status: {status}\nOrt: {arena.Location}\nLevel: {levels}",
-                inline: true);
-        }
+            $"{this.PadRight("St", statusWidth)} | {this.PadRight("Nr", numberWidth)} | " +
+            $"{this.PadRight("Leiter", leaderWidth)} | {this.PadRight("Level", levelWidth)}",
+            $"{new string('-', statusWidth)}-|-{new string('-', numberWidth)}-|-" +
+            $"{new string('-', leaderWidth)}-|-{new string('-', levelWidth)}",
+        };
 
-        return builder.Build();
+        rows.AddRange(arenas
+            .OrderBy(arena => arena.ArenaNumber)
+            .Select(arena =>
+            {
+                var status = completedArenaNumbers.Contains(arena.ArenaNumber)
+                    ? "✅"
+                    : arena.ArenaNumber == nextArenaNumber ? "➡️" : "⬜";
+                var levels = arena.Levels.Count == 0
+                    ? "keine Daten"
+                    : string.Join(", ", arena.Levels);
+
+                return $"{status} | " +
+                       $"{this.PadRight(arena.ArenaNumber.ToString(), numberWidth)} | " +
+                       $"{this.PadRight(arena.LeaderName, leaderWidth)} | " +
+                       this.PadRight(levels, levelWidth);
+            }));
+
+        return
+            $"**Arenen**{Environment.NewLine}" +
+            $"✅ Erledigt · ➡️ Als Nächstes · ⬜ Offen{Environment.NewLine}" +
+            $"```{string.Join(Environment.NewLine, rows)}```";
     }
 
     /// <summary>

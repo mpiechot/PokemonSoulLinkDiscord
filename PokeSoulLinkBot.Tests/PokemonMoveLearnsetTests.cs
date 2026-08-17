@@ -1,9 +1,9 @@
 using System.Net;
 using System.Text;
+using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
 using PokeSoulLinkBot.Bot.Presentation;
 using PokeSoulLinkBot.Core.Models;
-using PokeSoulLinkBot.Application.Interfaces;
 using Xunit;
 
 namespace PokeSoulLinkBot.Tests;
@@ -23,40 +23,41 @@ public sealed class PokemonMoveLearnsetTests
         };
 
         var messages = presenter.CreateTableMessages(learnset);
+        var fullMessage = string.Join(Environment.NewLine, messages);
 
         Assert.True(messages.Count > 1);
         Assert.All(messages, message => Assert.True(message.Length <= 2000));
-        Assert.All(messages, message => Assert.StartsWith("```", message));
-        Assert.All(messages, message => Assert.EndsWith("```", message));
+        for (var level = 1; level <= 250; level++)
+        {
+            Assert.Contains($"Lv {level}: Sehr lange Attacke {level} mit Zusatztext", fullMessage, StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public void CreateTableMessage_ShouldRenderLevelAndMachineMovesCompactly()
+    public void CreateTableMessage_ShouldRenderFourMovesPerRow()
     {
         var presenter = new PokemonMoveLearnsetPresenter();
         var learnset = new PokemonMoveLearnset
         {
             PokemonName = "Pikachu",
-            LevelUpMoves = new List<LevelUpMove>
-            {
-                new() { Level = 1, MoveName = "Thunder Shock" },
-                new() { Level = 5, MoveName = "Quick Attack" },
-            },
-            MachineMoves = new List<MachineMove>
-            {
-                new() { MachineName = "TM24", MoveName = "Thunderbolt" },
-                new() { MachineName = "HM03", MoveName = "Surf" },
-            },
+            LevelUpMoves = Enumerable.Range(1, 8)
+                .Select(level => new LevelUpMove { Level = level, MoveName = $"Move{level}" })
+                .ToList(),
+            MachineMoves = Enumerable.Range(1, 8)
+                .Select(number => new MachineMove { MachineName = $"TM{number:00}", MoveName = $"Move{number}" })
+                .ToList(),
         };
 
         var message = presenter.CreateTableMessage(learnset);
+        var rows = message.Split(Environment.NewLine);
+        var levelRow = Assert.Single(rows, row => row.Contains("Lv 1: Move1", StringComparison.Ordinal));
+        var machineRow = Assert.Single(rows, row => row.Contains("TM01: Move1", StringComparison.Ordinal));
 
-        Assert.Contains("Level-up", message);
-        Assert.Contains("Lv 1: Thunder Shock", message);
-        Assert.Contains("Lv 5: Quick Attack", message);
+        Assert.Contains("Attacken: Pikachu", message, StringComparison.Ordinal);
+        Assert.Contains("Level-Up", message, StringComparison.Ordinal);
         Assert.Contains("TM/HM", message);
-        Assert.Contains("TM24: Thunderbolt", message);
-        Assert.Contains("HM03: Surf", message);
+        Assert.Equal(3, CountOccurrences(levelRow, " | "));
+        Assert.Equal(3, CountOccurrences(machineRow, " | "));
     }
 
     [Fact]
@@ -72,7 +73,13 @@ public sealed class PokemonMoveLearnsetTests
 
         Assert.Equal("Pikachu", learnset.PokemonName);
         Assert.Contains(learnset.LevelUpMoves, move => move.Level == 1 && move.MoveName == "Donnerschock");
-                Assert.Contains(learnset.MachineMoves, move => move.MachineName == "TM24" && move.MoveName == "Donnerblitz");
+        Assert.Contains(learnset.MachineMoves, move => move.MachineName == "TM24" && move.MoveName == "Donnerblitz");
+    }
+
+    private static int CountOccurrences(string value, string searchValue)
+    {
+        return (value.Length - value.Replace(searchValue, string.Empty, StringComparison.Ordinal).Length) /
+               searchValue.Length;
     }
 
     private sealed class StubPokemonNameResolver : IPokemonNameResolver

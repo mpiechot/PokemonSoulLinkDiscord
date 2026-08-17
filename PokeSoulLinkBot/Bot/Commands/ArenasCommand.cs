@@ -54,14 +54,16 @@ public sealed class ArenasCommand : ISlashCommand
         var edition = CommandOptionHelper.GetOptionalStringOption(command, "edition")?.Trim()
             ?? activeRun.Game;
         var arenaInfos = await Task.WhenAll(
-            Enumerable.Range(1, 8).Select(number => this.arenaInfoService.GetArenaInfoAsync(edition, number)));        var completedArenas = activeRun.CompletedArenas
+            Enumerable.Range(1, 8).Select(number => this.arenaInfoService.GetArenaInfoAsync(edition, number)));
+        var completedArenas = activeRun.CompletedArenas
             .Where(arena => string.Equals(arena.Edition, edition, StringComparison.OrdinalIgnoreCase))
             .Select(arena => arena.ArenaNumber)
             .ToHashSet();
         var image = this.embedImageFactory.CreateArenaImage();
         var embed = this.embedFactory.CreateArenasOverviewEmbed(edition, arenaInfos, completedArenas, image.AttachmentUrl);
+        var message = this.embedFactory.CreateArenasOverviewMessage(arenaInfos, completedArenas);
 
-        await response.SendFileAsync(image.FileAttachment, embed: embed);
+        await response.SendFileAsync(image.FileAttachment, text: message, embed: embed);
     }
 
     public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
