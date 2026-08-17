@@ -12,10 +12,12 @@ public sealed class PokeApiPokemonReferenceService : IPokemonReferenceService
     private readonly HttpClient httpClient;
     private readonly ConcurrentDictionary<string, TypeInfo> typeCache = new ConcurrentDictionary<string, TypeInfo>(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, AttackInfo> attackCache = new ConcurrentDictionary<string, AttackInfo>(StringComparer.OrdinalIgnoreCase);
+    private readonly Lazy<Task<IReadOnlyList<string>>> moveCatalog;
 
     public PokeApiPokemonReferenceService(HttpClient httpClient)
     {
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.moveCatalog = new Lazy<Task<IReadOnlyList<string>>>(this.LoadMoveCatalogAsync);
     }
 
     public async Task<TypeInfo?> GetTypeInfoAsync(string typeName)
@@ -70,6 +72,48 @@ public sealed class PokeApiPokemonReferenceService : IPokemonReferenceService
         };
         this.attackCache[key] = info;
         return info;
+    }
+
+    public async Task<IReadOnlyList<AttackSuggestion>> GetAttackSuggestionsAsync(string query)
+    {
+        var normalizedQuery = string.IsNullOrWhiteSpace(query)
+            ? string.Empty
+            : this.NormalizeName(query).Replace('-', ' ');
+        var catalog = await this.moveCatalog.Value;
+        var cachedGermanMatches = this.attackCache.Values
+            .Where(info => !string.IsNullOrWhiteSpace(info.GermanName) &&
+                info.GermanName!.Contains(query ?? string.Empty, StringComparison.CurrentCultureIgnoreCase))
+            .Select(info => info.Name);
+        var apiMatches = catalog.Where(name => string.IsNullOrWhiteSpace(normalizedQuery) ||
+            name.Replace('-', ' ').Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase));
+        var candidates = cachedGermanMatches.Concat(apiMatches)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(25)
+            .ToList();
+
+        var suggestions = await Task.WhenAll(candidates.Select(async apiName =>
+        {
+            var info = await this.GetAttackInfoAsync(apiName);
+            return new AttackSuggestion
+            {
+                ApiName = apiName,
+                DisplayName = info?.GermanName ?? apiName.Replace('-', ' '),
+            };
+        }));
+
+        return suggestions
+            .OrderBy(suggestion => suggestion.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<IReadOnlyList<string>> LoadMoveCatalogAsync()
+    {
+        var dto = await this.GetAsync<MoveResourceListDto>("move?limit=10000");
+        return dto?.Results?
+            .Where(resource => !string.IsNullOrWhiteSpace(resource.Name))
+            .Select(resource => resource.Name!)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
     }
 
     private async Task<T?> GetAsync<T>(string relativePath)

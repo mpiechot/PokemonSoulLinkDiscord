@@ -11,6 +11,13 @@ public sealed class TypeInfo
     public IReadOnlyList<string> NoDamageTo { get; init; } = Array.Empty<string>();
 }
 
+public sealed class AttackSuggestion
+{
+    public string ApiName { get; init; } = string.Empty;
+
+    public string DisplayName { get; init; } = string.Empty;
+}
+
 public sealed class AttackInfo
 {
     public string Name { get; init; } = string.Empty;

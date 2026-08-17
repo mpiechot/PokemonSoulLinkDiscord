@@ -44,6 +44,8 @@ public sealed class MovesCommand : ISlashCommand
 
         var pokemonName = CommandOptionHelper.GetRequiredStringOption(command, "pokemon");
         var learnset = await this.pokedexService.GetMoveLearnsetAsync(pokemonName);
-        await response.SendAsync(this.presenter.CreateTableMessage(learnset), this.presenter.CreateEmbed(learnset, pokemonName));
+        var messages = this.presenter.CreateTableMessages(learnset);
+        await response.SendAsync(messages[0], this.presenter.CreateEmbed(learnset, pokemonName));
+        await response.SendFollowupsAsync(messages.Skip(1));
     }
 }

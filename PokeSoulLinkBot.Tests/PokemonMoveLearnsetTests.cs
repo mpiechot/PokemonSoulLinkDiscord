@@ -11,6 +11,26 @@ namespace PokeSoulLinkBot.Tests;
 public sealed class PokemonMoveLearnsetTests
 {
     [Fact]
+    public void CreateTableMessages_ShouldSplitLongLearnsetsBelowDiscordLimit()
+    {
+        var presenter = new PokemonMoveLearnsetPresenter();
+        var learnset = new PokemonMoveLearnset
+        {
+            PokemonName = "Pikachu",
+            LevelUpMoves = Enumerable.Range(1, 250)
+                .Select(level => new LevelUpMove { Level = level, MoveName = $"Sehr lange Attacke {level} mit Zusatztext" })
+                .ToList(),
+        };
+
+        var messages = presenter.CreateTableMessages(learnset);
+
+        Assert.True(messages.Count > 1);
+        Assert.All(messages, message => Assert.True(message.Length <= 2000));
+        Assert.All(messages, message => Assert.StartsWith("```", message));
+        Assert.All(messages, message => Assert.EndsWith("```", message));
+    }
+
+    [Fact]
     public void CreateTableMessage_ShouldRenderLevelAndMachineMovesCompactly()
     {
         var presenter = new PokemonMoveLearnsetPresenter();

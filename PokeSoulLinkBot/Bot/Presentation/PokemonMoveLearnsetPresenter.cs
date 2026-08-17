@@ -24,9 +24,17 @@ public sealed class PokemonMoveLearnsetPresenter
     }
 
     /// <summary>
-    /// Creates a compact table containing level-up and TM/HM moves.
+    /// Creates the first page of a move learnset table.
     /// </summary>
     public string CreateTableMessage(PokemonMoveLearnset learnset)
+    {
+        return this.CreateTableMessages(learnset).First();
+    }
+
+    /// <summary>
+    /// Creates Discord-compatible pages for a move learnset table.
+    /// </summary>
+    public IReadOnlyList<string> CreateTableMessages(PokemonMoveLearnset learnset)
     {
         ArgumentNullException.ThrowIfNull(learnset);
 
@@ -53,6 +61,26 @@ public sealed class PokemonMoveLearnsetPresenter
                 .ThenBy(move => move.MoveName, StringComparer.OrdinalIgnoreCase)
                 .Select(move => $"{move.MachineName}: {move.MoveName}"));
 
-        return $"```{string.Join(Environment.NewLine, lines)}```";
+        var pages = new List<string>();
+        var currentLines = new List<string>();
+        foreach (var line in lines)
+        {
+            var candidateLines = currentLines.Append(line);
+            var candidate = $"```{string.Join(Environment.NewLine, candidateLines)}```";
+            if (candidate.Length > 2000 && currentLines.Count > 0)
+            {
+                pages.Add($"```{string.Join(Environment.NewLine, currentLines)}```");
+                currentLines.Clear();
+            }
+
+            currentLines.Add(line.Length > 1994 ? line[..1994] : line);
+        }
+
+        if (currentLines.Count > 0)
+        {
+            pages.Add($"```{string.Join(Environment.NewLine, currentLines)}```");
+        }
+
+        return pages;
     }
 }

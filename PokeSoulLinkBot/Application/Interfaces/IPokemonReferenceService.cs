@@ -7,4 +7,6 @@ public interface IPokemonReferenceService
     Task<TypeInfo?> GetTypeInfoAsync(string typeName);
 
     Task<AttackInfo?> GetAttackInfoAsync(string moveName);
+
+    Task<IReadOnlyList<AttackSuggestion>> GetAttackSuggestionsAsync(string query);
 }

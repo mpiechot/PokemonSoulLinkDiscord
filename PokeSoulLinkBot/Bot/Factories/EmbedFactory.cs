@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Discord;
 using PokeSoulLinkBot.Bot.Helpers;
@@ -20,7 +21,7 @@ public sealed class EmbedFactory
         ArgumentNullException.ThrowIfNull(typeInfo);
 
         return new EmbedBuilder()
-            .WithTitle($"Typ: {PokemonTypeVisualizer.FormatType(typeInfo.Name)} {typeInfo.Name}")
+            .WithTitle($"Typ: {PokemonTypeVisualizer.FormatTypeLabel(typeInfo.Name)}")
             .WithColor(Color.Blue)
             .AddField("Sehr effektiv gegen", FormatTypes(typeInfo.DoubleDamageTo), true)
             .AddField("Wenig effektiv gegen", FormatTypes(typeInfo.HalfDamageTo), true)
@@ -392,6 +393,17 @@ public sealed class EmbedFactory
     }
 
     /// <summary>
+    /// Creates Discord-compatible messages for a team with a custom title.
+    /// </summary>
+    public IReadOnlyList<string> CreateTeamMessages(SoulLinkRun run, string title)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+
+        return CombineBlocks(this.CreateTeamBlocks(title, run), DiscordMessageMaxLength);
+    }
+
+    /// <summary>
     /// Creates an overview embed for all arenas.
     /// </summary>
     public Embed CreateArenasOverviewEmbed(
@@ -411,17 +423,31 @@ public sealed class EmbedFactory
             .WithDescription($"{edition} · {completedArenaNumbers.Count}/8 Arenen erledigt")
             .WithThumbnailUrl(thumbnailUrl);
 
-        foreach (var arena in arenas.OrderBy(arena => arena.ArenaNumber))
+        var nextArenaNumber = arenas
+            .Where(arena => !completedArenaNumbers.Contains(arena.ArenaNumber))
+            .Select(arena => arena.ArenaNumber)
+            .DefaultIfEmpty()
+            .Min();
+        var rows = new List<string>
         {
-            var status = completedArenaNumbers.Contains(arena.ArenaNumber) ? "✅" : "⬜";
-            var levels = arena.Levels.Count == 0
-                ? "Keine Leveldaten"
-                : string.Join(", ", arena.Levels.Select(level => $"Lv. {level}"));
-            builder.AddField(
-                $"{status} Arena {arena.ArenaNumber} – {arena.LeaderName}",
-                $"Ort: {arena.Location}\nLevel: {levels}",
-                inline: false);
-        }
+            "Status  | Nr | Leiter                 | Level",
+            "--------|----|------------------------|----------------",
+        };
+
+        rows.AddRange(arenas
+            .OrderBy(arena => arena.ArenaNumber)
+            .Select(arena =>
+            {
+                var status = completedArenaNumbers.Contains(arena.ArenaNumber)
+                    ? "✅"
+                    : arena.ArenaNumber == nextArenaNumber ? "NÄCHSTE" : "OFFEN";
+                var levels = arena.Levels.Count == 0
+                    ? "keine Daten"
+                    : string.Join(", ", arena.Levels.Select(level => level.ToString(CultureInfo.InvariantCulture)));
+                return $"{status,-7} | {arena.ArenaNumber,2} | {arena.LeaderName,-22} | {levels}";
+            }));
+
+        builder.AddField("Arenen", $"```{string.Join(Environment.NewLine, rows)}```", inline: false);
 
         return builder.Build();
     }
@@ -610,7 +636,7 @@ public sealed class EmbedFactory
     {
         return types.Count == 0
             ? "Keine Daten"
-            : string.Join(", ", types.Select(PokemonTypeVisualizer.FormatType));
+            : string.Join(", ", types.Select(PokemonTypeVisualizer.FormatTypeLabel));
     }
 
     private static IReadOnlyList<string> CombineBlocks(IReadOnlyList<string> blocks, int maxLength)

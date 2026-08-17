@@ -23,6 +23,12 @@ public sealed class TypeDamageRelationsDto
     public List<NamedApiResourceDto>? NoDamageTo { get; set; }
 }
 
+public sealed class MoveResourceListDto
+{
+    [JsonPropertyName("results")]
+    public List<NamedApiResourceDto>? Results { get; set; }
+}
+
 public sealed class MoveDetailDto
 {
     [JsonPropertyName("name")]

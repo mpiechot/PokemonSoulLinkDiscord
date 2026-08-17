@@ -246,6 +246,9 @@ public sealed class CommandDefinitionTests
         public Task<TypeInfo?> GetTypeInfoAsync(string typeName) => Task.FromResult<TypeInfo?>(null);
 
         public Task<AttackInfo?> GetAttackInfoAsync(string moveName) => Task.FromResult<AttackInfo?>(null);
+
+        public Task<IReadOnlyList<AttackSuggestion>> GetAttackSuggestionsAsync(string query) =>
+            Task.FromResult<IReadOnlyList<AttackSuggestion>>(Array.Empty<AttackSuggestion>());
     }
 
     private sealed class StubPokemonLookupService : IPokemonLookupService

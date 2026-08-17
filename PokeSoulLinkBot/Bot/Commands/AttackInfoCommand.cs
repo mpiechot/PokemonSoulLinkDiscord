@@ -24,7 +24,7 @@ public sealed class AttackInfoCommand : ISlashCommand
         return new SlashCommandBuilder()
             .WithName(this.CommandName)
             .WithDescription("Zeigt Informationen zu einer Attacke.")
-            .AddOption("move", ApplicationCommandOptionType.String, "Der englische API-Name, zum Beispiel thunderbolt.", isRequired: true)
+            .AddOption("move", ApplicationCommandOptionType.String, "Die Attacke; Vorschläge werden möglichst auf Deutsch angezeigt.", isRequired: true, isAutocomplete: true)
             .Build();
     }
 
@@ -34,5 +34,13 @@ public sealed class AttackInfoCommand : ISlashCommand
         var attackInfo = await this.referenceService.GetAttackInfoAsync(move)
             ?? throw new InvalidOperationException($"Die Attacke '{move}' wurde nicht gefunden.");
         await response.SendAsync(embed: this.embedFactory.CreateAttackInfoEmbed(attackInfo));
+    }
+
+    public async Task HandleAutocompleteAsync(SocketAutocompleteInteraction interaction)
+    {
+        ArgumentNullException.ThrowIfNull(interaction);
+
+        var suggestions = await this.referenceService.GetAttackSuggestionsAsync(AutocompleteHelper.GetCurrentValue(interaction));
+        await interaction.RespondAsync(suggestions.Select(suggestion => new AutocompleteResult(suggestion.DisplayName, suggestion.ApiName)));
     }
 }

@@ -4,6 +4,7 @@ using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Helpers;
+using PokeSoulLinkBot.Core.Models;
 
 namespace PokeSoulLinkBot.Bot.Commands;
 
@@ -36,5 +37,15 @@ public sealed class TeamCheckCommand : ISlashCommand
         var run = this.runService.GetActiveRun(guildId);
         var analysis = this.analyzer.Analyze(run);
         await response.SendAsync(embed: this.embedFactory.CreateTeamCheckEmbed(run, analysis));
+
+        var recommendedRun = new SoulLinkRun
+        {
+            Name = run.Name,
+            Game = run.Game,
+            Players = run.Players,
+            ActiveLinks = analysis.OptimalLinkGroups.Take(6).ToArray(),
+        };
+        var teamMessages = this.embedFactory.CreateTeamMessages(recommendedRun, "Empfohlenes Team");
+        await response.SendFollowupsAsync(teamMessages);
     }
 }
