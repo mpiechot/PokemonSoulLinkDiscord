@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using Discord;
 using PokeSoulLinkBot.Bot.Helpers;
@@ -23,9 +22,9 @@ public sealed class EmbedFactory
         return new EmbedBuilder()
             .WithTitle($"Typ: {PokemonTypeVisualizer.FormatTypeLabel(typeInfo.Name)}")
             .WithColor(Color.Blue)
-            .AddField("Sehr effektiv gegen", FormatTypes(typeInfo.DoubleDamageTo), true)
-            .AddField("Wenig effektiv gegen", FormatTypes(typeInfo.HalfDamageTo), true)
-            .AddField("Keine Wirkung gegen", FormatTypes(typeInfo.NoDamageTo), true)
+            .AddField("Sehr effektiv gegen", FormatTypes(typeInfo.DoubleDamageTo), inline: false)
+            .AddField("Wenig effektiv gegen", FormatTypes(typeInfo.HalfDamageTo), inline: false)
+            .AddField("Keine Wirkung gegen", FormatTypes(typeInfo.NoDamageTo), inline: false)
             .Build();
     }
 
@@ -428,26 +427,20 @@ public sealed class EmbedFactory
             .Select(arena => arena.ArenaNumber)
             .DefaultIfEmpty()
             .Min();
-        var rows = new List<string>
+
+        foreach (var arena in arenas.OrderBy(arena => arena.ArenaNumber))
         {
-            "Status  | Nr | Leiter                 | Level",
-            "--------|----|------------------------|----------------",
-        };
-
-        rows.AddRange(arenas
-            .OrderBy(arena => arena.ArenaNumber)
-            .Select(arena =>
-            {
-                var status = completedArenaNumbers.Contains(arena.ArenaNumber)
-                    ? "✅"
-                    : arena.ArenaNumber == nextArenaNumber ? "NÄCHSTE" : "OFFEN";
-                var levels = arena.Levels.Count == 0
-                    ? "keine Daten"
-                    : string.Join(", ", arena.Levels.Select(level => level.ToString(CultureInfo.InvariantCulture)));
-                return $"{status,-7} | {arena.ArenaNumber,2} | {arena.LeaderName,-22} | {levels}";
-            }));
-
-        builder.AddField("Arenen", $"```{string.Join(Environment.NewLine, rows)}```", inline: false);
+            var status = completedArenaNumbers.Contains(arena.ArenaNumber)
+                ? "Abgeschlossen"
+                : arena.ArenaNumber == nextArenaNumber ? "Als Nächstes" : "Offen";
+            var levels = arena.Levels.Count == 0
+                ? "Keine Leveldaten"
+                : string.Join(", ", arena.Levels.Select(level => $"Lv. {level}"));
+            builder.AddField(
+                $"Arena {arena.ArenaNumber} – {arena.LeaderName}",
+                $"Status: {status}\nOrt: {arena.Location}\nLevel: {levels}",
+                inline: true);
+        }
 
         return builder.Build();
     }
