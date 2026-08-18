@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PokeSoulLinkBot.Bot.Handlers;
 using PokeSoulLinkBot.Bot.Hosting;
 using PokeSoulLinkBot.Core.Configuration;
+using PokeSoulLinkBot.Core.GameIntegration;
 using Xunit;
 
 namespace PokeSoulLinkBot.Tests;
@@ -20,6 +21,7 @@ public sealed class BotHostTests
             host.Services.GetServices<IHostedService>(),
             hostedService => hostedService is DiscordBotHostedService);
         Assert.NotNull(host.Services.GetRequiredService<SlashCommandRouter>());
+        Assert.NotNull(host.Services.GetRequiredService<IRomCompatibilityAdapter>());
 
         SoulLinkOptions options = host.Services.GetRequiredService<IOptions<SoulLinkOptions>>().Value;
         Assert.True(options.EnableReadTracking);
