@@ -29,6 +29,7 @@ public sealed class DiscordBotHostedService : IHostedService
     private readonly IBotDiagnosticsService diagnosticsService;
     private readonly IOptions<SoulLinkOptions> options;
     private ReadyStartupTaskRunner? readyStartupTaskRunner;
+    private bool eventHandlersAttached;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DiscordBotHostedService"/> class.
@@ -64,6 +65,7 @@ public sealed class DiscordBotHostedService : IHostedService
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         SoulLinkOptions configuredOptions = this.options.Value;
         if (!configuredOptions.Enabled || !configuredOptions.EnableDiscordEvents)
         {
@@ -87,25 +89,54 @@ public sealed class DiscordBotHostedService : IHostedService
         this.client.Ready += this.readyStartupTaskRunner.HandleReadyAsync;
         this.client.SlashCommandExecuted += this.slashCommandRouter.HandleAsync;
         this.client.AutocompleteExecuted += this.slashCommandRouter.HandleAutocompleteAsync;
+        this.eventHandlersAttached = true;
 
-        Log.Information("Starting PokeSoulLinkBot.");
-        await this.client.LoginAsync(TokenType.Bot, token);
-        Log.Information("Discord login completed.");
-        await this.client.StartAsync();
-        Log.Information("Discord client started.");
+        try
+        {
+            Log.Information("Starting PokeSoulLinkBot.");
+            await this.client.LoginAsync(TokenType.Bot, token);
+            Log.Information("Discord login completed.");
+            await this.client.StartAsync();
+            Log.Information("Discord client started.");
+        }
+        catch (Exception exception)
+        {
+            Log.Fatal(exception, "Discord client startup failed; the host will terminate for external recovery.");
+            this.RecordExceptionSafely("Fatal", "DiscordStartup", "Discord client startup failed.", exception);
+            this.DetachEventHandlers();
+            throw;
+        }
     }
 
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (this.client.ConnectionState is ConnectionState.Connected or ConnectionState.Connecting)
+        this.DetachEventHandlers();
+
+        try
         {
-            await this.client.StopAsync();
+            if (this.client.ConnectionState is ConnectionState.Connected or ConnectionState.Connecting)
+            {
+                await this.client.StopAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "Discord client stop failed; continuing shutdown.");
+            this.RecordExceptionSafely("Error", "DiscordShutdown", "Discord client stop failed.", exception);
         }
 
-        if (this.client.LoginState is LoginState.LoggedIn or LoginState.LoggingIn)
+        try
         {
-            await this.client.LogoutAsync();
+            if (this.client.LoginState is LoginState.LoggedIn or LoginState.LoggingIn)
+            {
+                await this.client.LogoutAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "Discord logout failed; continuing shutdown.");
+            this.RecordExceptionSafely("Error", "DiscordShutdown", "Discord logout failed.", exception);
         }
     }
 
@@ -193,7 +224,7 @@ public sealed class DiscordBotHostedService : IHostedService
         catch (Exception exception)
         {
             Log.Error(exception, "Ready startup failed.");
-            this.diagnosticsService.RecordException("Error", "ReadyStartup", "Ready startup failed.", exception);
+            this.RecordExceptionSafely("Error", "ReadyStartup", "Ready startup failed.", exception);
         }
     }
 
@@ -209,7 +240,7 @@ public sealed class DiscordBotHostedService : IHostedService
         catch (Exception exception)
         {
             Log.Warning(exception, "Pokemon data cache warmup failed.");
-            this.diagnosticsService.RecordException(
+            this.RecordExceptionSafely(
                 "Warning",
                 "PokemonDataWarmup",
                 "Pokemon data cache warmup failed.",
@@ -269,13 +300,55 @@ public sealed class DiscordBotHostedService : IHostedService
         if (logMessage.Exception is not null)
         {
             Log.Write(level, logMessage.Exception, "Discord {Source}: {Message}", logMessage.Source, message);
-            this.RecordDiscordDiagnostic(logMessage, message);
+            this.RecordDiscordDiagnosticSafely(logMessage, message);
             return Task.CompletedTask;
         }
 
         Log.Write(level, "Discord {Source}: {Message}", logMessage.Source, message);
-        this.RecordDiscordDiagnostic(logMessage, message);
+        this.RecordDiscordDiagnosticSafely(logMessage, message);
         return Task.CompletedTask;
+    }
+
+    private void DetachEventHandlers()
+    {
+        if (!this.eventHandlersAttached)
+        {
+            return;
+        }
+
+        this.client.Log -= this.OnLogAsync;
+        if (this.readyStartupTaskRunner is not null)
+        {
+            this.client.Ready -= this.readyStartupTaskRunner.HandleReadyAsync;
+        }
+
+        this.client.SlashCommandExecuted -= this.slashCommandRouter.HandleAsync;
+        this.client.AutocompleteExecuted -= this.slashCommandRouter.HandleAutocompleteAsync;
+        this.eventHandlersAttached = false;
+    }
+
+    private void RecordDiscordDiagnosticSafely(LogMessage logMessage, string message)
+    {
+        try
+        {
+            this.RecordDiscordDiagnostic(logMessage, message);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, "Discord diagnostic recording failed; event handling will continue.");
+        }
+    }
+
+    private void RecordExceptionSafely(string severity, string source, string message, Exception exception)
+    {
+        try
+        {
+            this.diagnosticsService.RecordException(severity, source, message, exception);
+        }
+        catch (Exception diagnosticException)
+        {
+            Log.Error(diagnosticException, "Diagnostic recording failed for {Source}.", source);
+        }
     }
 
     private void RecordDiscordDiagnostic(LogMessage logMessage, string message)
