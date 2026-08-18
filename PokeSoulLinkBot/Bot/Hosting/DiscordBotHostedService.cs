@@ -2,10 +2,12 @@ using Discord;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
 using PokeSoulLinkBot.Bot.Handlers;
 using PokeSoulLinkBot.Bot.Registration;
+using PokeSoulLinkBot.Core.Configuration;
 using Serilog;
 using Serilog.Events;
 
@@ -25,6 +27,7 @@ public sealed class DiscordBotHostedService : IHostedService
     private readonly PokemonDataCacheStore pokemonDataCacheStore;
     private readonly PokeApiPokemonNameResolver pokemonNameResolver;
     private readonly IBotDiagnosticsService diagnosticsService;
+    private readonly IOptions<SoulLinkOptions> options;
     private ReadyStartupTaskRunner? readyStartupTaskRunner;
 
     /// <summary>
@@ -39,7 +42,8 @@ public sealed class DiscordBotHostedService : IHostedService
         PokemonDbArenaInfoService arenaInfoService,
         PokemonDataCacheStore pokemonDataCacheStore,
         PokeApiPokemonNameResolver pokemonNameResolver,
-        IBotDiagnosticsService diagnosticsService)
+        IBotDiagnosticsService diagnosticsService,
+        IOptions<SoulLinkOptions> options)
     {
         this.client = client ?? throw new ArgumentNullException(nameof(client));
         this.configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -54,11 +58,24 @@ public sealed class DiscordBotHostedService : IHostedService
         this.pokemonNameResolver = pokemonNameResolver ??
             throw new ArgumentNullException(nameof(pokemonNameResolver));
         this.diagnosticsService = diagnosticsService ?? throw new ArgumentNullException(nameof(diagnosticsService));
+        this.options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        SoulLinkOptions configuredOptions = this.options.Value;
+        if (!configuredOptions.Enabled || !configuredOptions.EnableDiscordEvents)
+        {
+            Log.Information(
+                "Discord event handling is disabled by configuration. Read tracking: {ReadTrackingEnabled}; " +
+                "remote writes: {RemoteWritesEnabled}; auto team sync: {AutoTeamSyncEnabled}.",
+                configuredOptions.EnableReadTracking,
+                configuredOptions.EnableRemoteWrites,
+                configuredOptions.EnableAutoTeamSync);
+            return;
+        }
+
         string token = this.configuration["DISCORD_BOT_TOKEN"] ?? string.Empty;
         if (string.IsNullOrWhiteSpace(token))
         {
