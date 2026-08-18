@@ -1,0 +1,18 @@
+[Unit]
+Description=Pokemon SoulLink Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=/opt/pokesoullinkbot
+ExecStart=/usr/bin/dotnet /opt/pokesoullinkbot/PokeSoulLinkBot.dll
+EnvironmentFile=/etc/pokesoullinkbot.env
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=pokesoullinkbot
+
+[Install]
+WantedBy=multi-user.target
