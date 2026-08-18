@@ -15,18 +15,26 @@ public sealed class CommandDefinitionTests
         new()
         {
             { new ArenaCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena", new[] { "number", "edition" } },
+            { new ArenasCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arenas", new[] { "edition" } },
             { new ArenaCompleteCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena-complete", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
+            { new CatchEditCommand(new StubRunService(), new EmbedFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch-edit", new[] { "route", "player", "pokemon" } },
+            { new CatchRemoveCommand(new StubRunService(), new EmbedFactory(), new StubGameDataCatalogService()), "catch-remove", new[] { "route", "player" } },
             { new CatchCheckCommand(new StubCatchEligibilityService(), new EmbedFactory()), "catch-check", new[] { "pokemon" } },
             { new DeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "death", new[] { "route", "reason", "player" } },
+            { new DeathUndoCommand(new StubRunService(), new EmbedFactory(), new StubGameDataCatalogService()), "death-undo", new[] { "route" } },
             { new HealthCommand(new StubBotHealthService(), new EmbedFactory()), "health", Array.Empty<string>() },
             { new PokedexCommand(new StubPokedexService(), new PokedexPresenter()), "pokedex", new[] { "name" } },
+            { new MovesCommand(new StubPokedexService(), new PokemonMoveLearnsetPresenter()), "moves", new[] { "pokemon" } },
+            { new TypeCommand(new StubPokemonReferenceService(), new EmbedFactory()), "type", new[] { "type" } },
+            { new AttackInfoCommand(new StubPokemonReferenceService(), new EmbedFactory()), "attack-info", new[] { "move" } },
             { new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "route-death", new[] { "route", "reason", "player" } },
             { new RunEndCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "run-end", new[] { "reason" } },
             { new RunStartCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService()), "run-start", new[] { "name", "edition", "player1", "player2", "player3" } },
             { new StatsCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "stats", Array.Empty<string>() },
             { new StatusCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService()), "status", Array.Empty<string>() },
             { new TeamCommand(new StubRunService(), new EmbedFactory()), "team", Array.Empty<string>() },
+            { new TeamCheckCommand(new StubRunService(), new EmbedFactory(), new TeamCheckAnalyzer()), "team-check", Array.Empty<string>() },
             { new SwapCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "swap", new[] { "team-route", "box-route" } },
             { new UseCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory()), "use", new[] { "route", "position" } },
         };
@@ -207,6 +215,21 @@ public sealed class CommandDefinitionTests
             throw new NotSupportedException();
         }
 
+        public LinkGroup EditCatch(string guildId, string route, ulong playerId, string pokemon, IReadOnlyList<string> pokemonTypes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkGroup RemoveCatch(string guildId, string route, ulong playerId)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkGroup UndoDeath(string guildId, string route)
+        {
+            throw new NotSupportedException();
+        }
+
         public SoulLinkRun GetActiveRun(string guildId)
         {
             throw new NotSupportedException();
@@ -216,6 +239,16 @@ public sealed class CommandDefinitionTests
         {
             throw new NotSupportedException();
         }
+    }
+
+    private sealed class StubPokemonReferenceService : IPokemonReferenceService
+    {
+        public Task<TypeInfo?> GetTypeInfoAsync(string typeName) => Task.FromResult<TypeInfo?>(null);
+
+        public Task<AttackInfo?> GetAttackInfoAsync(string moveName) => Task.FromResult<AttackInfo?>(null);
+
+        public Task<IReadOnlyList<AttackSuggestion>> GetAttackSuggestionsAsync(string query) =>
+            Task.FromResult<IReadOnlyList<AttackSuggestion>>(Array.Empty<AttackSuggestion>());
     }
 
     private sealed class StubPokemonLookupService : IPokemonLookupService
@@ -237,6 +270,11 @@ public sealed class CommandDefinitionTests
     private sealed class StubPokedexService : IPokedexService
     {
         public Task<PokedexEntry> GetPokedexEntryAsync(string pokemonName)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<PokemonMoveLearnset> GetMoveLearnsetAsync(string pokemonName)
         {
             throw new NotSupportedException();
         }

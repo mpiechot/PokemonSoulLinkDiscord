@@ -110,6 +110,26 @@ public interface IRunService
         string location);
 
     /// <summary>
+    /// Edits a caught Pokémon for a player on a route.
+    /// </summary>
+    LinkGroup EditCatch(
+        string guildId,
+        string route,
+        ulong playerId,
+        string pokemon,
+        IReadOnlyList<string> pokemonTypes);
+
+    /// <summary>
+    /// Removes a caught Pokémon from a route.
+    /// </summary>
+    LinkGroup RemoveCatch(string guildId, string route, ulong playerId);
+
+    /// <summary>
+    /// Reverses a death or reopens a route that was lost without an encounter.
+    /// </summary>
+    LinkGroup UndoDeath(string guildId, string route);
+
+    /// <summary>
     /// Gets the currently active run for the specified guild.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>

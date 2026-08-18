@@ -21,4 +21,7 @@ public sealed class PokemonDto
 
     [JsonPropertyName("types")]
     public List<PokemonTypeEntryDto>? Types { get; set; }
+
+    [JsonPropertyName("moves")]
+    public List<PokemonMoveDto>? Moves { get; set; }
 }
