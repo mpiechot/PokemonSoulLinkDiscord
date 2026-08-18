@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Models;
+using PokeSoulLinkBot.Infrastructure.Persistence.Migrations;
 
 namespace PokeSoulLinkBot.Infrastructure.Persistence;
 
@@ -14,6 +15,7 @@ public sealed class RunStore : IRunStore
     private readonly string filePath;
     private readonly string backupFilePath;
     private readonly JsonSerializerOptions jsonSerializerOptions;
+    private readonly RunStoreMigrationPipeline migrationPipeline;
     private readonly object stateLock = new object();
     private readonly object fileLock = new object();
     private readonly List<SoulLinkRun> runs;
@@ -31,8 +33,10 @@ public sealed class RunStore : IRunStore
         this.backupFilePath = filePath + BackupFileSuffix;
         this.jsonSerializerOptions = new JsonSerializerOptions
         {
+            PropertyNameCaseInsensitive = true,
             WriteIndented = true,
         };
+        this.migrationPipeline = new RunStoreMigrationPipeline();
 
         this.runs = this.LoadRuns();
     }
@@ -90,7 +94,12 @@ public sealed class RunStore : IRunStore
 
     private RunStoreSnapshot CreateSnapshotCore()
     {
-        string json = JsonSerializer.Serialize(this.runs, this.jsonSerializerOptions);
+        var document = new RunStoreDocument
+        {
+            SchemaVersion = RunStoreMigrationPipeline.CurrentSchemaVersion,
+            Runs = this.runs,
+        };
+        string json = JsonSerializer.Serialize(document, this.jsonSerializerOptions);
         return new RunStoreSnapshot(++this.nextSaveVersion, json);
     }
 
@@ -193,7 +202,9 @@ public sealed class RunStore : IRunStore
                 return false;
             }
 
-            persistedRuns = JsonSerializer.Deserialize<List<SoulLinkRun>>(json) ?? new List<SoulLinkRun>();
+            RunStoreDocument document = this.DeserializeDocument(json);
+            RunStoreDocument migratedDocument = this.migrationPipeline.Migrate(document);
+            persistedRuns = migratedDocument.Runs!;
             return true;
         }
         catch (JsonException)
@@ -204,6 +215,24 @@ public sealed class RunStore : IRunStore
         {
             return false;
         }
+    }
+
+    private RunStoreDocument DeserializeDocument(string json)
+    {
+        using JsonDocument parsedDocument = JsonDocument.Parse(json);
+
+        return parsedDocument.RootElement.ValueKind switch
+        {
+            JsonValueKind.Array => new RunStoreDocument
+            {
+                SchemaVersion = 0,
+                Runs = JsonSerializer.Deserialize<List<SoulLinkRun>>(json, this.jsonSerializerOptions),
+            },
+            JsonValueKind.Object => JsonSerializer.Deserialize<RunStoreDocument>(
+                json,
+                this.jsonSerializerOptions) ?? throw new JsonException("The run-store document is empty."),
+            _ => throw new JsonException("The run-store root must be an object or an array."),
+        };
     }
 
     private void WriteAllText(string path, string content)
