@@ -52,6 +52,9 @@ public static class BotHost
 
     private static void RegisterServices(IServiceCollection services, IConfiguration configuration)
     {
+        services.Configure<HostOptions>(options =>
+            options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost);
+
         services.AddOptions<SoulLinkOptions>()
             .Bind(configuration.GetSection(SoulLinkOptions.SectionName))
             .Validate(
