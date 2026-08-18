@@ -12,6 +12,7 @@ using PokeSoulLinkBot.Bot.Presentation;
 using PokeSoulLinkBot.Bot.Registration;
 using PokeSoulLinkBot.Bot.Services;
 using PokeSoulLinkBot.Core.Configuration;
+using PokeSoulLinkBot.Core.GameIntegration;
 using PokeSoulLinkBot.Infrastructure.Persistence;
 
 namespace PokeSoulLinkBot.Bot.Hosting;
@@ -96,6 +97,7 @@ public static class BotHost
         services.AddSingleton<TeamCheckAnalyzer>();
         services.AddSingleton<IBotDiagnosticsService, BotDiagnosticsService>();
         services.AddSingleton<IBotHealthService, BotHealthService>();
+        services.AddSingleton<IRomCompatibilityAdapter, PokemonRubyCompatibilityAdapter>();
 
         services.AddSingleton<EmbedFactory>();
         services.AddSingleton(_ => new EmbedImageFactory(GetResourcesDirectoryPath()));
