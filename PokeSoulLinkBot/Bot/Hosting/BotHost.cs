@@ -11,6 +11,7 @@ using PokeSoulLinkBot.Bot.Handlers;
 using PokeSoulLinkBot.Bot.Presentation;
 using PokeSoulLinkBot.Bot.Registration;
 using PokeSoulLinkBot.Bot.Services;
+using PokeSoulLinkBot.Core.Configuration;
 using PokeSoulLinkBot.Infrastructure.Persistence;
 
 namespace PokeSoulLinkBot.Bot.Hosting;
@@ -51,6 +52,13 @@ public static class BotHost
 
     private static void RegisterServices(IServiceCollection services, IConfiguration configuration)
     {
+        services.AddOptions<SoulLinkOptions>()
+            .Bind(configuration.GetSection(SoulLinkOptions.SectionName))
+            .Validate(
+                options => options.IsValid(),
+                "EnableAutoTeamSync requires EnableRemoteWrites to be enabled.")
+            .ValidateOnStart();
+
         services.AddSingleton<DiscordSocketClient>(_ => new DiscordSocketClient(new DiscordSocketConfig
         {
             GatewayIntents = GatewayIntents.Guilds,
