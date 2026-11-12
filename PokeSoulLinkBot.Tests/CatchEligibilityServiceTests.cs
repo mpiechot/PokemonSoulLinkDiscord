@@ -113,6 +113,31 @@ public sealed class CatchEligibilityServiceTests
         Assert.Contains("not found or is ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("Bulbasaur")]
+    [InlineData("Venusaur")]
+    public async Task CheckCatchAsync_ShouldStillBlockOriginalCatchWhileShinyIsAssigned(string requestedPokemon)
+    {
+        var group = CreateLinkGroup("route 1", 1, "Ash", "Pikachu", isAlive: true);
+        var shiny = Assert.Single(group.Entries);
+        shiny.ShinyId = Guid.NewGuid();
+        shiny.ReplacedPokemon = new LinkedPokemon
+        {
+            PlayerUserId = 1,
+            PlayerName = "Ash",
+            PokemonName = "Bulbasaur",
+            IsAlive = true,
+        };
+        var service = CreateService(CreateRun(group));
+
+        var result = await service.CheckCatchAsync(GuildId, requestedPokemon);
+
+        Assert.False(result.IsAllowed);
+        Assert.Equal("Bulbasaur", result.Match?.PokemonName);
+        Assert.Equal("route 1", result.Match?.Route);
+        Assert.Equal("Box", result.Match?.Status);
+    }
+
     private static CatchEligibilityService CreateService(SoulLinkRun run)
     {
         return new CatchEligibilityService(new StubRunService(run), new StubPokedexService());
@@ -211,6 +236,16 @@ public sealed class CatchEligibilityServiceTests
         }
 
         public SoulLinkRun SwapRoute(string guildId, string teamRoute, string boxRoute)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkedPokemon RegisterShiny(string guildId, string? caughtRoute, ulong playerId, string playerName, string pokemon, IReadOnlyList<string> pokemonTypes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public SoulLinkRun SwapShiny(string guildId, ulong playerId, Guid shinyId, string? route)
         {
             throw new NotSupportedException();
         }

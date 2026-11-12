@@ -18,6 +18,8 @@ public sealed class CommandDefinitionTests
             { new ArenasCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arenas", new[] { "edition" } },
             { new ArenaCompleteCommand(new StubArenaInfoService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService(), new StubRunService()), "arena-complete", new[] { "number", "edition" } },
             { new CatchCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch", new[] { "route", "player", "pokemon" } },
+            { new ShinyCatchCommand(new StubRunService(), new EmbedFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "shiny-catch", new[] { "player", "pokemon", "route" } },
+            { new ShinySwapCommand(new StubRunService(), new EmbedFactory()), "shiny-swap", new[] { "player", "shiny", "route" } },
             { new CatchEditCommand(new StubRunService(), new EmbedFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()), "catch-edit", new[] { "route", "player", "pokemon" } },
             { new CatchRemoveCommand(new StubRunService(), new EmbedFactory(), new StubGameDataCatalogService()), "catch-remove", new[] { "route", "player" } },
             { new CatchCheckCommand(new StubCatchEligibilityService(), new EmbedFactory()), "catch-check", new[] { "pokemon" } },
@@ -115,6 +117,20 @@ public sealed class CommandDefinitionTests
     }
 
     [Fact]
+    public void ShinyCommands_ShouldRequireOwnerAndSupportAutocompleteAndReturningWithoutRoute()
+    {
+        var catchOptions = GetOptions(new ShinyCatchCommand(new StubRunService(), new EmbedFactory(), new StubPokemonLookupService(), new StubGameDataCatalogService()));
+        AssertOption(catchOptions, "route", isRequired: false, isAutocomplete: true);
+        AssertOption(catchOptions, "player", isRequired: true, isAutocomplete: false);
+        AssertOption(catchOptions, "pokemon", isRequired: true, isAutocomplete: false);
+
+        var swapOptions = GetOptions(new ShinySwapCommand(new StubRunService(), new EmbedFactory()));
+        AssertOption(swapOptions, "player", isRequired: true, isAutocomplete: false);
+        AssertOption(swapOptions, "shiny", isRequired: true, isAutocomplete: true);
+        AssertOption(swapOptions, "route", isRequired: false, isAutocomplete: true);
+    }
+
+    [Fact]
     public void RouteDeathCommandDefinition_ShouldSetRequiredAndAutocompleteFlags()
     {
         var command = new RouteDeathCommand(new StubRunService(), new EmbedFactory(), CreateImageFactory(), new StubGameDataCatalogService());
@@ -171,6 +187,16 @@ public sealed class CommandDefinitionTests
             string playerName,
             string pokemon,
             IReadOnlyList<string> pokemonTypes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public LinkedPokemon RegisterShiny(string guildId, string? caughtRoute, ulong playerId, string playerName, string pokemon, IReadOnlyList<string> pokemonTypes)
+        {
+            throw new NotSupportedException();
+        }
+
+        public SoulLinkRun SwapShiny(string guildId, ulong playerId, Guid shinyId, string? route)
         {
             throw new NotSupportedException();
         }

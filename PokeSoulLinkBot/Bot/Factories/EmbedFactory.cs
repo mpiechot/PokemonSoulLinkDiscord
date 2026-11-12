@@ -980,8 +980,35 @@ public sealed class EmbedFactory
             CreateTeamPositions(run)));
         blocks.AddRange(this.CreateTableSections("📦 Box", box, playerNames));
         blocks.AddRange(this.CreateTableSections("💀 Dead", run.LinkGroups.Where(group => !group.IsAlive), playerNames));
+        blocks.AddRange(this.CreateShinySections(run));
 
         return blocks;
+    }
+
+    private IReadOnlyList<string> CreateShinySections(SoulLinkRun run)
+    {
+        const string title = "**✨ Shinies**";
+        var sections = new List<string>();
+        var current = title;
+        foreach (var (pokemon, route) in run.GetShinyAssignments().OrderBy(item => item.Pokemon.CaughtAtUtc))
+        {
+            var state = !pokemon.IsAlive ? "tot" : route is null ? "frei" : "eingesetzt";
+            var row = $"{Environment.NewLine}✨ {this.PadRight(pokemon.PokemonName, 40).Trim()} · " +
+                $"{this.PadRight(pokemon.PlayerName, 32).Trim()} · {state}" +
+                $"{Environment.NewLine}Fund: {this.PadRight(pokemon.ShinyCaughtRoute ?? "nicht angegeben", 100).Trim()} | " +
+                $"Einsatz: {this.PadRight(route ?? "keine Route", 100).Trim()}" +
+                $"{Environment.NewLine}ID: {pokemon.ShinyId}";
+            if (current.Length + row.Length > DiscordMessageMaxLength)
+            {
+                sections.Add(current);
+                current = title;
+            }
+
+            current += row;
+        }
+
+        sections.Add(current == title ? $"{title}{Environment.NewLine}Keine Shinies gefangen." : current);
+        return sections;
     }
 
     private IReadOnlyList<string> CreateTeamBlocks(string title, SoulLinkRun run)
@@ -1114,12 +1141,13 @@ public sealed class EmbedFactory
 
     private string FormatPokemonWithTypes(LinkedPokemon pokemon)
     {
+        var name = pokemon.ShinyId.HasValue ? $"✨ {pokemon.PokemonName}" : pokemon.PokemonName;
         if (pokemon.Types.Count == 0)
         {
-            return pokemon.PokemonName;
+            return name;
         }
 
         var typeIcons = string.Join(string.Empty, pokemon.Types.Select(PokemonTypeVisualizer.FormatType));
-        return $"{pokemon.PokemonName} ({typeIcons})";
+        return $"{name} ({typeIcons})";
     }
 }

@@ -103,6 +103,8 @@ internal sealed class Program
             new RunStartCommand(runService, embedFactory, embedImageFactory, gameDataCatalogService),
             new RunEndCommand(runService, embedFactory, embedImageFactory),
             new CatchCommand(runService, embedFactory, embedImageFactory, pokemonLookupService, gameDataCatalogService),
+            new ShinyCatchCommand(runService, embedFactory, pokemonLookupService, gameDataCatalogService),
+            new ShinySwapCommand(runService, embedFactory),
             new CatchEditCommand(runService, embedFactory, pokemonLookupService, gameDataCatalogService),
             new CatchRemoveCommand(runService, embedFactory, gameDataCatalogService),
             new CatchCheckCommand(catchEligibilityService, embedFactory),

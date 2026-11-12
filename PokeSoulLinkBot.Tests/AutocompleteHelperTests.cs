@@ -6,6 +6,21 @@ namespace PokeSoulLinkBot.Tests;
 public sealed class AutocompleteHelperTests
 {
     [Fact]
+    public void CreateLabeledResults_ShouldKeepDuplicateNamesDistinctAndPreserveIdsWithinDiscordLimits()
+    {
+        var ids = Enumerable.Range(0, 30).Select(_ => Guid.NewGuid().ToString()).ToArray();
+        var suggestions = ids.Select(id => (Name: "Pikachu " + new string('x', 150), Value: id));
+
+        var results = AutocompleteHelper.CreateResults(suggestions, "pikachu");
+
+        Assert.Equal(25, results.Count);
+        Assert.All(results, result => Assert.InRange(result.Name.Length, 1, 100));
+        Assert.Equal(25, results.Select(result => result.Value).Distinct().Count());
+        Assert.All(results, result => Assert.Contains(result.Value.ToString(), ids));
+        Assert.Empty(AutocompleteHelper.CreateResults(suggestions, "bisasam"));
+    }
+
+    [Fact]
     public void CreateResults_ShouldOrderExactPrefixContainsAndFuzzyMatches()
     {
         var values = new[]

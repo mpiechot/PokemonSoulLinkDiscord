@@ -47,12 +47,17 @@ public sealed class SoulLinkRun
     /// <summary>
     /// Gets or sets the participating players.
     /// </summary>
-    public List<RunPlayer> Players { get; set; } = new ();
+    public List<RunPlayer> Players { get; set; } = new List<RunPlayer>();
 
     /// <summary>
     /// Gets or sets the linked Pokémon groups for this run.
     /// </summary>
-    public List<LinkGroup> LinkGroups { get; set; } = new ();
+    public List<LinkGroup> LinkGroups { get; set; } = new List<LinkGroup>();
+
+    /// <summary>
+    /// Gets or sets shiny catches that are currently not assigned to a link group.
+    /// </summary>
+    public List<LinkedPokemon> UnassignedShinies { get; set; } = new List<LinkedPokemon>();
 
     /// <summary>
     /// Gets or sets the collection of active link groups.
@@ -74,7 +79,7 @@ public sealed class SoulLinkRun
     /// <summary>
     /// Gets or sets the completed arenas for this run.
     /// </summary>
-    public List<CompletedArena> CompletedArenas { get; set; } = new ();
+    public List<CompletedArena> CompletedArenas { get; set; } = new List<CompletedArena>();
 
     public void TryAddToActive(LinkGroup linkGroup)
     {
@@ -93,6 +98,18 @@ public sealed class SoulLinkRun
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// Gets all shiny catches together with their current link route, if assigned.
+    /// </summary>
+    /// <returns>The unassigned and assigned shinies of this run.</returns>
+    public IEnumerable<(LinkedPokemon Pokemon, string? Route)> GetShinyAssignments()
+    {
+        return this.UnassignedShinies.Select(pokemon => (pokemon, (string?)null))
+            .Concat(this.LinkGroups.SelectMany(group => group.Entries
+                .Where(entry => entry.ShinyId.HasValue)
+                .Select(entry => (entry, (string?)group.Route))));
     }
 
     private static bool IsSameLinkGroup(LinkGroup? activeLink, LinkGroup linkGroup)

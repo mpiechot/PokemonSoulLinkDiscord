@@ -194,6 +194,20 @@ public sealed class RunStore : IRunStore
             }
 
             persistedRuns = JsonSerializer.Deserialize<List<SoulLinkRun>>(json) ?? new List<SoulLinkRun>();
+            foreach (var run in persistedRuns)
+            {
+                for (var index = 0; index < run.ActiveLinks.Length; index++)
+                {
+                    var activeLink = run.ActiveLinks[index];
+                    if (activeLink is not null)
+                    {
+                        run.ActiveLinks[index] = run.LinkGroups.FirstOrDefault(group =>
+                            (activeLink.Id != Guid.Empty && group.Id == activeLink.Id) ||
+                            string.Equals(group.Route, activeLink.Route, StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+            }
+
             return true;
         }
         catch (JsonException)

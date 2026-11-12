@@ -41,6 +41,27 @@ public static class AutocompleteHelper
     }
 
     /// <summary>
+    /// Filters labeled suggestions while preserving their full identifiers as values.
+    /// </summary>
+    /// <param name="values">The labeled suggestions.</param>
+    /// <param name="userInput">The current user input.</param>
+    /// <returns>The ranked Discord autocomplete results.</returns>
+    public static IReadOnlyCollection<AutocompleteResult> CreateResults(
+        IEnumerable<(string Name, string Value)> values,
+        string? userInput)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var input = NormalizeForSearch(userInput?.Trim() ?? string.Empty);
+        return values.Select(value => new { Result = value, Score = GetMatchScore(value.Name, input) })
+            .Where(item => item.Score.HasValue)
+            .OrderBy(item => item.Score)
+            .ThenBy(item => item.Result.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxResults)
+            .Select(item => new AutocompleteResult(Truncate(item.Result.Name), item.Result.Value))
+            .ToList();
+    }
+
+    /// <summary>
     /// Reads the option that is currently being autocompleted.
     /// </summary>
     /// <param name="interaction">The autocomplete interaction.</param>
