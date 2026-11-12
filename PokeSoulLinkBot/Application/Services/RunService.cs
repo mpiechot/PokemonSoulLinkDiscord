@@ -138,14 +138,13 @@ public sealed class RunService : IRunService
     /// <inheritdoc />
     public LinkedPokemon RegisterShiny(
         string guildId,
-        string caughtRoute,
+        string? caughtRoute,
         ulong playerId,
         string playerName,
         string pokemon,
         IReadOnlyList<string> pokemonTypes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(caughtRoute);
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(pokemon);
         ArgumentNullException.ThrowIfNull(pokemonTypes);
@@ -161,7 +160,7 @@ public sealed class RunService : IRunService
             var shiny = new LinkedPokemon
             {
                 ShinyId = Guid.NewGuid(),
-                ShinyCaughtRoute = this.NormalizeRoute(caughtRoute),
+                ShinyCaughtRoute = string.IsNullOrWhiteSpace(caughtRoute) ? null : this.NormalizeRoute(caughtRoute),
                 PlayerUserId = playerId,
                 PlayerName = playerName.Trim(),
                 PokemonName = pokemon.Trim(),

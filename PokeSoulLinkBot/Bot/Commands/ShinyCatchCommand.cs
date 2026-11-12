@@ -44,9 +44,9 @@ public sealed class ShinyCatchCommand : ISlashCommand
         return new SlashCommandBuilder()
             .WithName(this.CommandName)
             .WithDescription("Registriert ein zusätzliches Shiny, ohne den Routenfang zu verbrauchen.")
-            .AddOption("route", ApplicationCommandOptionType.String, "Die Fundroute des Shinys.", isRequired: true, isAutocomplete: true)
             .AddOption("player", ApplicationCommandOptionType.User, "Der Besitzer des Shinys.", isRequired: true)
             .AddOption("pokemon", ApplicationCommandOptionType.String, "Der Pokémonname.", isRequired: true)
+            .AddOption("route", ApplicationCommandOptionType.String, "Optionale Fundroute; unabhängig von der späteren Link-Route.", isRequired: false, isAutocomplete: true)
             .Build();
     }
 
@@ -57,14 +57,14 @@ public sealed class ShinyCatchCommand : ISlashCommand
         ArgumentNullException.ThrowIfNull(response);
 
         var guildId = CommandOptionHelper.GetGuildId(command);
-        var route = CommandOptionHelper.GetRequiredStringOption(command, "route");
+        var route = command.Data.Options.FirstOrDefault(option => option.Name == "route")?.Value?.ToString();
         var player = CommandOptionHelper.GetRequiredUserOption(command, "player");
         var pokemon = CommandOptionHelper.GetRequiredStringOption(command, "pokemon");
         var pokemonInfo = await this.pokemonLookupService.GetPokemonInfoAsync(pokemon)
             ?? throw new InvalidOperationException($"Pokémon '{pokemon}' wurde nicht gefunden.");
         var shiny = this.runService.RegisterShiny(guildId, route, player.Id, player.Username, pokemon, pokemonInfo.Types);
 
-        var description = $"**{shiny.PlayerName}**: **{shiny.PokemonName}** (Fundroute: **{shiny.ShinyCaughtRoute}**). " +
+        var description = $"**{shiny.PlayerName}**: **{shiny.PokemonName}** (Fundroute: **{shiny.ShinyCaughtRoute ?? "nicht angegeben"}**). " +
             $"Mit /shiny-swap auf einer lebenden Link-Route einsetzen. Shiny-ID: `{shiny.ShinyId}`";
         await response.SendAsync(embed: this.embedFactory.CreateActionEmbed("✨ Shiny gefangen", description));
         await response.SendFollowupsAsync(this.embedFactory.CreateStatusMessages(this.runService.GetActiveRun(guildId)));

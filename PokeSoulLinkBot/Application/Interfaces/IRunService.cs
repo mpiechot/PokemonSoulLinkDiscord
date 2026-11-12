@@ -47,7 +47,7 @@ public interface IRunService
     /// Registers an extra shiny catch without consuming a route encounter.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>
-    /// <param name="caughtRoute">The original catch location.</param>
+    /// <param name="caughtRoute">The optional original catch location, independent of any link assignment.</param>
     /// <param name="playerId">The owner's Discord user identifier.</param>
     /// <param name="playerName">The owner's display name.</param>
     /// <param name="pokemon">The Pokémon name.</param>
@@ -55,7 +55,7 @@ public interface IRunService
     /// <returns>The registered shiny catch.</returns>
     LinkedPokemon RegisterShiny(
         string guildId,
-        string caughtRoute,
+        string? caughtRoute,
         ulong playerId,
         string playerName,
         string pokemon,

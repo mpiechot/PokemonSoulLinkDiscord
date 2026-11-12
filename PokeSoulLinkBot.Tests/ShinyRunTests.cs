@@ -41,6 +41,36 @@ public sealed class ShinyRunTests
         Assert.Empty(lost.Entries);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void RegisterShiny_ShouldAllowMissingCatchLocationWithoutConfusingLinkAssignment(string? caughtRoute)
+    {
+        var service = CreateService();
+        var shiny = Shiny(service, caughtRoute);
+        var run = service.GetActiveRun(GuildId);
+        var factory = new EmbedFactory();
+
+        Assert.Null(shiny.ShinyCaughtRoute);
+        Assert.Empty(run.LinkGroups);
+        Assert.Null(Assert.Single(run.GetShinyAssignments()).Route);
+        Assert.Contains("Fund: nicht angegeben | Einsatz: keine Route", factory.CreateStatusMessage(run));
+
+        var group = Catch(service, "route 101");
+        var original = Assert.Single(group.Entries);
+        service.SwapShiny(GuildId, 1, shiny.ShinyId!.Value, group.Route);
+
+        Assert.Null(shiny.ShinyCaughtRoute);
+        Assert.Equal("route 101", Assert.Single(run.GetShinyAssignments()).Route);
+        Assert.Contains("Fund: nicht angegeben | Einsatz: route 101", factory.CreateStatusMessage(run));
+
+        service.SwapShiny(GuildId, 1, shiny.ShinyId.Value, null);
+        Assert.Same(original, Assert.Single(group.Entries));
+        Assert.Null(Assert.Single(run.GetShinyAssignments()).Route);
+        Assert.Null(shiny.ShinyCaughtRoute);
+    }
+
     [Fact]
     public void SwapShiny_ShouldPreserveOriginalPartnerAndTeamSlotAndRestoreOriginal()
     {
@@ -232,7 +262,7 @@ public sealed class ShinyRunTests
         {
             var service = CreateService(new RunStore(path));
             Catch(service, "route 101");
-            var shiny = Shiny(service);
+            var shiny = Shiny(service, null);
             var reserve = Shiny(service);
             service.SwapShiny(GuildId, 1, shiny.ShinyId!.Value, "route 101");
 
@@ -241,6 +271,7 @@ public sealed class ShinyRunTests
             var group = Assert.Single(run.LinkGroups);
             Assert.Same(group, run.ActiveLinks[0]);
             Assert.Equal(shiny.ShinyId, Assert.Single(group.Entries).ShinyId);
+            Assert.Null(Assert.Single(group.Entries).ShinyCaughtRoute);
             Assert.Equal(reserve.ShinyId, Assert.Single(run.UnassignedShinies).ShinyId);
 
             service.SwapShiny(GuildId, 1, shiny.ShinyId.Value, null);
@@ -335,7 +366,7 @@ public sealed class ShinyRunTests
     private static LinkGroup Catch(RunService service, string route)
         => service.RegisterCatch(GuildId, route, 1, "Player", "Bulbasaur", new[] { "grass", "poison" });
 
-    private static LinkedPokemon Shiny(RunService service, string route = "forest")
+    private static LinkedPokemon Shiny(RunService service, string? route = "forest")
         => service.RegisterShiny(GuildId, route, 1, "Player", "Pikachu", new[] { "electric" });
 
     private sealed class MemoryStore : IRunStore

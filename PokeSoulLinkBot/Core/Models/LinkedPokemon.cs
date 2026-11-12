@@ -11,7 +11,7 @@ public sealed class LinkedPokemon
     public Guid? ShinyId { get; set; }
 
     /// <summary>
-    /// Gets or sets the original catch route of a shiny.
+    /// Gets or sets the optional original catch route of a shiny, independent of its link assignment.
     /// </summary>
     public string? ShinyCaughtRoute { get; set; }
 

@@ -240,7 +240,7 @@ public sealed class CatchEligibilityServiceTests
             throw new NotSupportedException();
         }
 
-        public LinkedPokemon RegisterShiny(string guildId, string caughtRoute, ulong playerId, string playerName, string pokemon, IReadOnlyList<string> pokemonTypes)
+        public LinkedPokemon RegisterShiny(string guildId, string? caughtRoute, ulong playerId, string playerName, string pokemon, IReadOnlyList<string> pokemonTypes)
         {
             throw new NotSupportedException();
         }

@@ -92,7 +92,7 @@ public sealed class ShinySwapCommand : ISlashCommand
         var suggestions = run.GetShinyAssignments()
             .Where(item => item.Pokemon.PlayerUserId == playerId && item.Pokemon.IsAlive)
             .Select(item => (
-                $"{item.Pokemon.ShinyId!.Value.ToString()[..8]} · {item.Pokemon.PokemonName} · Fund: {item.Pokemon.ShinyCaughtRoute} · Einsatz: {item.Route ?? "frei"}",
+                $"{item.Pokemon.ShinyId!.Value.ToString()[..8]} · {item.Pokemon.PokemonName} · Fund: {item.Pokemon.ShinyCaughtRoute ?? "nicht angegeben"} · Einsatz: {item.Route ?? "frei"}",
                 item.Pokemon.ShinyId!.Value.ToString()));
         return AutocompleteHelper.CreateResults(suggestions, input);
     }

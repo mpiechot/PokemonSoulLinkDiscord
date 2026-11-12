@@ -995,7 +995,7 @@ public sealed class EmbedFactory
             var state = !pokemon.IsAlive ? "tot" : route is null ? "frei" : "eingesetzt";
             var row = $"{Environment.NewLine}✨ {this.PadRight(pokemon.PokemonName, 40).Trim()} · " +
                 $"{this.PadRight(pokemon.PlayerName, 32).Trim()} · {state}" +
-                $"{Environment.NewLine}Fund: {this.PadRight(pokemon.ShinyCaughtRoute ?? "-", 100).Trim()} | " +
+                $"{Environment.NewLine}Fund: {this.PadRight(pokemon.ShinyCaughtRoute ?? "nicht angegeben", 100).Trim()} | " +
                 $"Einsatz: {this.PadRight(route ?? "keine Route", 100).Trim()}" +
                 $"{Environment.NewLine}ID: {pokemon.ShinyId}";
             if (current.Length + row.Length > DiscordMessageMaxLength)
