@@ -6,6 +6,21 @@ namespace PokeSoulLinkBot.Core.Models;
 public sealed class LinkedPokemon
 {
     /// <summary>
+    /// Gets or sets the stable identifier of a shiny catch, or null for a regular catch.
+    /// </summary>
+    public Guid? ShinyId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the original catch route of a shiny.
+    /// </summary>
+    public string? ShinyCaughtRoute { get; set; }
+
+    /// <summary>
+    /// Gets or sets the regular Pokémon benched while this shiny occupies its link slot.
+    /// </summary>
+    public LinkedPokemon? ReplacedPokemon { get; set; }
+
+    /// <summary>
     /// Gets or sets the Discord user identifier of the owning player.
     /// </summary>
     public ulong PlayerUserId { get; set; }
@@ -23,7 +38,7 @@ public sealed class LinkedPokemon
     /// <summary>
     /// Gets or sets the Pokémon types.
     /// </summary>
-    public List<string> Types { get; set; } = new ();
+    public List<string> Types { get; set; } = new List<string>();
 
     /// <summary>
     /// Gets or sets a value indicating whether the Pokémon is alive.

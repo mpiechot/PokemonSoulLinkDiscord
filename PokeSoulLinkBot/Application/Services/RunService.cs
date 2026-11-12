@@ -136,6 +136,116 @@ public sealed class RunService : IRunService
     }
 
     /// <inheritdoc />
+    public LinkedPokemon RegisterShiny(
+        string guildId,
+        string caughtRoute,
+        ulong playerId,
+        string playerName,
+        string pokemon,
+        IReadOnlyList<string> pokemonTypes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(caughtRoute);
+        ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pokemon);
+        ArgumentNullException.ThrowIfNull(pokemonTypes);
+
+        lock (this.operationLock)
+        {
+            var run = this.GetActiveRun(guildId);
+            if (run.Players.All(player => player.UserId != playerId))
+            {
+                throw new InvalidOperationException("The specified player is not part of the active run.");
+            }
+
+            var shiny = new LinkedPokemon
+            {
+                ShinyId = Guid.NewGuid(),
+                ShinyCaughtRoute = this.NormalizeRoute(caughtRoute),
+                PlayerUserId = playerId,
+                PlayerName = playerName.Trim(),
+                PokemonName = pokemon.Trim(),
+                Types = pokemonTypes.ToList(),
+                IsAlive = true,
+                CaughtAtUtc = DateTime.UtcNow,
+            };
+
+            run.UnassignedShinies.Add(shiny);
+            this.runStore.Save();
+            return shiny;
+        }
+    }
+
+    /// <inheritdoc />
+    public SoulLinkRun SwapShiny(string guildId, ulong playerId, Guid shinyId, string? route)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(guildId);
+        if (route is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(route);
+        }
+
+        lock (this.operationLock)
+        {
+            var run = this.GetActiveRun(guildId);
+            if (run.Players.All(player => player.UserId != playerId))
+            {
+                throw new InvalidOperationException("The specified player is not part of the active run.");
+            }
+
+            var assignment = run.GetShinyAssignments().FirstOrDefault(item => item.Pokemon.ShinyId == shinyId);
+            var shiny = assignment.Pokemon
+                ?? throw new InvalidOperationException("The specified shiny was not found in the active run.");
+            if (shiny.PlayerUserId != playerId || !shiny.IsAlive)
+            {
+                throw new InvalidOperationException("Only the owner's living shinies can be swapped.");
+            }
+
+            var source = assignment.Route is null ? null : this.GetAliveLinkGroup(run, assignment.Route);
+            var target = route is null ? null : this.GetAliveLinkGroup(run, route);
+            var targetEntry = target?.Entries.FirstOrDefault(entry => entry.PlayerUserId == playerId);
+            if (target is not null && (targetEntry is null || !targetEntry.IsAlive || target.IsLostWithoutEncounter))
+            {
+                throw new InvalidOperationException("The specified player has no living catch on this route.");
+            }
+
+            if (source == target)
+            {
+                throw new InvalidOperationException("The shiny is already assigned to this route or already unassigned.");
+            }
+
+            if (source is not null)
+            {
+                source.Entries[source.Entries.IndexOf(shiny)] = shiny.ReplacedPokemon
+                    ?? throw new InvalidOperationException("The shiny has no stored original Pokémon to restore.");
+                shiny.ReplacedPokemon = null;
+            }
+            else
+            {
+                run.UnassignedShinies.Remove(shiny);
+            }
+
+            if (target is null)
+            {
+                run.UnassignedShinies.Add(shiny);
+            }
+            else
+            {
+                shiny.ReplacedPokemon = targetEntry!.ReplacedPokemon ?? targetEntry;
+                target.Entries[target.Entries.IndexOf(targetEntry)] = shiny;
+                if (targetEntry.ShinyId.HasValue)
+                {
+                    targetEntry.ReplacedPokemon = null;
+                    run.UnassignedShinies.Add(targetEntry);
+                }
+            }
+
+            this.runStore.Save();
+            return run;
+        }
+    }
+
+    /// <inheritdoc />
     public LinkGroup MarkRouteLost(
         string guildId,
         string route,
@@ -348,6 +458,11 @@ public sealed class RunService : IRunService
             var linkGroup = this.GetLinkGroup(activeRun, route);
             var entry = linkGroup.Entries.FirstOrDefault(entry => entry.PlayerUserId == playerId)
                 ?? throw new InvalidOperationException("The specified player has no catch on this route.");
+
+            if (entry.ShinyId.HasValue)
+            {
+                throw new InvalidOperationException("Return the shiny with /shiny-swap without a route before removing the catch.");
+            }
 
             linkGroup.Entries.Remove(entry);
             if (linkGroup.Entries.Count == 0)

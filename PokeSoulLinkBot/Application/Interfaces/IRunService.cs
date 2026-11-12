@@ -44,6 +44,34 @@ public interface IRunService
         IReadOnlyList<string> pokemonTypes);
 
     /// <summary>
+    /// Registers an extra shiny catch without consuming a route encounter.
+    /// </summary>
+    /// <param name="guildId">The Discord guild identifier.</param>
+    /// <param name="caughtRoute">The original catch location.</param>
+    /// <param name="playerId">The owner's Discord user identifier.</param>
+    /// <param name="playerName">The owner's display name.</param>
+    /// <param name="pokemon">The Pokémon name.</param>
+    /// <param name="pokemonTypes">The Pokémon types.</param>
+    /// <returns>The registered shiny catch.</returns>
+    LinkedPokemon RegisterShiny(
+        string guildId,
+        string caughtRoute,
+        ulong playerId,
+        string playerName,
+        string pokemon,
+        IReadOnlyList<string> pokemonTypes);
+
+    /// <summary>
+    /// Assigns a living shiny to its owner's living link slot, or benches it when route is null.
+    /// </summary>
+    /// <param name="guildId">The Discord guild identifier.</param>
+    /// <param name="playerId">The owner's Discord user identifier.</param>
+    /// <param name="shinyId">The stable shiny catch identifier.</param>
+    /// <param name="route">The destination link route, or null to restore the original Pokémon.</param>
+    /// <returns>The updated active run.</returns>
+    SoulLinkRun SwapShiny(string guildId, ulong playerId, Guid shinyId, string? route);
+
+    /// <summary>
     /// Marks a route as lost before any Pokémon was caught there.
     /// </summary>
     /// <param name="guildId">The Discord guild identifier.</param>

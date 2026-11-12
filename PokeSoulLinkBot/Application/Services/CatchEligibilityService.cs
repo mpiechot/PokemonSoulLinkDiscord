@@ -42,7 +42,7 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
 
         foreach (var linkGroup in activeRun.LinkGroups)
         {
-            foreach (var entry in linkGroup.Entries)
+            foreach (var entry in GetCatchEntries(linkGroup))
             {
                 var caughtFamily = await this.GetStoredCatchFamilyAsync(entry.PokemonName, familyCache);
                 if (!requestedFamily.Overlaps(caughtFamily))
@@ -78,7 +78,7 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
 
         foreach (var linkGroup in activeRun.LinkGroups)
         {
-            foreach (var entry in linkGroup.Entries)
+            foreach (var entry in GetCatchEntries(linkGroup))
             {
                 if (!string.Equals(
                     NormalizePokemonName(entry.PokemonName),
@@ -106,11 +106,28 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
         return null;
     }
 
+    private static IEnumerable<LinkedPokemon> GetCatchEntries(LinkGroup linkGroup)
+    {
+        foreach (var entry in linkGroup.Entries)
+        {
+            yield return entry;
+            if (entry.ReplacedPokemon is not null)
+            {
+                yield return entry.ReplacedPokemon;
+            }
+        }
+    }
+
     private static string GetStatus(SoulLinkRun run, LinkGroup linkGroup, LinkedPokemon pokemon)
     {
         if (!pokemon.IsAlive)
         {
             return "Dead";
+        }
+
+        if (linkGroup.Entries.Any(entry => ReferenceEquals(entry.ReplacedPokemon, pokemon)))
+        {
+            return "Box";
         }
 
         var isInTeam = run.ActiveLinks.Any(activeLink =>
