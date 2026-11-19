@@ -56,6 +56,6 @@ public sealed class SoulLinkOptions
     /// <returns><see langword="true"/> when the options are consistent.</returns>
     public bool IsValid()
     {
-        return !this.EnableAutoTeamSync || this.EnableRemoteWrites;
+        return !this.EnableAutoTeamSync && !this.EnableRemoteWrites;
     }
 }

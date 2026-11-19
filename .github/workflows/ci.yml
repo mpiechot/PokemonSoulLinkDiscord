@@ -49,3 +49,9 @@ jobs:
           -p:UseAppHost=false
           -p:UseSharedCompilation=false
           -p:OutputPath=../artifacts/test/PokeSoulLinkBot.Tests/
+
+      - name: Build client and integrated demo
+        run: dotnet build SoulLink.Demo/SoulLink.Demo.csproj --verbosity minimal -m:1 -p:UseSharedCompilation=false
+
+      - name: Verify read-only pipeline
+        run: dotnet SoulLink.Demo/bin/Debug/net9.0/SoulLink.Demo.dll --verify

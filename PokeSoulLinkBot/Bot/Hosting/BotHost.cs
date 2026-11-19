@@ -1,10 +1,13 @@
 using Discord;
 using Discord.WebSocket;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Application.Services;
+using PokeSoulLinkBot.Automation;
 using PokeSoulLinkBot.Bot.Commands;
 using PokeSoulLinkBot.Bot.Factories;
 using PokeSoulLinkBot.Bot.Handlers;
@@ -45,22 +48,27 @@ public static class BotHost
     /// <returns>A task representing the host lifetime.</returns>
     public static async Task RunAsync(string[] args)
     {
-        HostApplicationBuilder builder = CreateBuilder(args);
-        using IHost host = builder.Build();
-
-        await host.RunAsync();
+        WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+        builder.Configuration.AddUserSecrets<DiscordBotHostedService>(optional: true);
+        builder.WebHost.UseUrls(builder.Configuration["SoulLink:ListenUrl"] ?? "http://127.0.0.1:5080");
+        builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = SoulLink.Protocol.MaxMessageBytes);
+        RegisterServices(builder.Services, builder.Configuration);
+        await using WebApplication app = builder.Build();
+        app.MapAutomation();
+        await app.RunAsync();
     }
 
     private static void RegisterServices(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<HostOptions>(options =>
             options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.StopHost);
+        services.AddAutomation(configuration);
 
         services.AddOptions<SoulLinkOptions>()
             .Bind(configuration.GetSection(SoulLinkOptions.SectionName))
             .Validate(
                 options => options.IsValid(),
-                "EnableAutoTeamSync requires EnableRemoteWrites to be enabled.")
+                "This read-only build does not support EnableRemoteWrites or EnableAutoTeamSync.")
             .ValidateOnStart();
 
         services.AddSingleton<DiscordSocketClient>(_ => new DiscordSocketClient(new DiscordSocketConfig
@@ -109,7 +117,11 @@ public static class BotHost
 
         services.AddSingleton<SlashCommandRouter>(serviceProvider =>
             new SlashCommandRouter(
-                serviceProvider.GetServices<ISlashCommand>().ToList(),
+                serviceProvider.GetServices<ISlashCommand>()
+                    .Select(command => (ISlashCommand)new AutomationContextCommand(
+                        command,
+                        serviceProvider.GetRequiredService<SoulLink.AutomationEngine>()))
+                    .ToList(),
                 serviceProvider.GetRequiredService<EmbedFactory>(),
                 serviceProvider.GetRequiredService<IBotDiagnosticsService>()));
         services.AddHostedService<DiscordBotHostedService>();
@@ -117,6 +129,12 @@ public static class BotHost
 
     private static void RegisterCommands(IServiceCollection services)
     {
+        foreach (string name in AutomationCommand.Names)
+        {
+            services.AddSingleton<ISlashCommand>(provider => new AutomationCommand(
+                name, provider.GetRequiredService<SoulLink.AutomationEngine>()));
+        }
+
         services.AddSingleton<ISlashCommand, RunStartCommand>();
         services.AddSingleton<ISlashCommand, RunEndCommand>();
         services.AddSingleton<ISlashCommand, CatchCommand>();

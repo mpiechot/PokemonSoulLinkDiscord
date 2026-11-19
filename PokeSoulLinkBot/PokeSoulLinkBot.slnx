@@ -1,4 +1,7 @@
 <Solution>
   <Project Path="../PokeSoulLinkBot.Tests/PokeSoulLinkBot.Tests.csproj" />
   <Project Path="PokeSoulLinkBot.csproj" />
+  <Project Path="../SoulLink/SoulLink.csproj" />
+  <Project Path="../SoulLink.Client/SoulLink.Client.csproj" />
+  <Project Path="../SoulLink.Demo/SoulLink.Demo.csproj" />
 </Solution>

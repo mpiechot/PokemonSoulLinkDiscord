@@ -28,4 +28,11 @@ public sealed class SoulLinkOptionsTests
 
         Assert.False(options.IsValid());
     }
+
+    [Fact]
+    public void ReadOnlyBuildRejectsRemoteWritesEvenWhenAutoSyncIsDisabled()
+    {
+        Assert.False(new SoulLinkOptions { EnableRemoteWrites = true }.IsValid());
+        Assert.False(new SoulLinkOptions { EnableRemoteWrites = true, EnableAutoTeamSync = true }.IsValid());
+    }
 }
