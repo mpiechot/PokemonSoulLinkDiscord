@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="..\integration\mgba\soullink.lua" LogicalName="SoulLink.ReadOnlyBridge.lua" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\SoulLink\SoulLink.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.23" />
   </ItemGroup>

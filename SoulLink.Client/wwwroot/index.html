@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SoulLink Client</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body>
 <main>
-  <header><div class="mark">◈</div><div><p class="eyebrow">POKÉMON RUBIN · mGBA</p><h1>SoulLink Client</h1><p>Automatische Erfassung. Dein Spiel bleibt schreibgeschützt.</p></div><span class="pill">READ ONLY</span></header>
+  <header><div class="mark">◈</div><div><p class="eyebrow">POKÉMON RUBIN · mGBA</p><h1>SoulLink Diagnose</h1><p>Automatische Erfassung. Dein Spiel bleibt schreibgeschützt.</p></div><span id="mode" class="pill">DEIN SPIEL · NUR LESEN</span></header>
   <section class="connection"><div><span>Server</span><strong id="state">Verbindung wird geprüft …</strong></div><div><span>mGBA / Lua</span><strong id="bridge">Warte auf mGBA</strong></div><button id="reconnect">Neu verbinden</button></section>
   <section id="registration"><h2>Run beitreten</h2><p>Einladung aus <code>/run-init</code> eingeben. Der Server friert die Teilnehmer beim Start ein.</p><form id="join"><label>Server<input name="server" type="url" value="http://127.0.0.1:5080" required></label><label>Einladung<input name="invitation" autocomplete="off" required></label><label>Spielername<input name="name" maxlength="64" required></label><button>Beitreten</button></form><p id="join-error" role="alert"></p></section>
   <section><div class="title"><h2 id="player">Dein Team</h2><span id="map">Noch kein Spielzustand</span></div><div id="party" class="party"></div><p id="inventory"></p></section>

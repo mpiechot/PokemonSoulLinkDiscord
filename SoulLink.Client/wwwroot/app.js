@@ -16,6 +16,9 @@ async function update() {
   try {
     const response = await fetch('/api/status'); if(!response.ok) throw new Error(); const status = await response.json();
     byId('state').textContent=status.state; byId('bridge').textContent=status.bridge;
+    byId('reconnect').disabled=false;
+    document.title=status.isDemo ? 'SoulLink Entwicklungsdemo' : 'SoulLink Diagnose';
+    byId('mode').textContent=status.isDemo ? 'ENTWICKLUNGSDEMO · TESTDATEN' : 'DEIN SPIEL · NUR LESEN';
     byId('registration').hidden=status.registered; byId('player').textContent=status.player ? status.player+' · Team' : 'Dein Team';
     const snapshot = status.snapshot;
     byId('map').textContent=snapshot ? `${snapshot.areaName} · Map ${snapshot.mapGroup}:${snapshot.mapNumber} · ${snapshot.gameCode}` : 'Noch kein Spielzustand';
@@ -33,7 +36,20 @@ async function update() {
     const events=byId('events'); events.replaceChildren();
     for(const event of (status.run?.history || []).slice().reverse()) { const row=node('div','', 'event'); row.append(node('time',new Date(event.at).toLocaleTimeString())); row.append(node('span',event.message)); events.append(row); }
     byId('diagnostics').textContent=`Lua: 127.0.0.1:${status.bridgePort}\nServer: ${status.server}\nLetztes Paket: ${status.lastBridge || '—'}\n${(status.run?.players || []).map(p=>`${p.name}: ${p.id}`).join('\n')}\n\n${status.log.join('\n')}`;
-  } catch { byId('state').textContent='Lokaler Client nicht erreichbar.'; }
+  } catch {
+    byId('state').textContent='Lokaler Client nicht erreichbar.';
+    byId('bridge').textContent='Nicht verbunden';
+    byId('player').textContent='Dein Team';
+    byId('map').textContent='Kein aktueller Spielzustand';
+    byId('party').replaceChildren();
+    byId('inventory').textContent='Starte den Spieler-Client, um dein Spiel zu verbinden.';
+    byId('run-name').textContent='Gemeinsamer Run';
+    byId('run-state').textContent='Nicht verbunden';
+    byId('run').textContent='';
+    byId('events').replaceChildren();
+    byId('diagnostics').textContent='Keine Verbindung zum lokalen Client.';
+    byId('reconnect').disabled=true;
+  }
   setTimeout(update, 2000);
 }
 update();

@@ -26,6 +26,10 @@ public sealed class ClientRuntime : BackgroundService
     private readonly int bridgePort;
     private readonly SemaphoreSlim connectionGate = new(1);
     private readonly ClientSettings settings;
+    private readonly bool allowSyntheticFrames;
+    private readonly TimeProvider clock;
+    private readonly JoinForm? autoJoin;
+    private DateTimeOffset nextJoinAttempt;
     private readonly object stateGate = new();
     private readonly Queue<string> log = new();
     private HubConnection? connection;
@@ -39,9 +43,13 @@ public sealed class ClientRuntime : BackgroundService
     private DateTimeOffset? bridgeSeen;
     private AutomationRun? run;
     private bool bridgeReconnected;
+    private readonly TaskCompletionSource bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public ClientRuntime(IConfiguration configuration)
+    public ClientRuntime(IConfiguration configuration, TimeProvider? clock = null, JoinForm? autoJoin = null)
     {
+        this.clock = clock ?? TimeProvider.System;
+        this.autoJoin = autoJoin;
+        this.allowSyntheticFrames = configuration.GetValue("AllowSyntheticFrames", false);
         this.bridgePort = configuration.GetValue("BridgePort", 5091);
         this.settingsPath = Path.GetFullPath(configuration["SettingsPath"] ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "client.json"));
@@ -49,21 +57,33 @@ public sealed class ClientRuntime : BackgroundService
         this.SaveSettings();
     }
 
-    public object Status()
+    public ClientView Status()
     {
         lock (this.stateGate)
         {
-            return new
-            {
-                player = this.settings.Name, server = this.settings.Server, registered = this.settings.Registration is not null,
-                state = this.state, bridgePort = this.bridgePort,
-                bridge = this.bridgeSeen is not null && DateTimeOffset.UtcNow - this.bridgeSeen < TimeSpan.FromSeconds(10) ? "Online" : "Waiting for mGBA",
-                lastBridge = this.bridgeSeen, snapshot = this.latest,
-                run = this.run is null ? null : new { this.run.Name, this.run.Phase, this.run.Id,
-                    players = this.run.Players.Select(p => new { p.Name, p.Id, p.Diagnostic, p.Connection }),
-                    lines = StatusPresenter.Lines(this.run, p => p.Connection).ToArray(), history = this.run.History.TakeLast(12) },
-                log = this.log.ToArray(), readOnly = true,
-            };
+            bool live = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(10);
+            return new ClientView(
+                this.settings.Registration is null ? this.autoJoin?.Name ?? this.settings.Name : this.settings.Name,
+                this.settings.Registration is null ? this.autoJoin?.Server ?? this.settings.Server : this.settings.Server,
+                this.settings.Registration is not null,
+                this.state, this.bridgePort, live ? "Online" : "Waiting for mGBA", this.bridgeSeen,
+                live ? this.latest : null,
+                this.run is null ? null : new ClientRunView(this.run.Name, this.run.Phase, this.run.Id,
+                    this.run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection)).ToArray(),
+                    StatusPresenter.Lines(this.run, p => p.Connection).ToArray(), this.run.History.TakeLast(12).ToArray()),
+                this.log.ToArray(), this.allowSyntheticFrames);
+        }
+    }
+
+    internal void AcceptFrame(BridgeFrame frame)
+    {
+        if (!this.allowSyntheticFrames && frame.LayoutId.StartsWith("synthetic", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Entwicklungsdaten werden im Spieler-Client nicht angenommen.");
+        var snapshot = frame.Parse();
+        lock (this.stateGate)
+        {
+            this.latest = snapshot;
+            this.bridgeSeen = this.clock.GetUtcNow();
         }
     }
 
@@ -103,6 +123,12 @@ public sealed class ClientRuntime : BackgroundService
         finally { this.connectionGate.Release(); }
     }
 
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await base.StartAsync(cancellationToken);
+        await this.bridgeReady.Task.WaitAsync(cancellationToken);
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var bridge = this.ReadBridgeAsync(stoppingToken);
@@ -112,6 +138,16 @@ public sealed class ClientRuntime : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 if (bridge.IsCompleted) await bridge;
+                if (this.settings.Registration is null && this.autoJoin is not null && this.clock.GetUtcNow() >= this.nextJoinAttempt)
+                {
+                    this.nextJoinAttempt = this.clock.GetUtcNow().AddSeconds(10);
+                    try { await this.JoinAsync(this.autoJoin); }
+                    catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException)
+                    {
+                        this.SetState("Anmeldung noch nicht möglich — wird automatisch erneut versucht.");
+                        this.Note("Prepared registration unavailable (" + exception.GetType().Name + ").");
+                    }
+                }
                 await this.connectionGate.WaitAsync(stoppingToken);
                 try { await this.TickAsync(stoppingToken); }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -168,7 +204,7 @@ public sealed class ClientRuntime : BackgroundService
         lock (this.stateGate)
         {
             snapshot = this.latest;
-            fresh = this.bridgeSeen is not null && DateTimeOffset.UtcNow - this.bridgeSeen < TimeSpan.FromSeconds(8);
+            fresh = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(8);
         }
         if (snapshot is not null && fresh && !this.blocked)
         {
@@ -196,7 +232,16 @@ public sealed class ClientRuntime : BackgroundService
     private async Task ReadBridgeAsync(CancellationToken cancellationToken)
     {
         var listener = new TcpListener(IPAddress.Loopback, this.bridgePort);
-        listener.Start(1);
+        try
+        {
+            listener.Start(1);
+            this.bridgeReady.TrySetResult();
+        }
+        catch (SocketException exception)
+        {
+            this.bridgeReady.TrySetException(exception);
+            throw;
+        }
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -212,12 +257,7 @@ public sealed class ClientRuntime : BackgroundService
                 {
                     await foreach (string line in JsonLines.ReadAsync(peer.GetStream(), cancellationToken))
                     {
-                        var snapshot = Protocol.Deserialize<BridgeFrame>(line).Parse();
-                        lock (this.stateGate)
-                        {
-                            this.latest = snapshot;
-                            this.bridgeSeen = DateTimeOffset.UtcNow;
-                        }
+                        this.AcceptFrame(Protocol.Deserialize<BridgeFrame>(line));
                     }
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
@@ -238,6 +278,7 @@ public sealed class ClientRuntime : BackgroundService
         this.connection = null;
         this.session = null;
         this.baseline = true;
+        lock (this.stateGate) this.run = null;
     }
 
     private void SaveSettings()

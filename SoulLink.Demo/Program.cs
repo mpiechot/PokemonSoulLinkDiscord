@@ -25,7 +25,7 @@ using var host = Start("PokeSoulLinkBot", "PokeSoulLinkBot.dll", "--SoulLink:Ena
     "--SoulLink:ListenUrl=" + server, "--SoulLink:DatabasePath=" + Path.Combine(data, "server.sqlite"),
     "--SoulLink:PersistencePath=" + Path.Combine(data, "legacy.json"), "--SoulLink:AdminKey=" + adminKey);
 using var client = Start("SoulLink.Client", "SoulLink.Client.dll", "--UiPort=" + uiPort,
-    "--BridgePort=" + bridgePort, "--SettingsPath=" + Path.Combine(data, "client.json"));
+    "--BridgePort=" + bridgePort, "--AllowSyntheticFrames=true", "--SettingsPath=" + Path.Combine(data, "client.json"));
 var hubs = new List<HubConnection>();
 try
 {

@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PokeSoulLinkBot\PokeSoulLinkBot.csproj" />
+    <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
   </ItemGroup>
 
 </Project>

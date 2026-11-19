@@ -4,4 +4,5 @@
   <Project Path="../SoulLink/SoulLink.csproj" />
   <Project Path="../SoulLink.Client/SoulLink.Client.csproj" />
   <Project Path="../SoulLink.Demo/SoulLink.Demo.csproj" />
+  <Project Path="../SoulLink.Player/SoulLink.Player.csproj" />
 </Solution>

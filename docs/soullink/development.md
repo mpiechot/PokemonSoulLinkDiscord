@@ -35,11 +35,17 @@ For a Linux server, publish the bot with `dotnet publish PokeSoulLinkBot/PokeSou
 
 ## Client configuration and packaging
 
+The normal player product is `SoulLink.Player`, a Windows Forms companion that reuses `ClientRuntime` without starting the web host. Publish the self-contained single file with `./scripts/Publish-SoulLinkPlayer.ps1` from PowerShell 7. The deliverable is `artifacts/player/SoulLink.exe`; `./scripts/Test-SoulLinkPlayer.ps1` checks clean packaged startup and a copy carrying embedded join details. The desktop client exports its embedded read-only Lua bridge to a stable per-user path and supports host-prepared EXE copies. See the [player guide](player.md). [#110](https://github.com/mpiechot/PokemonSoulLinkDiscord/issues/110) tracks signing and trusted distribution; current host-prepared copies are unsigned.
+
+Player registrations live separately under `LocalApplicationData/SoulLink/Player`; developer/demo registrations do not become the player's default profile. Synthetic frame markers are rejected unless the explicit development-harness option is enabled. A stale local bridge hides its cached party, and the browser diagnostic page clears party/run/online indicators when its API disappears. `node --test SoulLink.Client.Tests/offline-ui.test.cjs` reproduces and guards the reported stale-demo symptom.
+
+### Optional developer diagnostics
+
 Client command-line options: `--UiPort=5090`, `--BridgePort=5091`, `--SettingsPath=<absolute-path>`. Each concurrent local player needs independent ports and a separate settings file. The default registration is stored under the current user's LocalApplicationData/SoulLink/client.json; it contains a persistent bearer token and must remain private. Unix files are created with owner-only permissions; Windows relies on the user's profile ACL. Never commit, upload or paste that file into a ticket.
 
 To join a different run, stop the client and use a new `SettingsPath`; the old registration stays available for resuming its run. Automatic token rotation and a registration-selection UI are follow-up work.
 
-Publish a Windows build with:
+Publish the separate browser-based diagnostic tool, if needed, with:
 
 ```powershell
 dotnet publish SoulLink.Client/SoulLink.Client.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish/client
