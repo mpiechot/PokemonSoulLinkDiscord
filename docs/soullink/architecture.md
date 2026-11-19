@@ -20,7 +20,7 @@ Party/box state is observed, never forced. An alive completed group is active on
 
 ## Compatibility with manual runs
 
-Legacy JSON data and its manual model remain intact. There is no lossy automatic conversion to the new identity-based model. Shared status/team/lifecycle commands route through `AutomationContextCommand` when an automated context is selected. Manual mutations cannot accidentally target a legacy run while an automated run is selected. Pure information commands remain available.
+Legacy JSON data and its manual model remain intact. The automation host registers `ReadOnlyRunStore`, which rejects AddRun/Save and returns detached read snapshots. Legacy writes are therefore blocked even without an automated context; failed service mutations cannot leak into later archive reads. No restore, rewrite or lossy automatic conversion is performed. Shared status/team/lifecycle commands route through `AutomationContextCommand` when an automated context is selected. Pure information commands remain available. The SQLite store also refuses JSON paths and existing non-SQLite files before opening a writable database connection.
 
 ## Delivery semantics
 

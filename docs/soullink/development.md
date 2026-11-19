@@ -21,7 +21,7 @@ Use .NET configuration (environment variables replace `:` with `__`):
 | --- | --- |
 | `SoulLink:ListenUrl` | `http://127.0.0.1:5080` |
 | `SoulLink:DatabasePath` | `Data/soullink.sqlite` below executable directory |
-| `SoulLink:PersistencePath` | Existing manual JSON store, separate from automation |
+| `SoulLink:PersistencePath` | Existing legacy JSON archive; strictly read-only in the automation host |
 | `SoulLink:Enabled` | true; false blocks automation endpoints |
 | `SoulLink:EnableReadTracking` | true; false blocks automatic ingestion |
 | `SoulLink:EnableDiscordEvents` | true; false disables Discord startup and notification delivery |

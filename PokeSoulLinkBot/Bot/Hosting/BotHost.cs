@@ -99,7 +99,7 @@ public static class BotHost
                 GetGameDataCachePath(configuration),
                 GetGameDataFallbackCatalogPath()));
 
-        services.AddSingleton<IRunStore>(_ => new RunStore(GetRunStorePath(configuration)));
+        services.AddSingleton<IRunStore>(_ => new ReadOnlyRunStore(new RunStore(GetRunStorePath(configuration))));
         services.AddSingleton<IRunService, RunService>();
         services.AddSingleton<ICatchEligibilityService, CatchEligibilityService>();
         services.AddSingleton<TeamCheckAnalyzer>();

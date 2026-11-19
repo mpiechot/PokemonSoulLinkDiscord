@@ -11,6 +11,15 @@ public sealed class AutomationStore
     public AutomationStore(string path)
     {
         string fullPath = Path.GetFullPath(path);
+        if (fullPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || fullPath.EndsWith(".json.bak", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("JSON archives cannot be used as the automation database.");
+        if (File.Exists(fullPath) && new FileInfo(fullPath).Length > 0)
+        {
+            using var source = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            Span<byte> header = stackalloc byte[16];
+            if (source.Read(header) != header.Length || !header.SequenceEqual("SQLite format 3\0"u8))
+                throw new InvalidDataException("The existing file is not a SQLite database; it will not be modified.");
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         this.connectionString = new SqliteConnectionStringBuilder
         {

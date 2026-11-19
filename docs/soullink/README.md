@@ -26,6 +26,8 @@ Automatische Prüfung, die sich selbst beendet:
 
 Für einen parallelen Test zu einem laufenden Run **einen eigenen Discord-Test-Bot mit anderem Token und eine eigene Testdatenbank** verwenden. Zwei Instanzen desselben Bots können dieselben Commands bearbeiten; ein neuer automatischer Run übernimmt die gemeinsamen Status-/Team-Commands in seiner Guild. Der Client allein stellt keine Discord-Verbindung her.
 
+**Schutz der bisherigen Run-Datei:** Der Automations-Host bindet `runs.json` ausschließlich als schreibgeschütztes Archiv ein. Auch versehentliche alte Commands können die Datei oder ihr Backup nicht speichern, wiederherstellen oder umschreiben. Das Startskript legt neue Test-Runs unter `artifacts/automation-test/soullink.sqlite` ab. JSON-Pfade und vorhandene Nicht-SQLite-Dateien werden als Datenbankziel abgelehnt.
+
 1. Server in einem Terminal starten. Der bestehende `DISCORD_BOT_TOKEN` bleibt in User Secrets oder der Umgebung:
 
    ```powershell
@@ -40,7 +42,7 @@ Für einen parallelen Test zu einem laufenden Run **einen eigenen Discord-Test-B
 7. Sobald alle Spieler eine gültige Baseline gemeldet haben, in Discord `/run-start` ohne Parameter ausführen. Bereits vorhandene Pokémon werden als Ausgangsbestand importiert; sie erzeugen keine nachträglichen Fangereignisse oder Starter-Links.
 8. Pokémon fangen, umbenennen, entwickeln und zwischen Team/Box bewegen. `/status`, `/team` und `/soullink action:status` zeigen den ausgewählten automatischen Run. Neue Identitäten werden als beobachtete Fänge erfasst; alle Spieler im selben Fanggebiet ergeben eine Link-Gruppe.
 
-Die normale manuelle `/run-start`-Variante mit allen Spieleroptionen bleibt verfügbar, wenn kein automatischer Run ausgewählt ist. Bestehende JSON-Runs werden nicht stillschweigend in die neue Domain umgeschrieben; sie bleiben über die bisherigen Commands verfügbar. Bei ausgewähltem automatischem Run blockiert die Kontextgrenze Legacy-Änderungsbefehle. `/stats` zeigt die gespeicherten automatischen Runs, sobald solche vorhanden sind.
+Bestehende JSON-Runs bleiben als Archiv lesbar. Die alten manuellen Schreibbefehle sind in diesem Automations-Host gesperrt, auch wenn noch kein automatischer Run ausgewählt ist. Neue Runs immer mit `/run-init` anlegen. `/stats` zeigt die gespeicherten automatischen Runs, sobald solche vorhanden sind.
 
 ## Runs und Korrekturen
 
