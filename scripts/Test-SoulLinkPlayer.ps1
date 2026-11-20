@@ -3,8 +3,8 @@ param([string]$Executable, [switch]$PackageOnly)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Executable) { $Executable = Join-Path $root 'artifacts\player\SoulLink.exe' }
-$testRoot = Join-Path $root ('artifacts\player-check-' + [Guid]::NewGuid().ToString('N'))
-[IO.Directory]::CreateDirectory($testRoot) | Out-Null
+$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$testRoot = [IO.Path]::GetFullPath((Join-Path $tempRoot ('soullink-player-check-' + [Guid]::NewGuid().ToString('N'))))
 function Run-Player([string]$Path, [string[]]$Arguments) {
     $startInfo = [Diagnostics.ProcessStartInfo]::new($Path)
     $startInfo.UseShellExecute = $false
@@ -12,7 +12,7 @@ function Run-Player([string]$Path, [string[]]$Arguments) {
     foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::Start($startInfo)
     try {
-        if (-not $process.WaitForExit(35000)) { $process.Kill($true); throw 'Packaged startup timed out.' }
+        if (-not $process.WaitForExit(35000)) { $process.Kill($true); $process.WaitForExit(); throw 'Packaged startup timed out.' }
         if ($process.ExitCode -ne 0) {
             $report = if ($Arguments[0] -eq '--smoke-game') { Join-Path $Arguments[1] 'game-error.txt' }
             if ($report -and (Test-Path -LiteralPath $report)) { Get-Content -LiteralPath $report | Write-Host }
@@ -107,44 +107,54 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species) {
     (New-CompressedFill 4096 0).CopyTo($rom, 0x3F2EDC)
     [IO.File]::WriteAllBytes($Path, $rom)
 }
-$fresh = Join-Path $testRoot 'fresh'
-Run-Player $Executable @('--smoke-test', $fresh)
-$result = Get-Content (Join-Path $fresh 'smoke-result.json') -Raw | ConvertFrom-Json
-if ($result.client.registered -or $result.client.isDemo -or $result.client.snapshot -or $result.client.run -or -not $result.bridgeIncluded -or -not $result.emulatorIncluded -or $result.browserStarted) { throw 'Player did not start cleanly.' }
-$prepared = Join-Path $testRoot 'Prepared.exe'
-Run-Player $Executable @('--prepare-player', $prepared, 'https://example.invalid', 'PACKAGE-CHECK')
-$preparedHome = Join-Path $testRoot 'prepared-startup'
-Run-Player $prepared @('--smoke-test', $preparedHome)
-$result = Get-Content (Join-Path $preparedHome 'smoke-result.json') -Raw | ConvertFrom-Json
-if (-not $result.profileLoaded -or $result.profileName -or $result.client.player -or $result.client.snapshot -or $result.client.isDemo) { throw 'Embedded run invitation should leave the player identity unset.' }
-if ($PackageOnly) {
-    Write-Host 'Single-file player verified: clean startup and embedded mGBA, bridge and invitation.'
-    return
+[IO.Directory]::CreateDirectory($testRoot) | Out-Null
+try {
+    $fresh = Join-Path $testRoot 'fresh'
+    Run-Player $Executable @('--smoke-test', $fresh)
+    $result = Get-Content (Join-Path $fresh 'smoke-result.json') -Raw | ConvertFrom-Json
+    if ($result.client.registered -or $result.client.isDemo -or $result.client.snapshot -or $result.client.run -or -not $result.bridgeIncluded -or -not $result.emulatorIncluded -or $result.browserStarted) { throw 'Player did not start cleanly.' }
+    $prepared = Join-Path $testRoot 'Prepared.exe'
+    Run-Player $Executable @('--prepare-player', $prepared, 'https://example.invalid', 'PACKAGE-CHECK')
+    $preparedHome = Join-Path $testRoot 'prepared-startup'
+    Run-Player $prepared @('--smoke-test', $preparedHome)
+    $result = Get-Content (Join-Path $preparedHome 'smoke-result.json') -Raw | ConvertFrom-Json
+    if (-not $result.profileLoaded -or $result.profileName -or $result.client.player -or $result.client.snapshot -or $result.client.isDemo) { throw 'Embedded run invitation should leave the player identity unset.' }
+    if ($PackageOnly) {
+        Write-Host 'Single-file player verified: clean startup and embedded mGBA, bridge and invitation.'
+        return
+    }
+    for ($revision = 0; $revision -le 1; $revision++) {
+        $romPath = Join-Path $testRoot "Ruby probe $revision.gba"
+        $species = 25 + $revision
+        New-TestRom $romPath $revision $species
+        $player = Join-Path $testRoot "Player $revision.exe"
+        Run-Player $Executable @('--prepare-player', $player, 'https://example.invalid', "RUN-$revision")
+        $mapResult = Join-Path $preparedHome 'rubymap-result.txt'
+        if (Test-Path -LiteralPath $mapResult) { Remove-Item -LiteralPath $mapResult }
+        Run-Player $player @('--smoke-game', $preparedHome, $romPath)
+        $game = Get-Content (Join-Path $preparedHome 'game-result.json') -Raw | ConvertFrom-Json
+        if ($game.layoutId -ne 'ruby-axvd-reference-v2' -or $game.pokemon.Count -ne 1 -or $game.pokemon[0].species -ne $species) {
+            throw "Live emulator bridge returned incorrect party data for revision $revision."
+        }
+        if ($revision -eq 0 -and ($game.pokemon[0].hp -ne 15 -or $game.position.x -ne 5 -or $game.position.y -ne 7)) {
+            throw 'Live emulator bridge did not read the expected coordinates.'
+        }
+        if ($revision -eq 1 -and ($game.pokemon[0].hp -ne 0 -or -not $game.inBattle -or $game.faints.Count -ne 1 -or
+            $game.faints[0].opponentSpecies -ne 25 -or $game.faints[0].move -ne 33 -or $game.faints[0].trainer -ne 'MAX')) {
+            throw 'Live emulator bridge did not read the expected battle context.'
+        }
+        if ((Get-Content -LiteralPath $mapResult -Raw) -ne '224×120') {
+            throw "The original-map decoder failed for revision $revision."
+        }
+    }
+    $romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
+    if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }
+    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, dock and detach for both German Ruby revisions.'
+} finally {
+    $directory = Get-Item -LiteralPath $testRoot
+    if ($directory.FullName -eq $testRoot -and $directory.Name -match '^soullink-player-check-[a-f0-9]{32}$' -and
+        -not ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+        -not (Get-ChildItem -LiteralPath $testRoot -Recurse -Force -Attributes ReparsePoint)) {
+        Remove-Item -LiteralPath $directory.FullName -Recurse -Force
+    }
 }
-for ($revision = 0; $revision -le 1; $revision++) {
-    $romPath = Join-Path $testRoot "Ruby probe $revision.gba"
-    $species = 25 + $revision
-    New-TestRom $romPath $revision $species
-    $player = Join-Path $testRoot "Player $revision.exe"
-    Run-Player $Executable @('--prepare-player', $player, 'https://example.invalid', "RUN-$revision")
-    $mapResult = Join-Path $preparedHome 'rubymap-result.txt'
-    if (Test-Path -LiteralPath $mapResult) { Remove-Item -LiteralPath $mapResult }
-    Run-Player $player @('--smoke-game', $preparedHome, $romPath)
-    $game = Get-Content (Join-Path $preparedHome 'game-result.json') -Raw | ConvertFrom-Json
-    if ($game.layoutId -ne 'ruby-axvd-reference-v2' -or $game.pokemon.Count -ne 1 -or $game.pokemon[0].species -ne $species) {
-        throw "Live emulator bridge returned incorrect party data for revision $revision."
-    }
-    if ($revision -eq 0 -and ($game.pokemon[0].hp -ne 15 -or $game.position.x -ne 5 -or $game.position.y -ne 7)) {
-        throw 'Live emulator bridge did not read the expected coordinates.'
-    }
-    if ($revision -eq 1 -and ($game.pokemon[0].hp -ne 0 -or -not $game.inBattle -or $game.faints.Count -ne 1 -or
-        $game.faints[0].opponentSpecies -ne 25 -or $game.faints[0].move -ne 33 -or $game.faints[0].trainer -ne 'MAX')) {
-        throw 'Live emulator bridge did not read the expected battle context.'
-    }
-    if ((Get-Content -LiteralPath $mapResult -Raw) -ne '224×120') {
-        throw "The original-map decoder failed for revision $revision."
-    }
-}
-$romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
-if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }
-Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, dock and detach for both German Ruby revisions.'

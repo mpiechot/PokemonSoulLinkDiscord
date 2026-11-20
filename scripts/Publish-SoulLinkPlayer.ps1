@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root 'artifacts\player' }
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
-$publishPath = Join-Path $outputPath 'build'
+$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$publishPath = [IO.Path]::GetFullPath((Join-Path $tempRoot ('soullink-publish-' + [Guid]::NewGuid().ToString('N'))))
 $mgbaBundle = & (Join-Path $PSScriptRoot 'Build-SoulLinkMgbaBundle.ps1')
 Push-Location $root
 try {
@@ -18,21 +19,35 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Windows player build failed.' }
     $source = Join-Path $publishPath 'SoulLink.Player.exe'
     $destination = Join-Path $outputPath 'SoulLink.exe'
+    [IO.Directory]::CreateDirectory($outputPath) | Out-Null
     if ($Server -or $Invitation) {
         if (-not ($Server -and $Invitation)) { throw 'Provide Server and Invitation together.' }
         # The published app writes a copy with only public join details, never stored bearer tokens.
+        $prepared = Join-Path $publishPath 'Prepared.exe'
         $startInfo = [Diagnostics.ProcessStartInfo]::new($source)
         $startInfo.UseShellExecute = $false
         $startInfo.CreateNoWindow = $true
-        foreach ($argument in @('--prepare-player', $destination, $Server, $Invitation)) { $startInfo.ArgumentList.Add($argument) }
+        foreach ($argument in @('--prepare-player', $prepared, $Server, $Invitation)) { $startInfo.ArgumentList.Add($argument) }
         $process = [Diagnostics.Process]::Start($startInfo)
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $destination)) { throw 'Player file creation failed. Choose a fresh OutputDirectory.' }
-    } else {
-        Copy-Item -LiteralPath $source -Destination $destination -Force
+        try {
+            $process.WaitForExit()
+            if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $prepared)) { throw 'Player file creation failed.' }
+        } finally {
+            $process.Dispose()
+        }
+        $source = $prepared
     }
+    Copy-Item -LiteralPath $source -Destination $destination -Force
     Write-Host "Spielerdatei: $destination"
     Write-Host 'Nur diese EXE weitergeben. Keine .NET-Installation, kein Terminal und kein Browser nötig.'
 } finally {
     Pop-Location
+    if (Test-Path -LiteralPath $publishPath -PathType Container) {
+        $directory = Get-Item -LiteralPath $publishPath
+        if ($directory.FullName -eq $publishPath -and $directory.Name -match '^soullink-publish-[a-f0-9]{32}$' -and
+            -not ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            -not (Get-ChildItem -LiteralPath $publishPath -Recurse -Force -Attributes ReparsePoint)) {
+            Remove-Item -LiteralPath $directory.FullName -Recurse -Force
+        }
+    }
 }

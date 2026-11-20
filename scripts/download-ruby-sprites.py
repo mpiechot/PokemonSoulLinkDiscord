@@ -11,7 +11,7 @@ SOURCE = "https://raw.githubusercontent.com/PokeAPI/sprites/c0542f7c51215d967243
 BASE = SOURCE + "sprites/pokemon/versions/generation-iii/ruby-sapphire/"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--directory", type=pathlib.Path, default=ROOT / "artifacts/player-dashboard/sprites")
+parser.add_argument("--directory", type=pathlib.Path, default=ROOT / "artifacts/player/sprites")
 arguments = parser.parse_args()
 directory = arguments.directory.resolve()
 artifact_root = (ROOT / "artifacts").resolve()

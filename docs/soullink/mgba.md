@@ -68,7 +68,7 @@ Sources:
 
 The dashboard displays the original PokéNav Hoenn map from the local AXVD ROM. The 28×15-tile crop matches the in-game cursor grid. Its palette and compressed tiles are decoded in memory, with no map image included in the package. [Region map source and cursor grid](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/src/region_map.c)
 
-`python scripts/update-ruby-dashboard.py` regenerates data for area positions, species numbers, standard types and standard gym levels. `python scripts/download-ruby-sprites.py` downloads the 386 standard and 386 shiny views from the pinned PokéAPI sprite source for local use under `artifacts/player-dashboard/sprites`. Keep downloaded graphics out of Git and published player packages. [PokéAPI sprite copyright notice](https://github.com/PokeAPI/sprites/blob/c0542f7c51215d9672439012838c99f520596cbd/LICENCE.txt)
+`python scripts/update-ruby-dashboard.py` regenerates data for area positions, species numbers, standard types and standard gym levels. `python scripts/download-ruby-sprites.py` downloads the 386 standard and 386 shiny views from the pinned PokéAPI sprite source for local use under `artifacts/player/sprites`. Keep downloaded graphics out of Git and published player packages. [PokéAPI sprite copyright notice](https://github.com/PokeAPI/sprites/blob/c0542f7c51215d9672439012838c99f520596cbd/LICENCE.txt)
 
 ## Manual acceptance with a disposable save copy
 

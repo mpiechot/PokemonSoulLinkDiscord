@@ -11,12 +11,13 @@ using SoulLink;
 using SoulLink.Demo;
 
 string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
-string data = Path.Combine(root, "artifacts", "demo-" + Guid.NewGuid().ToString("N"));
-Directory.CreateDirectory(data);
+bool verifyOnly = args.Contains("--verify");
+string dataRoot = verifyOnly ? Path.GetTempPath() : Path.Combine(root, "artifacts");
+string data = Directory.CreateDirectory(Path.Combine(dataRoot, "demo-" + Guid.NewGuid().ToString("N"))).FullName;
 int serverPort = FreePort(), uiPort = FreePort(), bridgePort = FreePort();
 string server = $"http://127.0.0.1:{serverPort}", ui = $"http://127.0.0.1:{uiPort}";
 string adminKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-using var lifetime = new CancellationTokenSource(TimeSpan.FromMinutes(args.Contains("--verify") ? 2 : 120));
+using var lifetime = new CancellationTokenSource(TimeSpan.FromMinutes(verifyOnly ? 2 : 120));
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; lifetime.Cancel(); };
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
 using var admin = new HttpClient { BaseAddress = new Uri(server), Timeout = TimeSpan.FromSeconds(8) };
@@ -26,7 +27,7 @@ using var host = Start("PokeSoulLinkBot", "PokeSoulLinkBot.dll", "--SoulLink:Ena
     "--SoulLink:PersistencePath=" + Path.Combine(data, "legacy.json"), "--SoulLink:AdminKey=" + adminKey);
 using var client = Start("SoulLink.Client", "SoulLink.Client.dll", "--UiPort=" + uiPort,
     "--BridgePort=" + bridgePort, "--AllowSyntheticFrames=true", "--SettingsPath=" + Path.Combine(data, "client.json"),
-    "--EnableLocalRun=" + args.Contains("--verify"));
+    "--EnableLocalRun=" + verifyOnly);
 var hubs = new List<HubConnection>();
 try
 {
@@ -78,7 +79,7 @@ try
     Console.WriteLine("Verified: catch → client → authenticated SignalR → SQLite → three-player link (including direct-to-box catch).");
     Console.WriteLine("Client UI: " + ui);
     Console.WriteLine("Isolated demo data: " + data);
-    if (!args.Contains("--headless") && !args.Contains("--verify")) Process.Start(new ProcessStartInfo(ui) { UseShellExecute = true });
+    if (!args.Contains("--headless") && !verifyOnly) Process.Start(new ProcessStartInfo(ui) { UseShellExecute = true });
     current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 281, 1, experience: 126)) with { BadgeMask = 0 };
     await Send(current);
     await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].History.Any(e => e.Kind == "evolved"));
@@ -99,7 +100,7 @@ try
             && state.GetProperty("history").EnumerateArray().Any(entry => entry.GetProperty("kind").GetString() == "badge");
     });
     Console.WriteLine("Verified: dashboard transmits player-selected markers, distinct map regions, stale positions, links and badge events.");
-    if (args.Contains("--verify"))
+    if (verifyOnly)
     {
         var hub = hubs[0];
         var session = sessions[0];
@@ -176,7 +177,7 @@ try
         if (pokemon.GetProperty("container").GetString() != "Party")
             throw new InvalidDataException("Local UI API must expose placement enums as strings.");
     }
-    if (args.Contains("--verify"))
+    if (verifyOnly)
     {
         host.Kill(true);
         await host.WaitForExitAsync(lifetime.Token);
@@ -218,6 +219,7 @@ finally
     if (!host.HasExited) host.Kill(true);
     await client.WaitForExitAsync();
     await host.WaitForExitAsync();
+    if (verifyOnly) Directory.Delete(data, recursive: true);
 }
 
 Process Start(string folder, string dll, params string[] arguments)
