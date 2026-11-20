@@ -1,24 +1,12 @@
 # Für Mitspieler: SoulLink starten
 
-Du bekommst **eine Datei: `SoulLink.exe`**. Es sind keine .NET-Installation, kein Terminal und keine Webseite nötig.
+Du bekommst **eine vorbereitete Spielerdatei als EXE**. Per Doppelklick starten. SoulLink öffnet mGBA, lädt seine Lesebrücke und verbindet dich mit dem Run.
 
-1. Lass mGBA mit deinem Spiel laufen.
-2. Starte `SoulLink.exe`.
-3. Sobald „Mit deinem Spiel verbunden“ erscheint, kannst du weiterspielen.
+Beim ersten Start einer neuen Spielerdatei wählst du die lokale `.gba`-Datei für diesen Run aus. Wenn du deine ROM auf die EXE ziehst, startet das Spiel direkt. Danach genügt ein Doppelklick. Andere Runs haben eigene Spielerdateien und eigene ROM-Auswahlen.
 
-Der Client enthält keine Beispielspieler, Test-Pokémon oder Demo-Runs. Ohne echte Spieldaten zeigt er eine leere Warteansicht. Er startet und beendet mGBA nicht und verändert deinen Spielstand nicht.
+Im Spiel wie gewohnt fortsetzen oder neu anfangen. SoulLink zeigt dein Team, sobald du mindestens ein Pokémon hast. Falls mGBA das Skriptfenster mit öffnet, kannst du direkt ins Spielfenster wechseln. Das Spiel speichert wie gewohnt in mGBA. SoulLink liest nur mit.
 
-## Einmalige Verbindung mit mGBA
-
-mGBA muss die Lesebrücke laden. Dafür gibt es im Client **Einrichtung → mGBA verbinden**:
-
-1. **Pfad kopieren** anklicken.
-2. In mGBA **Tools → Scripting → File → Load script** öffnen.
-3. Den kopierten Pfad in die Dateiauswahl einfügen und die Datei laden.
-
-Die Brücke steckt bereits in der EXE und wird automatisch in einem festen Benutzerordner bereitgestellt. Du musst keine zweite Datei herunterladen oder bearbeiten.
-
-Wenn deine mGBA-Version unter **Scripting → File** die Verwaltung der Autorun-Skripte anbietet, füge die gleiche Datei dort hinzu. Dann lädt mGBA sie bei künftigen Starts automatisch. Ältere Versionen können ein erneutes Laden verlangen. Bei bereits laufendem mGBA gibt es keine dokumentierte externe Schnittstelle, über die dieser Client das Skript ohne diesen Schritt laden könnte. Der Client versucht deshalb keine Eingabe- oder Speicherinjektion.
+Für einen ROM-Wechsel mGBA schließen und in SoulLink **Einrichtung → Spiel → Andere ROM auswählen** öffnen. Falls mGBA bereits offen ist, fordert SoulLink vor dem Start zum Schließen auf. So läuft jeweils nur eine Emulatorinstanz.
 
 ## Anmeldung am gemeinsamen Run
 
@@ -30,8 +18,8 @@ Bei einer allgemeinen, noch nicht vorbereiteten Datei gibst du diese Angaben ein
 
 Im Client unter **Einrichtung → Für Gastgeber** Serveradresse, Einladung aus `/run-init` und den Namen des Mitspielers eintragen. **Spielerdatei erstellen** speichert eine neue EXE-Kopie. Nur diese Datei weitergeben.
 
-Die Kopie enthält die Einladungsdaten und einen eigenen Profilbezeichner. Sie enthält keine gespeicherten Zugangstokens, ROMs, Spielstände oder Testdaten. Die Einladung gilt für eine noch offene Lobby. Erstelle für jeden Mitspieler eine eigene Datei und prüfe beim ersten Test, ob die angezeigte Party zu dessen Spiel passt.
+Die Kopie enthält die Einladungsdaten und einen eigenen Profilbezeichner. Sie enthält keine gespeicherten Zugangstokens, ROMs, Spielstände oder Testdaten. Die Einladung gilt für eine noch offene Lobby. Erstelle für jeden Mitspieler und jeden neuen Run eine eigene Datei.
 
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
 
-Aktuell gilt weiterhin das [AXVD-Referenzprofil](mgba.md): deutsche Rubin-ROM, strukturell geprüft, noch nicht mit deiner konkreten Randomizer-ROM bestätigt.
+Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. Der Emulatorstart und die pro Run gespeicherte ROM-Auswahl bleiben für weitere Profile gleich.

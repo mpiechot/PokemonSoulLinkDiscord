@@ -43,7 +43,7 @@ public sealed class ClientRuntime : BackgroundService
     private DateTimeOffset? bridgeSeen;
     private AutomationRun? run;
     private bool bridgeReconnected;
-    private readonly TaskCompletionSource bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ClientRuntime(IConfiguration configuration, TimeProvider? clock = null, JoinForm? autoJoin = null)
     {
@@ -66,7 +66,8 @@ public sealed class ClientRuntime : BackgroundService
                 this.settings.Registration is null ? this.autoJoin?.Name ?? this.settings.Name : this.settings.Name,
                 this.settings.Registration is null ? this.autoJoin?.Server ?? this.settings.Server : this.settings.Server,
                 this.settings.Registration is not null,
-                this.state, this.bridgePort, live ? "Online" : "Waiting for mGBA", this.bridgeSeen,
+                this.state, this.bridgeReady.Task.IsCompletedSuccessfully ? this.bridgeReady.Task.Result : this.bridgePort,
+                live ? "Online" : "Waiting for mGBA", this.bridgeSeen,
                 live ? this.latest : null,
                 this.run is null ? null : new ClientRunView(this.run.Name, this.run.Phase, this.run.Id,
                     this.run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection)).ToArray(),
@@ -235,7 +236,7 @@ public sealed class ClientRuntime : BackgroundService
         try
         {
             listener.Start(1);
-            this.bridgeReady.TrySetResult();
+            this.bridgeReady.TrySetResult(((IPEndPoint)listener.LocalEndpoint).Port);
         }
         catch (SocketException exception)
         {

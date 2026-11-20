@@ -1,15 +1,17 @@
 # mGBA Ruby read-only integration
 
-Use mGBA with its built-in Lua socket support. Start the C# client first; load a real save in mGBA; then load `integration/mgba/soullink.lua` in Tools → Scripting. Default bridge port is 5091. For multiple local clients set `SOULLINK_PORT` in the scripting console before loading the script, and start the corresponding client with `-BridgePort`.
+The Windows player bundles a pinned portable mGBA development build with Lua support. Its settings live in the player's app directory and its bridge uses a dedicated loopback port. The existing stand-alone mGBA installation is independent. For developer use, the web client still accepts a manual load of `integration/mgba/soullink.lua` in Tools → Scripting on port 5091.
+
+The redistributed mGBA bundle retains its license and notices. [mGBA source for build 9187](https://github.com/mgba-emu/mgba/tree/e6c17152dec0caaebd8a4b949c96a24d56debf44) · [mGBA build list](https://mgba.io/builds/1/) · [Source for bundled dependencies](https://github.com/mgba-emu/medusa-deps).
 
 ## Reference profile and validation boundary
 
-The profile `ruby-axvd-reference-v1` recognizes the twelve-byte `POKEMON RUBY` title and `AXVD` game code without requiring a ROM CRC. **Recognition is not proof of layout compatibility.** Its fixed addresses follow Ruby-family source/reference layouts. They have not been validated against the user's concrete randomized AXVD ROM or a real emulator memory fixture in this environment.
+The profile `ruby-axvd-reference-v2` recognizes the twelve-byte `POKEMON RUBY` title and `AXVD` game code on German revisions 0 and 1, without requiring a ROM CRC. The fixed addresses come from the German symbol tables. The packaged player received and parsed six party and seventeen boxed Pokémon plus map coordinates from a local copy of the Run 5 randomized revision 0 save. Modified ROMs can still require a different layout.
 
 | Field | Address / offset | Source |
 | --- | --- | --- |
-| Party count | `0x03004350` | mGBA official Ruby example; Ruby common symbols |
-| Party | `0x03004360`, six 100-byte structures | mGBA official Ruby example; `include/pokemon.h` |
+| Party count | `0x03004360` | German Ruby symbols |
+| Party | `0x03004370`, six 100-byte structures | German Ruby symbols; `include/pokemon.h` |
 | PC storage | `0x020300A0`, box array at +4, 14×30×80 bytes | Ruby `PokemonStorage` reference layout |
 | SaveBlock1 | `0x02025734`, map group +4, number +5 | Ruby `include/global.h` |
 | SaveBlock2 | `0x02024EA4`, play hours +0x0E, minutes +0x10, seconds +0x11 | Ruby `include/global.h` |
@@ -23,8 +25,8 @@ If your ROM uses relocated structures, configure a verified layout before loadin
 ```lua
 SOULLINK_PROFILE = {
     id = "my-verified-axvd-layout",
-    party = 0x03004360,
-    partyCount = 0x03004350,
+    party = 0x03004370,
+    partyCount = 0x03004360,
     storage = 0x020300A0,
     save1 = 0x02025734,
     save2 = 0x02024EA4,
@@ -49,6 +51,8 @@ Sources:
 - [Ruby save structures](https://github.com/pret/pokeruby/blob/master/include/global.h)
 - [Ruby main flags](https://github.com/pret/pokeruby/blob/master/include/main.h)
 - [Ruby common symbols](https://github.com/pret/pokeruby/blob/master/sym_common.txt)
+- [German Ruby revision 0 symbols](https://github.com/pret/pokeruby/blob/78b19905a760095bc45eab2e36906c6e8c208dce/pokeruby_de.sym)
+- [German Ruby revision 1 symbols](https://github.com/pret/pokeruby/blob/78b19905a760095bc45eab2e36906c6e8c208dce/pokeruby_de_rev1.sym)
 - [Ruby species constants](https://github.com/pret/pokeruby/blob/master/include/constants/species.h)
 - [Ruby region sections](https://github.com/pret/pokeruby/blob/master/src/data/region_map/region_map_sections.json)
 

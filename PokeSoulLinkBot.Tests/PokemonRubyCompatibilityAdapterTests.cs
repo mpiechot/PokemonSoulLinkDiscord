@@ -5,10 +5,12 @@ namespace PokeSoulLinkBot.Tests;
 
 public sealed class PokemonRubyCompatibilityAdapterTests
 {
-    [Fact]
-    public void Resolve_RecognizesGermanRubyWithoutUsingCrc32()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Resolve_RecognizesGermanRubyWithoutUsingCrc32(byte revision)
     {
-        byte[] header = CreateHeader("POKEMON RUBY", "AXVD", revision: 1);
+        byte[] header = CreateHeader("POKEMON RUBY", "AXVD", revision);
         header[0xB0] = 0xFF;
         header[0xB1] = 0xFF;
 
@@ -16,7 +18,7 @@ public sealed class PokemonRubyCompatibilityAdapterTests
 
         Assert.Equal(RomSupportStatus.DiagnosticOnly, result.Status);
         Assert.Equal("AXVD", result.Identity?.GameCode);
-        Assert.Equal(0x03004360u, result.MemoryLayout?.PlayerPartyAddress);
+        Assert.Equal(0x03004370u, result.MemoryLayout?.PlayerPartyAddress);
         Assert.Contains("CRC32", result.Diagnostic, StringComparison.OrdinalIgnoreCase);
     }
 

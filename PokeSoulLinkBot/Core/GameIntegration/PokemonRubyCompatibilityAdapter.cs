@@ -44,13 +44,13 @@ public sealed class PokemonRubyCompatibilityAdapter : IRomCompatibilityAdapter
                 "ROM title is not Pokémon Ruby.");
         }
 
-        if (!string.Equals(gameCode, GermanGameCode, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(gameCode, GermanGameCode, StringComparison.OrdinalIgnoreCase) || romHeader[RevisionOffset] > 1)
         {
             return new RomCompatibilityResult(
                 RomSupportStatus.DiagnosticOnly,
                 identity,
                 null,
-                "Ruby title recognized, but this adapter currently targets the German AXVD profile.");
+                "Ruby title recognized, but the reference profile covers German AXVD revisions 0 and 1.");
         }
 
         return new RomCompatibilityResult(
@@ -58,11 +58,11 @@ public sealed class PokemonRubyCompatibilityAdapter : IRomCompatibilityAdapter
             identity,
             new RomMemoryLayoutReference(
                 "pokemon-ruby-party-reference",
-                0x03004360,
+                0x03004370,
                 0x64,
                 6,
                 "reference-only; validate against an AXVD fixture before live polling",
-                "pret/pokeruby include/pokemon.h; reference address documented by Bulbapedia"),
+                "pret/pokeruby German revision 0/1 symbol tables and include/pokemon.h"),
             "German Pokémon Ruby AXVD recognized without CRC32; live memory polling remains fixture-gated.");
     }
 

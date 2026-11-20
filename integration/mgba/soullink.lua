@@ -1,18 +1,40 @@
 -- Read-only Ruby reference bridge. No emu:write*, save, input or remote command path exists.
 -- Sources and AXVD validation limits: docs/soullink/mgba.md.
--- Start the local C# client first, load a save, then load this script in Tools > Scripting.
+-- The Windows player loads this script automatically. For manual use, start the local client first.
 -- Override only with a layout verified for your ROM before loading this file:
 -- SOULLINK_PROFILE = {id="my-verified-profile", party=..., partyCount=..., storage=..., save1=..., save2=..., main=...}
-local profile = SOULLINK_PROFILE or {
-    id = "ruby-axvd-reference-v1",
-    party = 0x03004360, partyCount = 0x03004350,
-    storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770
+local profiles = {
+    AXVD = {
+        title = "POKEMON RUBY", revisions = {[0] = true, [1] = true},
+        id = "ruby-axvd-reference-v2",
+        party = 0x03004370, partyCount = 0x03004360,
+        storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770
+    }
 }
 local port = SOULLINK_PORT or 5091
 local peer, pending, position = nil, nil, 1
 local epoch = tostring({}):gsub("[^%w]", "")
 local tick, lastFrame = 0, -1
 local lastError = ""
+
+-- Resolve the core for each read because the newer bindings return a short-lived reference.
+local function readCore()
+    local ok, core = pcall(function() return emu._core end)
+    if ok and core then return core end
+    return emu
+end
+
+local function read8(address)
+    return readCore():read8(address)
+end
+
+local function read16(address)
+    return readCore():read16(address)
+end
+
+local function readRange(address, size)
+    return readCore():readRange(address, size)
+end
 
 local function stop()
     if peer then pcall(function() peer:close() end) end
@@ -24,7 +46,7 @@ local function report(message)
 end
 
 local function hex(address, size)
-    return (emu:readRange(address, size):gsub(".", function(c) return string.format("%02X", string.byte(c)) end))
+    return (readRange(address, size):gsub(".", function(c) return string.format("%02X", string.byte(c)) end))
 end
 
 local function sendPending()
@@ -40,18 +62,25 @@ end
 
 local function snapshot(frame)
     -- Header identity tolerates randomization; structural checks reject invalid memory reads.
-    local code = emu:readRange(0x080000AC, 4)
-    local title = emu:readRange(0x080000A0, 12):gsub("%z", "")
-    if code ~= "AXVD" or title:gsub("%s+$", "") ~= "POKEMON RUBY" then
-        error("Unsupported ROM. Only German Ruby AXVD is allowed.")
+    local code = readRange(0x080000AC, 4)
+    local title = readRange(0x080000A0, 12):gsub("%z", "")
+    local reference = profiles[code]
+    local revision = read8(0x080000BC)
+    if not reference or title:gsub("%s+$", "") ~= reference.title or not reference.revisions[revision] then
+        error(string.format("No read-only profile for ROM %q revision %d.", code, revision), 0)
     end
-    local count = emu:read8(profile.partyCount)
-    local currentBox = emu:read8(profile.storage)
-    local hours = emu:read16(profile.save2 + 0x0E)
-    local minutes = emu:read8(profile.save2 + 0x10)
-    local seconds = emu:read8(profile.save2 + 0x11)
-    if count < 1 or count > 6 or currentBox > 13 or hours > 999 or minutes > 59 or seconds > 59 then
-        error("No valid loaded save or reference layout mismatch. Check the memory profile.")
+    local profile = SOULLINK_PROFILE or reference
+    local count = read8(profile.partyCount)
+    local currentBox = read8(profile.storage)
+    local hours = read16(profile.save2 + 0x0E)
+    local minutes = read8(profile.save2 + 0x10)
+    local seconds = read8(profile.save2 + 0x11)
+    if count > 6 or currentBox > 13 or hours > 999 or minutes > 59 or seconds > 59 then
+        error(string.format("Invalid %s memory layout: party=%d, box=%d, play time=%d:%02d:%02d.",
+            code, count, currentBox, hours, minutes, seconds), 0)
+    end
+    if count == 0 then
+        error("Waiting for a loaded game with at least one party Pokémon.", 0)
     end
     local pokemon = {}
     for slot = 0, count - 1 do
@@ -61,21 +90,21 @@ local function snapshot(frame)
     for box = 0, 13 do
         for slot = 0, 29 do
             local address = profile.storage + 4 + (box * 30 + slot) * 80
-            local flags = emu:read8(address + 19)
+            local flags = read8(address + 19)
             if (flags & 2) ~= 0 then
                 table.insert(pokemon, string.format('{"hex":"%s","container":"Box","slot":%d,"box":%d}', hex(address, 80), slot, box))
             end
         end
     end
-    local battle = (emu:read8(profile.main + 0x43D) & 2) ~= 0
-    return string.format('{"version":1,"type":"snapshot","gameCode":"AXVD","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"inBattle":%s,"completeInventory":true,"pokemon":[%s]}\n',
-        profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds,
-        emu:read8(profile.save1 + 4), emu:read8(profile.save1 + 5), tostring(battle), table.concat(pokemon, ","))
+    local battle = (read8(profile.main + 0x43D) & 2) ~= 0
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"inBattle":%s,"completeInventory":true,"pokemon":[%s]}\n',
+        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds,
+        read8(profile.save1 + 4), read8(profile.save1 + 5), tostring(battle), table.concat(pokemon, ","))
 end
 
 local function onFrame()
     tick = tick + 1
-    local frame = emu:currentFrame()
+    local frame = readCore():currentFrame()
     if frame < lastFrame then epoch = tostring({}):gsub("[^%w]", "") end
     lastFrame = frame
     sendPending()

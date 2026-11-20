@@ -5,12 +5,12 @@ namespace SoulLink.Player;
 internal sealed class SetupForm : Form
 {
     private readonly ClientRuntime runtime;
-    private readonly string bridgePath;
+    private readonly bool canChooseRom;
 
-    public SetupForm(ClientRuntime runtime, string bridgePath)
+    public SetupForm(ClientRuntime runtime, bool canChooseRom)
     {
         this.runtime = runtime;
-        this.bridgePath = bridgePath;
+        this.canChooseRom = canChooseRom;
         this.Text = "SoulLink – Einrichtung";
         this.ClientSize = new Size(590, 500);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -19,26 +19,22 @@ internal sealed class SetupForm : Form
         this.StartPosition = FormStartPosition.CenterParent;
         this.Font = new Font("Segoe UI", 10);
         var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 10) };
-        tabs.TabPages.Add(this.BridgePage());
+        tabs.TabPages.Add(this.GamePage());
         tabs.TabPages.Add(this.JoinPage());
         tabs.TabPages.Add(this.PackagePage());
         tabs.TabPages.Add(this.DiagnosticsPage());
         this.Controls.Add(tabs);
     }
 
-    private TabPage BridgePage()
+    private TabPage GamePage()
     {
-        var page = new TabPage("mGBA verbinden");
-        AddText(page, "Einmal mit mGBA verbinden", 22, 25, 530, 30, true);
-        AddText(page, "1. Lass dein Spiel in mGBA geöffnet.\n2. Öffne Tools → Scripting → File → Load script.\n3. Füge den kopierten Pfad ein und lade das Skript.", 22, 72, 530, 95);
-        var path = Input(page, "Brückenskript", this.bridgePath, 190);
-        path.ReadOnly = true;
-        AddButton(page, "Pfad kopieren", 22, 266, (_, _) =>
-        {
-            Clipboard.SetText(this.bridgePath);
-            MessageBox.Show("Der Pfad ist kopiert. Füge ihn in mGBAs Dateiauswahl ein.", "SoulLink");
-        });
-        AddText(page, "Für spätere Starts: Falls deine mGBA-Version unter Scripting → File die Autorun-Skripte anbietet, füge dort dieselbe Datei hinzu. Danach startet die Brücke automatisch. SoulLink startet oder beendet mGBA nicht.", 22, 325, 530, 95);
+        var page = new TabPage("Spiel");
+        AddText(page, "ROM für diesen Run", 22, 25, 530, 30, true);
+        AddText(page, this.canChooseRom
+            ? "SoulLink merkt sich die ROM für diese Spielerdatei. Beim Wechsel startet mGBA automatisch mit der neuen ROM."
+            : "Schließe mGBA, um eine andere ROM für diesen Run zu wählen.", 22, 72, 530, 65);
+        var choose = AddButton(page, "Andere ROM auswählen", 22, 145, (_, _) => this.DialogResult = DialogResult.Retry);
+        choose.Enabled = this.canChooseRom;
         return page;
     }
 
@@ -87,8 +83,13 @@ internal sealed class SetupForm : Form
                     throw new InvalidOperationException("Bitte diese Funktion in der veröffentlichten SoulLink.exe verwenden.");
                 var profile = new PlayerProfile(Guid.NewGuid(), server.Text.Trim(), invitation.Text.Trim(), name.Text.Trim());
                 PlayerBundle.Validate(profile);
-                using var save = new SaveFileDialog { Title = "Neue Spielerdatei speichern", Filter = "SoulLink-Anwendung (*.exe)|*.exe",
-                    FileName = "SoulLink-Spieler.exe", OverwritePrompt = true };
+                using var save = new SaveFileDialog
+                {
+                    Title = "Neue Spielerdatei speichern",
+                    Filter = "SoulLink-Anwendung (*.exe)|*.exe",
+                    FileName = "SoulLink-Spieler.exe",
+                    OverwritePrompt = true
+                };
                 if (save.ShowDialog(this) != DialogResult.OK) return;
                 PlayerBundle.Create(source, save.FileName, profile);
                 feedback.Text = "Fertig. Gib deinem Mitspieler diese EXE weiter.";
@@ -105,7 +106,9 @@ internal sealed class SetupForm : Form
         AddText(page, "Nur bei Verbindungsproblemen benötigt", 22, 25, 530, 32, true);
         var details = new TextBox
         {
-            Bounds = new Rectangle(22, 80, 530, 350), Multiline = true, ReadOnly = true,
+            Bounds = new Rectangle(22, 80, 530, 350),
+            Multiline = true,
+            ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
             Text = $"mGBA: {view.Bridge}\r\nRun: {view.State}\r\n\r\n" + string.Join("\r\n", view.Log),
         };
@@ -123,8 +126,12 @@ internal sealed class SetupForm : Form
 
     private static void AddText(Control parent, string text, int x, int y, int width, int height, bool bold = false)
     {
-        parent.Controls.Add(new Label { Bounds = new Rectangle(x, y, width, height), Text = text,
-            Font = new Font("Segoe UI", bold ? 13 : 10, bold ? FontStyle.Bold : FontStyle.Regular) });
+        parent.Controls.Add(new Label
+        {
+            Bounds = new Rectangle(x, y, width, height),
+            Text = text,
+            Font = new Font("Segoe UI", bold ? 13 : 10, bold ? FontStyle.Bold : FontStyle.Regular)
+        });
     }
 
     private static Button AddButton(Control parent, string text, int x, int y, EventHandler click)

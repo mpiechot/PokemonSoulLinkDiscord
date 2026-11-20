@@ -69,7 +69,7 @@ jobs:
           dotnet-version: 9.0.x
       - name: Build single-file player
         run: ./scripts/Publish-SoulLinkPlayer.ps1
-      - name: Verify clean packaged startup and embedded invitation
+      - name: Verify packaged startup, run profiles and mGBA reads
         run: ./scripts/Test-SoulLinkPlayer.ps1
       - uses: actions/upload-artifact@v4
         with:

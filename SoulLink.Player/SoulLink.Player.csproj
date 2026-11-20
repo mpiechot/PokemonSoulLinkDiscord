@@ -11,5 +11,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
+    <EmbeddedResource Include="$(MgbaBundlePath)" LogicalName="SoulLink.mGBA.zip" Condition="'$(MgbaBundlePath)' != ''" />
   </ItemGroup>
 </Project>

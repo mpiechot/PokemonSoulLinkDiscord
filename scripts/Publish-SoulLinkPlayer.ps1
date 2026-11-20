@@ -10,11 +10,12 @@ $root = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root 'artifacts\player' }
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 $publishPath = Join-Path $outputPath 'build'
+$mgbaBundle = & (Join-Path $PSScriptRoot 'Build-SoulLinkMgbaBundle.ps1')
 Push-Location $root
 try {
     dotnet publish SoulLink.Player/SoulLink.Player.csproj -c Release -r win-x64 --self-contained true -o $publishPath -m:1 `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true `
-        -p:DebugType=None -p:DebugSymbols=false -p:UseSharedCompilation=false
+        -p:DebugType=None -p:DebugSymbols=false -p:UseSharedCompilation=false "-p:MgbaBundlePath=$mgbaBundle"
     if ($LASTEXITCODE -ne 0) { throw 'Windows player build failed.' }
     $source = Join-Path $publishPath 'SoulLink.Player.exe'
     $destination = Join-Path $outputPath 'SoulLink.exe'

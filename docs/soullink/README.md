@@ -2,7 +2,7 @@
 
 Dieser Branch ergänzt den Discord-Bot um eine **schreibgeschützte Erfassung** für Pokémon Rubin (deutsche AXVD-ROM). Ein lokaler C#-Client liest mGBA-Lua-Daten, verbindet sich mit dem integrierten SignalR-Server und zeigt Party, Boxbestand, Links und Diagnose an. Im Spiel wird nichts verändert.
 
-**Für Mitspieler:** Nutze die eigenständige `SoulLink.exe`. Sie startet als Windows-Anwendung ohne Browser, Terminal oder Demodaten. Der Gastgeber kann Server, Einladung und Spielername in deiner Datei vorbereiten. Die kurze [Spieleranleitung](player.md) beschreibt auch die einmalige mGBA-Verbindung.
+**Für Mitspieler:** Starte die vorbereitete Spieler-EXE. Sie startet mGBA mit der Lesebrücke, meldet sich mit der Einladung des Gastgebers an und merkt sich die ausgewählte lokale ROM je Spielerdatei. Sie enthält keine Demodaten. [Spieleranleitung](player.md)
 
 ## Entwicklungsdemo ohne ROM und ohne Discord
 
@@ -35,10 +35,10 @@ Für einen parallelen Test zu einem laufenden Run **einen eigenen Discord-Test-B
    ```
 
 2. In Discord `/run-init name:Test edition:ruby` aufrufen. Der Bot liefert einen Einladungscode. Optional `death-rule:zero-hp-outside-battle` wählen; standardmäßig sind automatische Todesmeldungen deaktiviert.
-3. Die Windows-Spielerdatei veröffentlichen: `./scripts/Publish-SoulLinkPlayer.ps1` (Entwicklerschritt). Die fertige Datei liegt unter `artifacts/player/SoulLink.exe`.
+3. Falls du die EXE selbst baust, in PowerShell 7 `./scripts/Publish-SoulLinkPlayer.ps1` ausführen. Die fertige Datei liegt unter `artifacts/player/SoulLink.exe`.
 4. Für Mitspieler im Client unter **Einrichtung → Für Gastgeber** eine vorbereitete Datei erstellen. Mitspieler öffnen nur diese EXE; eine allgemeine Datei erlaubt stattdessen die einmalige Anmeldung unter **Run verbinden**. Für entfernte Server HTTPS verwenden. Auf Spieler-PCs wird kein Port extern freigegeben.
-5. mGBA mit geladenem Spielstand laufen lassen und die Brücke einmal über **Einrichtung → mGBA verbinden** einrichten. Die [Spieleranleitung](player.md) beschreibt das Laden und den optionalen mGBA-Autostart.
-6. **Vor dem Run-Start Party, Boxbestand und Map im Client mit dem Spiel vergleichen.** Die AXVD-Adressen sind ein Ruby-Referenzprofil mit Struktur- und Prüfsummenprüfung, noch kein mit deiner konkreten Randomizer-ROM bestätigtes Profil. Details und Anpassung: [mGBA-Anleitung](mgba.md).
+5. Die Spieler-EXE starten und beim ersten Start die lokale ROM für diesen Run wählen. mGBA und die Brücke starten automatisch. Danach im Spiel wie gewohnt den Spielstand fortsetzen.
+6. **Vor dem Run-Start Party, Boxbestand und Map im Client mit dem Spiel vergleichen.** Details zum deutschen Rubin-Profil stehen in der [mGBA-Anleitung](mgba.md).
 7. Sobald alle Spieler eine gültige Baseline gemeldet haben, in Discord `/run-start` ohne Parameter ausführen. Bereits vorhandene Pokémon werden als Ausgangsbestand importiert; sie erzeugen keine nachträglichen Fangereignisse oder Starter-Links.
 8. Pokémon fangen, umbenennen, entwickeln und zwischen Team/Box bewegen. `/status`, `/team` und `/soullink action:status` zeigen den ausgewählten automatischen Run. Neue Identitäten werden als beobachtete Fänge erfasst; alle Spieler im selben Fanggebiet ergeben eine Link-Gruppe.
 
@@ -69,6 +69,6 @@ Bestehende JSON-Runs bleiben als Archiv lesbar. Die alten manuellen Schreibbefeh
 - Releases, Daycare und Save-State-Rücksprünge können die erwartete Inventarmenge ändern und führen zu **OutOfSync**. Nichts wird automatisch gelöscht oder durch Offline-Ereignisse nachgetragen.
 - Die optionale Todesregel verlangt zwei vollständige Beobachtungen mit HP 0 außerhalb eines Kampfes. Die Erkennung ist damit bewusst verzögert; Heilung vor diesen Beobachtungen kann einen Todesfall verbergen. Für verbindliche Run-Regeln den Tod im Bot bestätigen.
 - Box-Level werden nicht aus einer möglicherweise randomisierten Wachstumskurve geraten. Box-Pokémon behalten Species, Identität, Erfahrung, Ei-/Shiny-Status und Herkunft.
-- Kein echter mGBA-/AXVD-Lauf und keine Discord-Zustellung wurden in dieser Entwicklungsumgebung durchgeführt. Parser, Transport und fachliche Verarbeitung sind mit synthetischen Daten getestet.
+- Der Start aus der EXE und die Erfassung von Team, Boxen und Kartenposition wurden mit der lokal geklonten deutschen Run-5-Randomizer-ROM geprüft. Discord-Zustellung im echten Run steht noch aus. Die fachliche Verarbeitung wurde zusätzlich mit synthetischen Daten getestet.
 
 Weitere Details: [Architektur](architecture.md), [Protokoll](protocol.md), [Betrieb und Entwicklung](development.md).

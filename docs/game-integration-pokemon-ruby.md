@@ -20,8 +20,10 @@ The structural reference comes from the [pret/pokeruby Pokémon header](https://
 - the party contains six entries;
 - the storage layout contains 14 boxes of 30 `BoxPokemon` entries.
 
-The reference party address `0x03004360` is recorded only as diagnostic metadata
-and is sourced from the [Generation III data-structure reference](https://bulbapedia.bulbagarden.net/wiki/Pok%C3%A9mon_data_structure_in_the_GBA).
+The German revision 0 and 1 symbol tables put `gPlayerParty` at `0x03004370`
+and `gPlayerPartyCount` at `0x03004360`.
+[German revision 0 symbols](https://github.com/pret/pokeruby/blob/78b19905a760095bc45eab2e36906c6e8c208dce/pokeruby_de.sym),
+[German revision 1 symbols](https://github.com/pret/pokeruby/blob/78b19905a760095bc45eab2e36906c6e8c208dce/pokeruby_de_rev1.sym).
 The address is not exposed as a write target and must be confirmed by an AXVD
 fixture before live polling is promoted to `Supported`.
 
