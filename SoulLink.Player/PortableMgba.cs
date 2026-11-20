@@ -8,12 +8,18 @@ internal sealed class PortableMgba(string home)
 {
     public bool Available => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
 
-    public Process Start(string rom, string bridge, string? testState = null)
+    public Process Start(string rom, string bridge, string? testState = null, bool softwareDisplay = false)
     {
         string executable = this.Install();
+        string directory = Path.GetDirectoryName(executable)!;
+        if (softwareDisplay)
+        {
+            // Hosted Windows workers may not expose an accelerated OpenGL context.
+            File.WriteAllText(Path.Combine(directory, "qt.ini"), "[General]\ndisplayDriver=0\n");
+        }
         var start = new ProcessStartInfo(executable)
         {
-            WorkingDirectory = Path.GetDirectoryName(executable)!,
+            WorkingDirectory = directory,
             UseShellExecute = false,
         };
         if (testState is not null)

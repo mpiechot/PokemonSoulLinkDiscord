@@ -84,7 +84,7 @@ internal static class Program
             rom.Save(path);
             await runtime.StartAsync(timeout.Token);
             string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"), runtime.Status().BridgePort);
-            using var process = emulator.Start(rom.Read()!, bridge, testState);
+            using var process = emulator.Start(rom.Read()!, bridge, testState, softwareDisplay: true);
             try
             {
                 GameSnapshot? snapshot;
