@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using SoulLink;
 using SoulLink.Client;
@@ -36,7 +37,13 @@ internal static class Program
         bool smokeItems = args.Length == 3 && args[0] == "--smoke-pc-items";
         bool smokeGame = smokeItems || (args.Length is 3 or 4 && args[0] == "--smoke-game");
         bool smokeClose = args.Length is 3 or 4 && args[0] == "--smoke-close";
+        Guid? selectedProfile = args is ["--run-profile", string selection] && Guid.TryParse(selection, out Guid selected) ? selected : null;
         using var instance = new Mutex(true, "Local\\SoulLink.Player", out bool firstInstance);
+        if (!firstInstance && selectedProfile is not null)
+        {
+            try { firstInstance = instance.WaitOne(TimeSpan.FromSeconds(8)); }
+            catch (AbandonedMutexException) { firstInstance = true; }
+        }
         if (!smokeTest && !smokeGame && !smokeClose && !firstInstance)
         {
             MessageBox.Show("SoulLink läuft bereits. Öffne das vorhandene SoulLink-Fenster.", "SoulLink");
@@ -46,6 +53,32 @@ internal static class Program
         string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
         Directory.CreateDirectory(home);
+        var profiles = new PlayerProfileLibrary(home);
+        if (!smokeTest && !smokeGame && !smokeClose && !customHome)
+        {
+            try
+            {
+                if (selectedProfile is Guid id)
+                {
+                    profile = id == Guid.Empty ? null : profiles.Read(id) ?? throw new InvalidDataException("Das Run-Profil fehlt.");
+                    profiles.Choose(id);
+                }
+                else if (profile is not null)
+                {
+                    profiles.Remember(profile);
+                    profiles.Choose(profile.Id);
+                }
+                else
+                {
+                    profile = profiles.Current();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(error.Message, "SoulLink – Run-Profil", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+        }
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["SettingsPath"] = Path.Combine(home, profile is null ? "player.json" : $"player-{profile.Id:N}.json"),
@@ -96,8 +129,24 @@ internal static class Program
         }
         string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
-        Application.Run(new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
-            Path.Combine(home, "Artwork")));
+        using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
+            Path.Combine(home, "Artwork"), customHome ? null : profiles);
+        Application.Run(form);
+        if (form.RequestedProfile is Guid runProfile)
+        {
+            var restart = new ProcessStartInfo(executable) { UseShellExecute = false };
+            restart.ArgumentList.Add("--run-profile");
+            restart.ArgumentList.Add(runProfile.ToString("D"));
+            try
+            {
+                instance.ReleaseMutex();
+                using var process = Process.Start(restart);
+            }
+            catch (System.ComponentModel.Win32Exception error)
+            {
+                MessageBox.Show(error.Message, "SoulLink – Neustart", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
     }
 
 }

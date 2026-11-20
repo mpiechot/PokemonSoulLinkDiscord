@@ -5,21 +5,14 @@ namespace SoulLink;
 /// <summary>Transactions persist a single run, its credentials, receipts and notification outbox together.</summary>
 public sealed class AutomationStore
 {
+    private const int SchemaVersion = 2;
     private readonly string connectionString;
     private readonly object gate = new();
 
     public AutomationStore(string path)
     {
         string fullPath = Path.GetFullPath(path);
-        if (fullPath.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || fullPath.EndsWith(".json.bak", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("JSON archives cannot be used as the automation database.");
-        if (File.Exists(fullPath) && new FileInfo(fullPath).Length > 0)
-        {
-            using var source = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            Span<byte> header = stackalloc byte[16];
-            if (source.Read(header) != header.Length || !header.SequenceEqual("SQLite format 3\0"u8))
-                throw new InvalidDataException("The existing file is not a SQLite database; it will not be modified.");
-        }
+        ValidateDatabasePath(fullPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         this.connectionString = new SqliteConnectionStringBuilder
         {
@@ -32,10 +25,14 @@ public sealed class AutomationStore
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;";
         command.ExecuteNonQuery();
+        using var transaction = connection.BeginTransaction();
+        command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         int version = Convert.ToInt32(command.ExecuteScalar());
-        if (version > 1) throw new InvalidDataException("SoulLink database schema is newer than this application.");
-        command.CommandText = """
+        if (version > SchemaVersion) throw new InvalidDataException("SoulLink database schema is newer than this application.");
+        if (version < 1)
+        {
+            command.CommandText = """
             CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, guild TEXT NOT NULL, selected INTEGER NOT NULL, document TEXT NOT NULL);
             CREATE UNIQUE INDEX IF NOT EXISTS selected_run ON runs(guild) WHERE selected=1;
             CREATE TABLE IF NOT EXISTS registrations(hash TEXT PRIMARY KEY, run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, player TEXT NOT NULL, client TEXT NOT NULL UNIQUE);
@@ -45,7 +42,61 @@ public sealed class AutomationStore
             CREATE TABLE IF NOT EXISTS replay_events(run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, id TEXT NOT NULL, at TEXT NOT NULL, document TEXT NOT NULL, PRIMARY KEY(run,id));
             PRAGMA user_version=1;
             """;
-        command.ExecuteNonQuery();
+            command.ExecuteNonQuery();
+        }
+        if (version < 2)
+        {
+            command.CommandText = """
+                CREATE TABLE run_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE);
+                PRAGMA user_version=2;
+                """;
+            command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+    }
+
+    public static void Backup(string source, string destination)
+    {
+        string input = Path.GetFullPath(source);
+        string output = Path.GetFullPath(destination);
+        ValidateDatabasePath(input);
+        ValidateDatabasePath(output);
+        if (!File.Exists(input)) throw new FileNotFoundException("SoulLink database not found.", input);
+        using var from = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = input,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString());
+        from.Open();
+        using (File.Open(output, FileMode.CreateNew)) { }
+        try
+        {
+            using var to = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = output,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false,
+            }.ToString());
+            to.Open();
+            from.BackupDatabase(to);
+        }
+        catch
+        {
+            File.Delete(output);
+            throw;
+        }
+    }
+
+    private static void ValidateDatabasePath(string path)
+    {
+        if (path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".json.bak", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("JSON archives cannot be used as the automation database.");
+        if (!File.Exists(path) || new FileInfo(path).Length == 0) return;
+        using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        Span<byte> header = stackalloc byte[16];
+        if (source.Read(header) != header.Length || !header.SequenceEqual("SQLite format 3\0"u8))
+            throw new InvalidDataException("The existing file is not a SQLite database; it will not be modified.");
     }
 
     public T Execute<T>(Func<StoreTransaction, T> action)
@@ -70,6 +121,27 @@ public sealed class AutomationStore
 
     public sealed class StoreTransaction(SqliteConnection connection, SqliteTransaction transaction)
     {
+        public RunGroup[] Groups()
+        {
+            using var command = this.Command("SELECT id,name FROM run_groups ORDER BY name");
+            using var reader = command.ExecuteReader();
+            var groups = new List<RunGroup>();
+            while (reader.Read()) groups.Add(new RunGroup(Guid.Parse(reader.GetString(0)), reader.GetString(1)));
+            return groups.ToArray();
+        }
+
+        public RunGroup Group(Guid id)
+        {
+            using var command = this.Command("SELECT name FROM run_groups WHERE id=$id", ("$id", id.ToString()));
+            return command.ExecuteScalar() is string name ? new RunGroup(id, name) : throw new InvalidOperationException("Gruppe nicht gefunden.");
+        }
+
+        public void AddGroup(RunGroup group)
+        {
+            using var command = this.Command("INSERT INTO run_groups VALUES($id,$name)", ("$id", group.Id.ToString()), ("$name", group.Name));
+            command.ExecuteNonQuery();
+        }
+
         public List<AutomationRun> Runs(string? guild = null)
         {
             using var command = this.Command(guild is null ? "SELECT document FROM runs ORDER BY rowid" : "SELECT document FROM runs WHERE guild=$guild ORDER BY rowid", ("$guild", guild ?? ""));

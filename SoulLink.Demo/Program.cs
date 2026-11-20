@@ -8,6 +8,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using SoulLink;
+using SoulLink.Client;
 using SoulLink.Demo;
 
 string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.."));
@@ -33,6 +34,19 @@ try
 {
     await WaitFor(server + "/health/soullink");
     await WaitFor(ui + "/api/status");
+    if (verifyOnly)
+    {
+        using var hostTools = new HostAdminClient(server, adminKey);
+        var monday = await hostTools.CreateGroupAsync("Monday group");
+        var friday = await hostTools.CreateGroupAsync("Friday group");
+        var mondayRun = await hostTools.CreateRunAsync(monday.Id, "Monday Ruby");
+        var fridayRun = await hostTools.CreateRunAsync(friday.Id, "Friday Ruby");
+        if ((await hostTools.GroupsAsync()).Length != 2 ||
+            (await hostTools.RunsAsync(monday.Id)).Single() != mondayRun ||
+            (await hostTools.RunsAsync(friday.Id)).Single() != fridayRun)
+            throw new InvalidOperationException("Discord-free groups did not retain separate runs.");
+        Console.WriteLine("Verified: host API creates and lists isolated groups with Discord disabled.");
+    }
     var run = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("demo", "Three-player Ruby demo"));
     await Post<object>(http, ui + "/api/join", new { server, invitation = run.Invitation, name = "Marco (demo)", marker = "Star" });
     var sessions = new List<SessionInfo>();
@@ -234,7 +248,8 @@ finally
 Process Start(string folder, string dll, params string[] arguments)
 {
     var info = new ProcessStartInfo("dotnet") { WorkingDirectory = Path.Combine(root, folder), CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-    info.ArgumentList.Add(Path.Combine(root, folder, "bin", "Debug", "net9.0", dll));
+    string framework = folder == "PokeSoulLinkBot" ? "net10.0" : "net9.0";
+    info.ArgumentList.Add(Path.Combine(root, folder, "bin", "Debug", framework, dll));
     foreach (string argument in arguments) info.ArgumentList.Add(argument);
     var process = Process.Start(info) ?? throw new InvalidOperationException("Could not start demo process.");
     process.OutputDataReceived += (_, e) => { if (e.Data?.Contains("fail:", StringComparison.OrdinalIgnoreCase) == true) Console.WriteLine(e.Data); };

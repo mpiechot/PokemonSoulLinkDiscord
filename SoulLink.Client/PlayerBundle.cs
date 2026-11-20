@@ -4,7 +4,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null);
+public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null, string? Label = null);
 
 /// <summary>A host may append join details to a copy of the published app; bearer tokens are never bundled.</summary>
 public static class PlayerBundle
@@ -54,7 +54,9 @@ public static class PlayerBundle
 
     public static void Validate(PlayerProfile profile)
     {
-        if (profile.Id == Guid.Empty || (profile.Name is not null &&
+        if (profile.Id == Guid.Empty || (profile.Label is not null &&
+            (string.IsNullOrWhiteSpace(profile.Label) || profile.Label.Length > 140 || profile.Label.Any(char.IsControl))) ||
+            (profile.Name is not null &&
             (string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 64 ||
              profile.Name.Any(c => char.IsControl(c) || c is '@' or '`' or '<' or '>'))) ||
             string.IsNullOrWhiteSpace(profile.Invitation) || profile.Invitation.Length > 128 ||

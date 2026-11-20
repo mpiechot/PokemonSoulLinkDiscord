@@ -2,7 +2,7 @@
 
 ## Build and verify
 
-Executables require a patched .NET/ASP.NET Core runtime at least 9.0.21. SignalR/SQLite packages are pinned to audited versions, including the native SQLite bundle. Check the dependency graph with `dotnet list PokeSoulLinkBot/PokeSoulLinkBot.slnx package --vulnerable --include-transitive`.
+The server and integration harness target .NET 10. The Windows player and diagnostic client target .NET 9. The Linux release includes its own patched .NET 10 and ASP.NET Core runtime. SignalR/SQLite packages are pinned, including the native SQLite bundle.
 
 ```powershell
 dotnet restore PokeSoulLinkBot/PokeSoulLinkBot.slnx
@@ -31,7 +31,13 @@ Use .NET configuration (environment variables replace `:` with `__`):
 
 `GET /health/soullink` checks database access and reports protocol/read-only readiness. Structured Discord delivery logs identify event and run without logging message tokens. Database failures propagate and do not acknowledge observations. Use the existing systemd restart policy for process recovery.
 
-For a Linux server, publish the bot with `dotnet publish PokeSoulLinkBot/PokeSoulLinkBot.csproj -c Release -o artifacts/publish/server`. Put a TLS reverse proxy in front of the loopback listener; proxy `/soullink` with WebSocket upgrade support and `/api/soullink/join`. Keep the optional admin API restricted to the operator. No Lua port is exposed. Back up the database with SQLite's backup mechanism or stop the service and copy the DB together with any WAL files; copying a live main file alone is insufficient.
+### Linux release and updates
+
+Run `./scripts/Publish-SoulLinkServer.ps1` to produce `artifacts/server/soullink-linux-x64.tar.gz`. The archive contains the application and its runtime. Configure the `soullink` service account and the included `scripts/soullink.service` separately on the target. Set `SoulLink__AdminKey` in the root-readable `/etc/soullink/server.env` file. The service uses Discord-free mode by default and listens on loopback.
+
+Apply each release with `sudo bash Update-SoulLinkServer.sh /path/to/soullink-linux-x64.tar.gz`. The updater checks the archive's launcher, takes an SQLite backup, applies versioned migrations transactionally, switches the release symlink and checks the service. It retains the previous release and the database backup. If startup fails after migration, inspect the service log before choosing a rollback. Restoring the pre-update backup can discard activity recorded after the update.
+
+The reverse proxy forwards the authenticated admin and join API, the health route, and the SignalR `/soullink` route with WebSocket upgrades. Keep the admin key with the host. Player invitations contain only the server address and run invitation code.
 
 ## Client configuration and packaging
 

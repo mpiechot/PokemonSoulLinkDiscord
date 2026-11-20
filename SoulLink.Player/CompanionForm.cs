@@ -54,7 +54,7 @@ internal sealed class CompanionForm : Form
     private Guid? displayedRunId;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
-        string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null)
+        string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -103,6 +103,20 @@ internal sealed class CompanionForm : Form
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
         this.joinRun = new ToolStripMenuItem("Run beitreten", null, async (_, _) => await this.OpenIdentityAsync());
         this.programMenu.Items.AddRange([this.startGame, this.toggleDock, this.joinRun, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        if (profiles is not null)
+        {
+            this.programMenu.Items.Insert(1, new ToolStripMenuItem("Run wechseln", null, (_, _) => this.ChooseProfile(profiles)));
+            this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, (_, _) =>
+            {
+                if (this.closing) return;
+                using var dialog = new HostingForm(profiles, this.runtime.Status().Server);
+                dialog.ShowDialog(this);
+            }));
+            this.programMenu.Items.Insert(3, new ToolStripMenuItem("Run-Server neu verbinden", null, async (_, _) =>
+            {
+                if (!this.closing) await this.RunActionAsync(() => this.runtime.ReconnectAsync());
+            }));
+        }
         this.status.Dock = DockStyle.Fill;
         this.status.ForeColor = DashboardTheme.Muted;
         this.status.TextAlign = ContentAlignment.MiddleLeft;
@@ -194,6 +208,21 @@ internal sealed class CompanionForm : Form
     internal bool IsGameDocked => this.dock.Attached;
     internal string ConnectionStatus => this.status.Text;
 
+    internal Guid? RequestedProfile { get; private set; }
+
+    private void ChooseProfile(PlayerProfileLibrary profiles)
+    {
+        if (this.closing) return;
+        Guid current = this.profile?.Id ?? Guid.Empty;
+        using var dialog = new ProfilePicker(profiles, current, this.runtime.Status().Server);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedProfile == current) return;
+        if (this.game is { HasExited: false } &&
+            MessageBox.Show(this, "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.",
+                "Run wechseln", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+        this.RequestedProfile = dialog.SelectedProfile;
+        this.Close();
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
@@ -240,6 +269,7 @@ internal sealed class CompanionForm : Form
         }
         catch (Exception error) when (error is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
+            this.RequestedProfile = null;
             this.closing = false;
             this.shutdownError = "Beenden noch nicht abgeschlossen. Prüfe mGBA und versuche es erneut.";
             this.Render();

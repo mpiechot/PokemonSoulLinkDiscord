@@ -17,30 +17,86 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         ValidateName(name);
         if (string.IsNullOrWhiteSpace(guild)) throw new InvalidDataException("A guild is required.");
+        return store.Execute(tx => CreateRunInScope(tx, guild, channel, name, deathRule));
+    }
+
+    public RunGroup[] Groups() => store.Execute(tx => tx.Groups());
+
+    public RunGroup CreateGroup(string name)
+    {
+        name = name?.Trim() ?? "";
+        ValidateName(name);
         return store.Execute(tx =>
         {
-            foreach (var previous in tx.Runs(guild).Where(r => r.Selected))
-            {
-                if (previous.Phase == RunPhase.Lobby) tx.Delete(previous.Id);
-                else
-                {
-                    previous.Selected = false;
-                    if (previous.Phase == RunPhase.Active) previous.Phase = RunPhase.Paused;
-                    tx.Save(previous);
-                }
-            }
-
-            var run = new AutomationRun
-            {
-                GuildId = guild,
-                ChannelId = channel,
-                Name = name,
-                DeathRule = deathRule,
-                Invitation = Convert.ToHexString(RandomNumberGenerator.GetBytes(12)),
-            };
-            tx.Save(run);
-            return run;
+            if (tx.Groups().Any(group => string.Equals(group.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("Eine Gruppe mit diesem Namen gibt es bereits.");
+            var group = new RunGroup(Guid.NewGuid(), name);
+            tx.AddGroup(group);
+            return group;
         });
+    }
+
+    public HostRun[] GroupRuns(Guid groupId) => store.Execute(tx =>
+    {
+        _ = tx.Group(groupId);
+        return tx.Runs(GroupScope(groupId)).Select(ToHostRun).ToArray();
+    });
+
+    public HostRun CreateGroupRun(Guid groupId, GroupRunRequest request)
+    {
+        string name = request.Name?.Trim() ?? "";
+        ValidateName(name);
+        if (!Enum.IsDefined(request.DeathRule)) throw new InvalidDataException("Ungültige Todesregel.");
+        return store.Execute(tx =>
+        {
+            _ = tx.Group(groupId);
+            return ToHostRun(CreateRunInScope(tx, GroupScope(groupId), 0, name, request.DeathRule));
+        });
+    }
+
+    public HostRun ChangeGroupRun(Guid groupId, Guid runId, string action) =>
+        ToHostRun(this.ChangeRun(GroupScope(groupId), runId, action));
+
+    public HostPlayer[] GroupRunPlayers(Guid groupId, Guid runId) => store.Execute(tx =>
+    {
+        var run = tx.Run(runId);
+        if (run.GuildId != GroupScope(groupId)) throw new UnauthorizedAccessException("Der Run gehört zu einer anderen Gruppe.");
+        return run.Players.Select(p => new HostPlayer(p.Id, p.Name, this.Connection(p), p.Diagnostic)).ToArray();
+    });
+
+    public void RebaselineGroupRun(Guid groupId, Guid runId, Guid playerId) => this.Rebaseline(GroupScope(groupId), runId, playerId);
+
+    private static string GroupScope(Guid groupId) => $"group:{groupId:N}";
+
+    private static HostRun ToHostRun(AutomationRun run) => new(run.Id, run.Name, run.Phase, run.Selected, run.Invitation,
+        run.Players.Count, run.Players.Count(p => p.LastSnapshot is not null && p.Connection != "OutOfSync"));
+
+    private static AutomationRun CreateRunInScope(AutomationStore.StoreTransaction tx, string guild, ulong channel, string name, DeathRule deathRule)
+    {
+        foreach (var previous in tx.Runs(guild).Where(r => r.Selected))
+            Deselect(tx, previous);
+        var run = new AutomationRun
+        {
+            GuildId = guild,
+            ChannelId = channel,
+            Name = name,
+            DeathRule = deathRule,
+            Invitation = Convert.ToHexString(RandomNumberGenerator.GetBytes(12)),
+        };
+        tx.Save(run);
+        return run;
+    }
+
+    private static void Deselect(AutomationStore.StoreTransaction tx, AutomationRun previous)
+    {
+        if (previous.Phase == RunPhase.Lobby && !previous.GuildId.StartsWith("group:", StringComparison.Ordinal))
+        {
+            tx.Delete(previous.Id);
+            return;
+        }
+        previous.Selected = false;
+        if (previous.Phase == RunPhase.Active) previous.Phase = RunPhase.Paused;
+        tx.Save(previous);
     }
 
     public AutomationRun ChangeRun(string guild, Guid runId, string action, string? reason = null)
@@ -62,15 +118,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 case "load":
                     if (run.Phase == RunPhase.Finished) throw new InvalidOperationException("Finished runs cannot be resumed.");
                     foreach (var previous in tx.Runs(guild).Where(r => r.Selected && r.Id != run.Id))
-                    {
-                        if (previous.Phase == RunPhase.Lobby) tx.Delete(previous.Id);
-                        else
-                        {
-                            previous.Selected = false;
-                            if (previous.Phase == RunPhase.Active) previous.Phase = RunPhase.Paused;
-                            tx.Save(previous);
-                        }
-                    }
+                        Deselect(tx, previous);
                     run.Selected = true;
                     if (run.Phase == RunPhase.Paused) run.Phase = RunPhase.Active;
                     foreach (var player in run.Players) this.sessions.TryRemove(player.Id, out _);
@@ -555,7 +603,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         run.History.Add(item);
         if (kind is "caught" or "extra-catch" or "death") tx.RecordReplayEvent(run.Id, item);
         if (run.History.Count > 200) run.History.RemoveAt(0);
-        if (notify) tx.Notify(run, item);
+        if (notify && run.ChannelId != 0) tx.Notify(run, item);
     }
 
     [GeneratedRegex("^[0-9A-Fa-f]{64}$")]

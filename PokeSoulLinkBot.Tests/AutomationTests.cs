@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SoulLink;
 using SoulLink.Demo;
 using Xunit;
@@ -14,6 +15,72 @@ public sealed class AutomationTests : IDisposable
     {
         this.store = new AutomationStore(Path.Combine(this.directory, "runs.sqlite"));
         this.engine = new AutomationEngine(this.store);
+    }
+
+    [Fact]
+    public void StandaloneGroupsRetainTheirOwnLobbyRulesAndRunWhenSwitching()
+    {
+        var groupOne = this.engine.CreateGroup("Gruppe eins");
+        var groupTwo = this.engine.CreateGroup("Gruppe zwei");
+        var one = this.engine.CreateGroupRun(groupOne.Id, new GroupRunRequest("Rubin eins"));
+        var two = this.engine.CreateGroupRun(groupTwo.Id, new GroupRunRequest("Rubin zwei"));
+        var first = JoinGroup(one, "Erster");
+        var second = JoinGroup(two, "Zweiter");
+        this.engine.ChangeGroupRun(groupOne.Id, one.Id, "start");
+        this.engine.AddRule(first, "Regel für Gruppe eins");
+        this.engine.ChangeGroupRun(groupOne.Id, one.Id, "pause");
+        Assert.Equal(RunPhase.Lobby, Assert.Single(this.engine.GroupRuns(groupTwo.Id)).Phase);
+        this.engine.ChangeGroupRun(groupTwo.Id, two.Id, "start");
+        this.engine.AddRule(second, "Regel für Gruppe zwei");
+        this.engine.ChangeGroupRun(groupTwo.Id, two.Id, "pause");
+        this.engine.ChangeGroupRun(groupOne.Id, one.Id, "load");
+
+        Assert.Equal(RunPhase.Active, Assert.Single(this.engine.GroupRuns(groupOne.Id)).Phase);
+        Assert.Equal(RunPhase.Paused, Assert.Single(this.engine.GroupRuns(groupTwo.Id)).Phase);
+        Assert.Equal("Regel für Gruppe eins", Assert.Single(this.engine.View(first).AdditionalRules));
+        Assert.Equal("Regel für Gruppe zwei", Assert.Single(this.engine.View(second).AdditionalRules));
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.ChangeGroupRun(groupOne.Id, two.Id, "end"));
+
+        var open = this.engine.CreateGroupRun(groupTwo.Id, new GroupRunRequest("Lobby behalten"));
+        this.engine.CreateGroupRun(groupTwo.Id, new GroupRunRequest("Andere Lobby"));
+        this.engine.ChangeGroupRun(groupTwo.Id, open.Id, "load");
+        Assert.Contains(this.engine.GroupRuns(groupTwo.Id), run => run.Id == open.Id && run.Invitation == open.Invitation && run.Selected);
+
+        Registration JoinGroup(HostRun run, string name)
+        {
+            var registered = this.engine.Join(new JoinRequest(run.Invitation, name, Guid.NewGuid(),
+                Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)), "AXVD"));
+            var session = this.engine.Connect(registered, new Hello(registered.ClientId));
+            Assert.True(this.engine.Observe(registered, new Observation(Guid.NewGuid(), session.SessionId, 1, true, Snapshot(1, Mon(1)))).Accepted);
+            return registered;
+        }
+    }
+
+    [Fact]
+    public void VersionOneBackupMigrationsPreserveRegistrationsAndRunData()
+    {
+        var initial = this.engine.Initialize("legacy", 100, "Existing run");
+        var registration = this.Join(initial, "Registered").Registration;
+        this.engine.AddRule(registration, "Vor dem Update gespeichert");
+        string database = Path.Combine(this.directory, "runs.sqlite");
+        using (var connection = new SqliteConnection($"Data Source={database};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE run_groups; PRAGMA user_version=1;";
+            command.ExecuteNonQuery();
+        }
+        string backup = Path.Combine(this.directory, "backup.sqlite");
+        AutomationStore.Backup(database, backup);
+        Assert.Throws<IOException>(() => AutomationStore.Backup(database, backup));
+
+        foreach (string path in new[] { database, backup })
+        {
+            var upgraded = new AutomationEngine(new AutomationStore(path));
+            Assert.Equal("Vor dem Update gespeichert", Assert.Single(upgraded.View(registration).AdditionalRules));
+            Assert.Empty(upgraded.Groups());
+            Assert.Equal("Neue Gruppe", upgraded.CreateGroup("Neue Gruppe").Name);
+        }
     }
 
     [Fact]

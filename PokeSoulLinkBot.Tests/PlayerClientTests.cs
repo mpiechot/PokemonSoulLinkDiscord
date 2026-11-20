@@ -16,6 +16,30 @@ public sealed class PlayerClientTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "soullink-player-tests-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void RunProfileLibraryKeepsAndReopensSeparateGroupInvitations()
+    {
+        var profiles = new PlayerProfileLibrary(this.directory);
+        var groupOne = new RunGroup(Guid.NewGuid(), "Gruppe eins");
+        var groupTwo = new RunGroup(Guid.NewGuid(), "Gruppe zwei");
+        var runOne = new HostRun(Guid.NewGuid(), "Rubin", RunPhase.Lobby, true, "INVITE-ONE", 0, 0);
+        var runTwo = new HostRun(Guid.NewGuid(), "Rubin", RunPhase.Lobby, true, "INVITE-TWO", 0, 0);
+        const string server = "https://soul.example.test";
+        var one = PlayerProfileLibrary.ForHostedRun(server, groupOne, runOne);
+        var two = PlayerProfileLibrary.ForHostedRun(server, groupTwo, runTwo);
+        profiles.Remember(one);
+        profiles.Remember(two);
+        profiles.Choose(one.Id);
+        Assert.Equal(one, new PlayerProfileLibrary(this.directory).Current());
+        profiles.Choose(two.Id);
+        Assert.Equal(two, new PlayerProfileLibrary(this.directory).Current());
+        Assert.Equal(new[] { one, two }, profiles.List());
+        Assert.Equal(one.Id, profiles.AddInvitation(server, one.Invitation, one.Label!).Id);
+        profiles.Choose(Guid.Empty);
+        Assert.Null(profiles.Current());
+        Assert.Equal(2, profiles.List().Length);
+    }
+
+    [Fact]
     public void FreshClientIsEmptyAndDoesNotCreateDemoRegistration()
     {
         using var client = this.Client();

@@ -89,6 +89,18 @@ public static class AutomationHosting
             return await next(context);
         });
         admin.MapGet("/runs/{guild}", (string guild, AutomationEngine engine) => engine.Runs(guild));
+        admin.MapGet("/groups", (AutomationEngine engine) => engine.Groups());
+        admin.MapPost("/groups", (CreateGroupRequest request, AutomationEngine engine) => engine.CreateGroup(request.Name));
+        admin.MapGet("/groups/{id:guid}/runs", (Guid id, AutomationEngine engine) => engine.GroupRuns(id));
+        admin.MapPost("/groups/{id:guid}/runs", (Guid id, GroupRunRequest request, AutomationEngine engine) => engine.CreateGroupRun(id, request));
+        admin.MapPost("/groups/{id:guid}/runs/{run:guid}/{action}", (Guid id, Guid run, string action, AutomationEngine engine) =>
+            engine.ChangeGroupRun(id, run, action));
+        admin.MapGet("/groups/{id:guid}/runs/{run:guid}/players", (Guid id, Guid run, AutomationEngine engine) => engine.GroupRunPlayers(id, run));
+        admin.MapPost("/groups/{id:guid}/runs/{run:guid}/players/{player:guid}/rebaseline", (Guid id, Guid run, Guid player, AutomationEngine engine) =>
+        {
+            engine.RebaselineGroupRun(id, run, player);
+            return Results.Ok(new { accepted = true });
+        });
         admin.MapPost("/runs", (CreateRun request, AutomationEngine engine) =>
             engine.Initialize(request.Guild, request.Channel, request.Name, request.DeathRule));
         admin.MapPost("/runs/{id:guid}/{action}", (Guid id, string action, RunAction request, AutomationEngine engine) =>

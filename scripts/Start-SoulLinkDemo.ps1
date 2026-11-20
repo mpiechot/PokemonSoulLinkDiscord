@@ -8,7 +8,7 @@ try {
     $demoArguments = @()
     if ($Verify) { $demoArguments += '--verify' }
     if ($Headless) { $demoArguments += '--headless' }
-    dotnet SoulLink.Demo/bin/Debug/net9.0/SoulLink.Demo.dll @demoArguments
+    dotnet SoulLink.Demo/bin/Debug/net10.0/SoulLink.Demo.dll @demoArguments
     if ($LASTEXITCODE -ne 0) { throw 'Demo failed.' }
 } finally {
     Pop-Location
