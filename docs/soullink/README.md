@@ -4,11 +4,25 @@ Dieser Branch ergänzt den Discord-Bot um eine **schreibgeschützte Erfassung** 
 
 **Für Mitspieler:** Starte die vorbereitete Spieler-EXE. Wähle beim ersten Start Namen, Karten-Icon und ROM. Danach startet SoulLink mGBA mit der Lesebrücke und zeigt den Run neben dem Spielfenster. [Spieleranleitung](player.md)
 
+## Eigener Test mit mGBA ohne Discord
+
+Auf einem Rechner kannst du Gruppen, Einladungen und den Run-Wechsel mit dem lokalen Testserver ausprobieren. Starte ihn mit dem .NET 10 SDK in PowerShell 7. Der erzeugte Admin-Schlüssel gilt für diesen Serverstart und bleibt bei dir.
+
+```powershell
+$env:SoulLink__AdminKey = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$env:SoulLink__AdminKey
+.\scripts\Start-SoulLinkServer.ps1 -WithoutDiscord -DatabasePath .\artifacts\automation-test\standalone.sqlite
+```
+
+Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Lege eine Gruppe und darin einen Run an. Mit **Für mich merken** erscheint er unter **SoulLink → Run wechseln**. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
+
+Für Mitspieler auf anderen Rechnern braucht ihr einen gemeinsamen HTTPS-Run-Server mit WebSocket-Unterstützung. Die Linux-Veröffentlichung und der Update-Ablauf sind in der [Betriebsanleitung](development.md#linux-release-and-updates) beschrieben. Sobald der Server erreichbar ist, könnt ihr der [Anleitung für zwei Spieler](player.md#zu-zweit-ohne-discord-testen) folgen.
+
 ## Entwicklungsdemo ohne ROM und ohne Discord
 
 Dieser Abschnitt ist ausschließlich für Entwicklung und automatische Tests. Für einen echten Run die Spieler-EXE verwenden. Das Demo ist ausdrücklich mit Testdaten gekennzeichnet und wird nicht vom normalen Client gestartet.
 
-Voraussetzung: .NET 9 SDK oder neuer sowie die .NET-/ASP.NET-Core-9-Runtime **ab 9.0.21**. Im Repository:
+Die Demo braucht das .NET 10 SDK und zusätzlich die .NET-/ASP.NET-Core-9-Runtime für den Diagnose-Client. Im Repository:
 
 ```powershell
 .\scripts\Start-SoulLinkDemo.ps1

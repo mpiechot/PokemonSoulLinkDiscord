@@ -2,7 +2,7 @@
 
 Du bekommst **eine Spielerdatei als EXE**. Beim ersten Start wählst du deinen Spielernamen, dein Karten-Icon und deine lokale `.gba`-Datei. Danach reicht ein Doppelklick. SoulLink öffnet mGBA mit Lesebrücke und verbindet dich mit dem Run.
 
-Andere Runs haben eigene Spielerdateien und eigene ROM-Auswahlen. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
+SoulLink merkt sich pro Run die Anmeldung und die ROM-Auswahl. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
 Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Das Menü **SoulLink** oben links enthält **Spiel starten**, **mGBA lösen** und **Einrichtung**. Unten zeigen die farbigen Punkte den Status von Run-Server und Spieldaten an. Beim Darüberfahren erscheint ein kurzer Hinweis.
 
@@ -32,7 +32,7 @@ Bei einer allgemeinen, noch nicht vorbereiteten Datei gibst du diese Angaben ein
 
 ## Für Gastgeber
 
-Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Dort legst du zuerst eine Gruppe und darin einen Run an. Du kannst die Einladung kopieren, sie für dich merken oder eine Spieler-EXE erzeugen. Sobald alle Mitspieler einen gültigen Spielstand übertragen haben, kannst du den Run dort starten. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
+Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Dort legst du zuerst eine Gruppe und darin einen Run an. Du kannst die Einladung kopieren, sie für dich merken oder eine Spieler-EXE erzeugen. Sobald alle Mitspieler einen gültigen Spielstand übertragen haben, aktualisierst du die Ansicht und klickst auf **Starten**. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
 
 Unter **SoulLink → Run wechseln** findest du die gemerkten Einladungen. Dort kannst du einen Einladungscode hinzufügen oder einen bereits bekannten Run öffnen. Beim Wechsel bitte vorher im Spiel speichern. SoulLink beendet mGBA und öffnet dieselbe EXE mit dem gewählten Run-Profil. Jeder Run behält seine eigene Anmeldung und ROM-Auswahl.
 
@@ -44,11 +44,11 @@ Die Kopie enthält die Einladungsdaten und einen Profilbezeichner pro Run. Die E
 
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
 
-### Zu zweit testen
+### Zu zweit ohne Discord testen
 
-1. Starte den Testserver aus diesem Branch und erstelle im Test-Discord mit `/run-init name:Test edition:ruby` eine Lobby.
-2. Erstelle unter **SoulLink → Einrichtung → Für Gastgeber** mit der Serveradresse und dem Einladungscode genau eine Spielerdatei. Verwende für die Rechner deiner Mitspieler eine erreichbare HTTPS-Adresse.
-3. Startet dieselbe Spielerdatei auf zwei Rechnern. Jeder wählt beim ersten Start seinen Namen, sein Karten-Icon und seine lokale Rubin-ROM. Sobald beide **Run-Server** und **Spieldaten** grün sehen, startet der Gastgeber in Discord mit `/run-start`.
+1. Verbinde dich unter **SoulLink → Gastgeber** mit eurem HTTPS-Run-Server und lege eine Testgruppe mit einem Test-Run an.
+2. Erzeuge dort eine Spielerdatei und gib dieselbe EXE an beide Spieler weiter.
+3. Startet die EXE auf zwei Rechnern. Jeder wählt beim ersten Start seinen Namen, sein Karten-Icon und seine lokale Rubin-ROM. Sobald beide einen Spielstand geladen haben, klickt der Gastgeber auf **Verbinden / aktualisieren** und dann auf **Starten**.
 4. Fangt beide ein Pokémon im gleichen Fanggebiet. Der Link erscheint auf beiden Rechnern. Fügt unter **Regeln** eine Testregel hinzu und prüft, ob sie beim anderen Spieler erscheint.
 
 Für einen automatischen Test der Mehrspieler-Verbindung auf einem Rechner gibt es `./scripts/Start-SoulLinkDemo.ps1 -Verify`.
