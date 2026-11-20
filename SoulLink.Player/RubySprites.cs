@@ -4,28 +4,30 @@ namespace SoulLink.Player;
 
 internal sealed class RubySprites(string directory, string? cache = null, HttpClient? source = null) : IDisposable
 {
-    private const string Source = "https://raw.githubusercontent.com/PokeAPI/sprites/c0542f7c51215d9672439012838c99f520596cbd/sprites/";
+    private const string SpriteSource = "https://raw.githubusercontent.com/PokeAPI/sprites/c0542f7c51215d9672439012838c99f520596cbd/sprites/";
+    private const string EnergySource = "https://www.pokepedia.fr/Sp%C3%A9cial:Chemin_du_fichier/";
     private const int ImageLimit = 256 * 1024;
-    private static readonly HttpClient Http = new() { BaseAddress = new Uri(Source) };
-    private static readonly Dictionary<string, (int Id, string Label)> Types = new(StringComparer.Ordinal)
+    private static readonly HttpClient Http = new();
+    private static readonly Dictionary<string, (string Energy, string Label)> Types = new(StringComparer.Ordinal)
     {
-        ["normal"] = (1, "Normal"),
-        ["fighting"] = (2, "Kampf"),
-        ["flying"] = (3, "Flug"),
-        ["poison"] = (4, "Gift"),
-        ["ground"] = (5, "Boden"),
-        ["rock"] = (6, "Gestein"),
-        ["bug"] = (7, "Käfer"),
-        ["ghost"] = (8, "Geist"),
-        ["steel"] = (9, "Stahl"),
-        ["fire"] = (10, "Feuer"),
-        ["water"] = (11, "Wasser"),
-        ["grass"] = (12, "Pflanze"),
-        ["electric"] = (13, "Elektro"),
-        ["psychic"] = (14, "Psycho"),
-        ["ice"] = (15, "Eis"),
-        ["dragon"] = (16, "Drache"),
-        ["dark"] = (17, "Unlicht"),
+        ["normal"] = ("Incolore", "Normal"),
+        ["fighting"] = ("Combat", "Kampf"),
+        ["flying"] = ("Incolore", "Flug"),
+        ["poison"] = ("Obscurité", "Gift"),
+        ["ground"] = ("Combat", "Boden"),
+        ["rock"] = ("Combat", "Gestein"),
+        ["bug"] = ("Plante", "Käfer"),
+        ["ghost"] = ("Psy", "Geist"),
+        ["steel"] = ("Métal", "Stahl"),
+        ["fire"] = ("Feu", "Feuer"),
+        ["water"] = ("Eau", "Wasser"),
+        ["grass"] = ("Plante", "Pflanze"),
+        ["electric"] = ("Électrique", "Elektro"),
+        ["psychic"] = ("Psy", "Psycho"),
+        ["ice"] = ("Eau", "Eis"),
+        ["dragon"] = ("Dragon", "Drache"),
+        ["dark"] = ("Obscurité", "Unlicht"),
+        ["fairy"] = ("Fée", "Fee"),
     };
 
     private readonly Dictionary<string, Bitmap?> loaded = new(StringComparer.Ordinal);
@@ -38,14 +40,14 @@ internal sealed class RubySprites(string directory, string? cache = null, HttpCl
     {
         string key = $"{appearance.NationalDex}{(shiny ? "-shiny" : "")}.png";
         string path = $"pokemon/versions/generation-iii/ruby-sapphire/{(shiny ? "shiny/" : "")}{appearance.NationalDex}.png";
-        return this.Load(key, path);
+        return this.Load(key, SpriteSource + path);
     }
 
     public (Image? Image, string Label) TypeIcon(string type)
     {
         if (!Types.TryGetValue(type, out var entry)) return (null, type);
-        return (this.Load(Path.Combine("type-icons", type + ".png"),
-            $"types/generation-viii/legends-arceus/small/{entry.Id}.png"), entry.Label);
+        string filename = Uri.EscapeDataString($"Miniature_Type_{entry.Energy}_(flat)_JCC.svg");
+        return (this.Load(Path.Combine("tcg-icons", entry.Energy + ".png"), $"{EnergySource}{filename}?width=120"), entry.Label);
     }
 
     private Image? Load(string key, string remotePath)
@@ -95,12 +97,19 @@ internal sealed class RubySprites(string directory, string? cache = null, HttpCl
         catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException or ArgumentException or OutOfMemoryException) { return; }
 
         this.Changed?.Invoke();
+        string pendingPath = cachedPath + ".download";
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(cachedPath)!);
-            await File.WriteAllBytesAsync(cachedPath, bytes.AsMemory(0, count), timeout.Token);
+            await File.WriteAllBytesAsync(pendingPath, bytes.AsMemory(0, count), timeout.Token);
+            File.Move(pendingPath, cachedPath, overwrite: true);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or OperationCanceledException) { }
+        finally
+        {
+            try { File.Delete(pendingPath); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
     }
 
     public void Dispose()

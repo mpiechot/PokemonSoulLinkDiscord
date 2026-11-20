@@ -34,4 +34,4 @@ Die Kopie enthält die Einladungsdaten und einen Profilbezeichner pro Run. Die E
 
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
 
-Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink lädt die benötigten Pokémon-Sprites und Typ-Symbole bei Bedarf von PokéAPI und speichert sie für spätere Starts lokal. Bereits heruntergeladene Bilder stehen auch offline zur Verfügung. Die Icons des Discord-Bots sind in der EXE enthalten.
+Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink lädt Pokémon-Sprites von PokéAPI und transparente Energiesymbole des Sammelkartenspiels über Poképédia. Die Bilder werden lokal gespeichert und sind danach auch offline verfügbar. Boden, Gestein und Kampf verwenden die orange Faust. Der Tooltip nennt den jeweiligen Spieltyp. Die Icons des Discord-Bots sind in der EXE enthalten.

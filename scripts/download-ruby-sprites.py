@@ -4,11 +4,13 @@ import concurrent.futures
 import pathlib
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = "https://raw.githubusercontent.com/PokeAPI/sprites/c0542f7c51215d9672439012838c99f520596cbd/"
 BASE = SOURCE + "sprites/pokemon/versions/generation-iii/ruby-sapphire/"
+ENERGY_SOURCE = "https://www.pokepedia.fr/Sp%C3%A9cial:Chemin_du_fichier/"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--directory", type=pathlib.Path, default=ROOT / "artifacts/player/sprites")
@@ -19,7 +21,7 @@ artifact_root = (ROOT / "artifacts").resolve()
 if artifact_root not in directory.parents:
     parser.error("Use a folder below artifacts so sprite files stay out of Git.")
 directory.mkdir(parents=True, exist_ok=True)
-type_directory = directory / "type-icons"
+type_directory = directory / "tcg-icons"
 type_directory.mkdir(exist_ok=True)
 
 
@@ -54,14 +56,15 @@ items = [] if arguments.type_icons_only else [
     (directory / f"{number}{'-shiny' if shiny else ''}.png", BASE + ("shiny/" if shiny else "") + f"{number}.png")
     for number in range(1, 387) for shiny in (False, True)
 ]
-types = ("normal", "fighting", "flying", "poison", "ground", "rock", "bug", "ghost", "steel",
-         "fire", "water", "grass", "electric", "psychic", "ice", "dragon", "dark")
-items.extend((type_directory / f"{kind}.png", SOURCE + f"sprites/types/generation-viii/legends-arceus/small/{index}.png")
-             for index, kind in enumerate(types, 1))
+energies = ("Combat", "Dragon", "Eau", "Électrique", "Fée", "Feu", "Incolore", "Métal", "Obscurité", "Plante", "Psy")
+items.extend((type_directory / f"{energy}.png",
+              ENERGY_SOURCE + urllib.parse.quote(f"Miniature_Type_{energy}_(flat)_JCC.svg") + "?width=120")
+             for energy in energies)
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     failures = [error for error in pool.map(download, items) if error]
-with urllib.request.urlopen(SOURCE + "LICENCE.txt", timeout=15) as response:
-    (directory / "POKEAPI-LICENCE.txt").write_bytes(response.read())
+if not arguments.type_icons_only:
+    with urllib.request.urlopen(SOURCE + "LICENCE.txt", timeout=15) as response:
+        (directory / "POKEAPI-LICENCE.txt").write_bytes(response.read())
 print(f"Available locally: {len(items) - len(failures)}/{len(items)} sprites.")
 for failure in failures[:20]:
     print(failure)

@@ -186,7 +186,6 @@ internal static class DockSmokeTest
                         if (!dock.IsFocused) throw new InvalidOperationException("Dismissing a passive death notice moved keyboard focus.");
                     }
                     VerifyFeed(home);
-                    await VerifyArtworkAsync(home, timeout.Token);
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }
@@ -250,34 +249,48 @@ internal static class DockSmokeTest
             throw new InvalidOperationException($"The embedded mGBA client was {dock.ClientBounds} instead of {expected}.");
     }
 
-    private static async Task VerifyArtworkAsync(string home, CancellationToken cancellationToken)
+    internal static async Task VerifyArtworkAsync(string home, CancellationToken cancellationToken)
     {
         using var image = new Bitmap(24, 24);
         using var png = new MemoryStream();
         image.Save(png, System.Drawing.Imaging.ImageFormat.Png);
         using var handler = new ArtworkResponse(png.ToArray());
-        using var client = new HttpClient(handler) { BaseAddress = new Uri("https://artwork.test/") };
+        using var client = new HttpClient(handler);
         string cache = Path.Combine(home, "Artwork");
         using var sprites = new RubySprites(home, cache, client);
         var pikachu = RubyDashboardCatalog.Appearance(25)!;
         sprites.TypeIcon("electric");
+        sprites.TypeIcon("ground");
         sprites.Find(pikachu, false);
 
         using var offline = new RubySprites(cache);
-        while (new FileInfo(Path.Combine(cache, "type-icons", "electric.png")) is not { Exists: true, Length: > 0 } ||
+        while (new FileInfo(Path.Combine(cache, "tcg-icons", "Électrique.png")) is not { Exists: true, Length: > 0 } ||
+            new FileInfo(Path.Combine(cache, "tcg-icons", "Combat.png")) is not { Exists: true, Length: > 0 } ||
             new FileInfo(Path.Combine(cache, "25.png")) is not { Exists: true, Length: > 0 })
             await Task.Delay(20, cancellationToken);
 
         if (offline.TypeIcon("electric") is not { Image.Width: 24, Label: "Elektro" } || offline.Find(pikachu, false)?.Width != 24)
             throw new InvalidOperationException("A downloaded type symbol or Pokémon sprite could not be reused offline.");
+        var ground = offline.TypeIcon("ground");
+        var fighting = offline.TypeIcon("fighting");
+        var rock = offline.TypeIcon("rock");
+        if (ground is not { Image.Width: 24, Label: "Boden" } || fighting.Label != "Kampf" || rock.Label != "Gestein" ||
+            !ReferenceEquals(ground.Image, fighting.Image) || !ReferenceEquals(ground.Image, rock.Image))
+            throw new InvalidOperationException("Ground, Fighting, and Rock must share the TCG symbol and retain their game type names.");
     }
 
     private sealed class ArtworkResponse(byte[] png) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri?.AbsolutePath is not ("/types/generation-viii/legends-arceus/small/13.png" or
-                "/pokemon/versions/generation-iii/ruby-sapphire/25.png"))
+            var uri = request.RequestUri!;
+            string path = Uri.UnescapeDataString(uri.AbsolutePath);
+            bool symbol = uri.Host == "www.pokepedia.fr" && uri.Query == "?width=120" &&
+                path is "/Spécial:Chemin_du_fichier/Miniature_Type_Combat_(flat)_JCC.svg" or
+                    "/Spécial:Chemin_du_fichier/Miniature_Type_Électrique_(flat)_JCC.svg";
+            bool pokemon = uri.Host == "raw.githubusercontent.com" &&
+                path.EndsWith("/pokemon/versions/generation-iii/ruby-sapphire/25.png", StringComparison.Ordinal);
+            if (!symbol && !pokemon)
                 throw new InvalidOperationException($"Unexpected artwork request: {request.RequestUri}.");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(png) });
         }
