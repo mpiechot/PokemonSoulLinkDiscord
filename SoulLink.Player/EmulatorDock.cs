@@ -68,6 +68,32 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
         return this.IsFocused;
     }
 
+    public async Task CloseGameAsync(Process process, CancellationToken cancellationToken)
+    {
+        while (!process.HasExited && !this.RequestGameClose(process))
+            await Task.Delay(100, cancellationToken);
+
+        await process.WaitForExitAsync(cancellationToken);
+    }
+
+    public bool RequestGameClose(Process process)
+    {
+        if (process.HasExited) return false;
+        uint processId = (uint)process.Id;
+        nint target;
+        if (this.Attached && GetWindowThreadProcessId(this.window, out uint owner) != 0 && owner == processId)
+        {
+            // Restore the emulator's top-level window so Qt handles this as an application close.
+            target = this.window;
+            this.Detach();
+        }
+        else
+        {
+            target = FindMainWindow(processId);
+        }
+        return target != 0 && PostMessage(target, CloseWindow, 0, 0);
+    }
+
     public static bool CloseStartupScriptingWindow(Process process)
     {
         if (process.HasExited) return false;

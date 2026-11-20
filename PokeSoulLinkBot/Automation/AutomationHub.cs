@@ -40,8 +40,25 @@ public sealed class AutomationHub : Hub
         }
     }
 
+    /// <inheritdoc />
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (this.Context.Items.TryGetValue("registration", out object? registration) && registration is Registration player &&
+            this.Context.Items.TryGetValue("sessionId", out object? session) && session is Guid sessionId)
+        {
+            this.engine.Disconnect(player, sessionId);
+        }
+
+        return base.OnDisconnectedAsync(exception);
+    }
+
     /// <summary>Starts a session requiring a fresh inventory baseline.</summary>
-    public SessionInfo Hello(Hello hello) => this.engine.Connect(this.Registration(), hello);
+    public SessionInfo Hello(Hello hello)
+    {
+        var session = this.engine.Connect(this.Registration(), hello);
+        this.Context.Items["sessionId"] = session.SessionId;
+        return session;
+    }
 
     /// <summary>Accepts a sequenced, idempotent game observation.</summary>
     public ObservationResult Observe(Observation observation)

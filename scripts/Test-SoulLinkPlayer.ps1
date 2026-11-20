@@ -1,9 +1,9 @@
 #requires -Version 7.0
-param([string]$Executable, [switch]$PackageOnly)
+param([string]$Executable, [switch]$PackageOnly, [switch]$ShutdownOnly)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Executable) { $Executable = Join-Path $root 'artifacts\player\SoulLink.exe' }
-$tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+$tempRoot = if ($PackageOnly) { [IO.Path]::GetFullPath([IO.Path]::GetTempPath()) } else { Join-Path $root 'artifacts' }
 $testRoot = [IO.Path]::GetFullPath((Join-Path $tempRoot ('soullink-player-check-' + [Guid]::NewGuid().ToString('N'))))
 function Run-Player([string]$Path, [string[]]$Arguments) {
     $startInfo = [Diagnostics.ProcessStartInfo]::new($Path)
@@ -12,9 +12,15 @@ function Run-Player([string]$Path, [string[]]$Arguments) {
     foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::Start($startInfo)
     try {
-        if (-not $process.WaitForExit(35000)) { $process.Kill($true); $process.WaitForExit(); throw 'Packaged startup timed out.' }
+        if (-not $process.WaitForExit(35000)) {
+            $progress = if ($Arguments[0] -eq '--smoke-close') { Join-Path $Arguments[1] 'shutdown-progress.txt' }
+            if ($progress -and (Test-Path -LiteralPath $progress)) { Get-Content -LiteralPath $progress | Write-Host }
+            $process.Kill($true)
+            $process.WaitForExit()
+            throw "Packaged check timed out ($($Arguments[0]))."
+        }
         if ($process.ExitCode -ne 0) {
-            $report = if ($Arguments[0] -eq '--smoke-game') { Join-Path $Arguments[1] 'game-error.txt' }
+            $report = if ($Arguments[0] -in '--smoke-game','--smoke-close') { Join-Path $Arguments[1] 'game-error.txt' }
             if ($report -and (Test-Path -LiteralPath $report)) { Get-Content -LiteralPath $report | Write-Host }
             throw "Packaged startup failed: $($process.ExitCode)."
         }
@@ -129,6 +135,14 @@ try {
         New-TestRom $romPath $revision $species
         $player = Join-Path $testRoot "Player $revision.exe"
         Run-Player $Executable @('--prepare-player', $player, 'https://example.invalid', "RUN-$revision")
+        $shutdownHome = Join-Path $testRoot "shutdown-$revision"
+        $shutdownArguments = @('--smoke-close', $shutdownHome, $romPath)
+        if ($revision -eq 1) { $shutdownArguments += 'detached' }
+        Run-Player $player $shutdownArguments
+        if (-not (Test-Path -LiteralPath (Join-Path $shutdownHome 'shutdown-result.txt'))) {
+            throw "The player shutdown was not verified for revision $revision."
+        }
+        if ($ShutdownOnly) { continue }
         $mapResult = Join-Path $preparedHome 'rubymap-result.txt'
         if (Test-Path -LiteralPath $mapResult) { Remove-Item -LiteralPath $mapResult }
         Run-Player $player @('--smoke-game', $preparedHome, $romPath)
@@ -146,6 +160,10 @@ try {
         if ((Get-Content -LiteralPath $mapResult -Raw) -ne '224×120') {
             throw "The original-map decoder failed for revision $revision."
         }
+    }
+    if ($ShutdownOnly) {
+        Write-Host 'One close exited the owned emulator and released the bridge port in both docked and detached states.'
+        return
     }
     $romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
     if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }

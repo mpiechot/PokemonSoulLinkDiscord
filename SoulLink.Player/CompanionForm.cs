@@ -26,12 +26,16 @@ internal sealed class CompanionForm : Form
     private readonly System.Windows.Forms.Timer refresh = new() { Interval = 500 };
     private bool started;
     private bool launching;
+    private Task? gameLaunch;
+    private bool closing;
+    private bool closeApproved;
     private bool dockingEnabled = true;
     private bool startupScriptingClosed;
     private DateTimeOffset dockUntil;
     private Process? game;
     private string? gameError;
     private string? joinError;
+    private string? shutdownError;
     private readonly HashSet<Guid> shownDeaths = [];
     private bool deathDialogOpen;
     private bool actionRunning;
@@ -85,7 +89,7 @@ internal sealed class CompanionForm : Form
         this.joinRun = Button("Beitreten", async (_, _) => await this.OpenIdentityAsync());
         this.checkCatch = Button("Catch-Check", (_, _) =>
         {
-            if (this.displayedRunId is not Guid runId) return;
+            if (this.closing || this.displayedRunId is not Guid runId) return;
             using var dialog = new CatchCheckForm(this.runtime, runId);
             dialog.ShowDialog(this);
         });
@@ -107,6 +111,7 @@ internal sealed class CompanionForm : Form
         var caption = new Label { Text = "SPIEL", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Muted };
         this.startGame = Button("Spiel starten", async (_, _) => await this.StartGameAsync());
         this.toggleDock = Button("mGBA lösen", (_, _) => this.ChangeDock());
+        this.toggleDock.Name = "ToggleEmulatorDock";
         gameBar.Controls.Add(caption, 0, 0);
         gameBar.Controls.Add(this.startGame, 1, 0);
         gameBar.Controls.Add(this.toggleDock, 2, 0);
@@ -157,20 +162,56 @@ internal sealed class CompanionForm : Form
         this.Render();
     }
 
+    internal bool IsGameDocked => this.dock.Attached;
+    internal string ConnectionStatus => this.status.Text;
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
-        if (!e.Cancel) this.dock.Dispose();
+        if (e.Cancel || this.closeApproved) return;
+        if (e.CloseReason == CloseReason.WindowsShutDown)
+        {
+            if (this.game is { } shuttingDown) this.dock.RequestGameClose(shuttingDown);
+            return;
+        }
+        e.Cancel = true;
+        if (this.closing) return;
+        this.closing = true;
+        this.refresh.Stop();
+        this.status.Text = "mGBA wird beendet …";
+        this.BeginInvoke((Action)(async () => await this.ClosePlayerAsync()));
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         this.refresh.Dispose();
+        this.dock.Dispose();
         this.game?.Dispose();
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        try { this.runtime.StopAsync(stop.Token).GetAwaiter().GetResult(); }
-        catch (Exception exception) when (exception is OperationCanceledException or System.Net.Sockets.SocketException) { }
         base.OnFormClosed(e);
+    }
+
+    private async Task ClosePlayerAsync()
+    {
+        try
+        {
+            if (this.gameLaunch is not null) await this.gameLaunch;
+            if (this.game is { HasExited: false } game)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                await this.dock.CloseGameAsync(game, timeout.Token);
+            }
+            this.status.Text = "Serververbindung und Lesebrücke werden beendet …";
+            await this.runtime.StopAsync(CancellationToken.None);
+            this.closeApproved = true;
+            this.Close();
+        }
+        catch (Exception error) when (error is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            this.closing = false;
+            this.shutdownError = "Beenden noch nicht abgeschlossen. Prüfe mGBA und versuche es erneut.";
+            this.Render();
+            if (this.started) this.refresh.Start();
+        }
     }
 
     private static Button Button(string text, EventHandler clicked)
@@ -194,6 +235,7 @@ internal sealed class CompanionForm : Form
         try
         {
             await this.runtime.StartAsync(CancellationToken.None);
+            if (this.closing || this.IsDisposed) return;
             this.started = true;
             this.refresh.Start();
             var view = this.runtime.Status();
@@ -203,17 +245,24 @@ internal sealed class CompanionForm : Form
         catch (Exception exception)
         {
             this.gameError = exception.Message;
-            this.Render();
+            if (!this.closing && !this.IsDisposed) this.Render();
         }
     }
 
-    private async Task StartGameAsync(bool chooseRom = false, string? path = null)
+    private Task StartGameAsync(bool chooseRom = false, string? path = null)
     {
-        if (!this.started || this.launching || this.game is { HasExited: false }) return;
+        if (this.closing || !this.started || this.game is { HasExited: false }) return Task.CompletedTask;
+        if (this.launching) return this.gameLaunch ?? Task.CompletedTask;
+        return this.gameLaunch = this.LaunchGameAsync(chooseRom, path);
+    }
+
+    private async Task LaunchGameAsync(bool chooseRom, string? path)
+    {
         this.dock.Dispose();
         this.game?.Dispose();
         this.game = null;
         this.gameError = null;
+        this.shutdownError = null;
         this.dashboard.SetMapArtwork(null);
         this.launching = true;
         this.Render();
@@ -240,6 +289,7 @@ internal sealed class CompanionForm : Form
             this.runtime.ResetLocalRun();
             string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort);
             this.game = await Task.Run(() => this.emulator.Start(path, bridge));
+            if (this.closing) return;
             this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), attempted: true);
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
@@ -253,12 +303,13 @@ internal sealed class CompanionForm : Form
         finally
         {
             this.launching = false;
-            if (!this.IsDisposed) this.Render();
+            if (!this.closing && !this.IsDisposed) this.Render();
         }
     }
 
     private void RefreshGame()
     {
+        if (this.closing) return;
         if (this.dockingEnabled && this.game is { HasExited: false } && !this.dock.Attached && DateTimeOffset.UtcNow < this.dockUntil)
         {
             if (this.dock.TryAttach(this.game)) this.dock.FocusGame();
@@ -278,6 +329,7 @@ internal sealed class CompanionForm : Form
 
     private void ChangeDock()
     {
+        if (this.closing) return;
         if (this.dock.Attached)
         {
             this.dockingEnabled = false;
@@ -301,7 +353,7 @@ internal sealed class CompanionForm : Form
             : view.Registered ? "Verbindung zum Run wird hergestellt"
             : view.Player.Length > 0 ? view.Player + "  ·  Anmeldung läuft"
             : "Lokaler Spieltest";
-        this.status.Text = this.joinError ?? registration + (!view.IsLocalRun && view.State.StartsWith("OutOfSync", StringComparison.Ordinal)
+        this.status.Text = this.shutdownError ?? this.joinError ?? registration + (!view.IsLocalRun && view.State.StartsWith("OutOfSync", StringComparison.Ordinal)
             ? "  ·  Erfassung pausiert" : view.Snapshot is null ? "  ·  Warte auf Spieldaten" : "  ·  Spieldaten verbunden");
         this.gameStatus.Visible = !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
@@ -327,7 +379,7 @@ internal sealed class CompanionForm : Form
 
     private async Task ReviewDeathAsync(PendingDeath? pending = null, Guid? expectedRunId = null)
     {
-        if (this.deathDialogOpen || this.actionRunning || this.IsDisposed) return;
+        if (this.closing || this.deathDialogOpen || this.actionRunning || this.IsDisposed) return;
         var view = this.runtime.Status();
         if (view.Run is not { } run || (expectedRunId is Guid expected && expected != run.Id)) return;
         var deaths = OwnDeaths(view);
@@ -352,23 +404,23 @@ internal sealed class CompanionForm : Form
 
     private async Task RunActionAsync(Func<Task> action)
     {
-        if (this.actionRunning) return;
+        if (this.closing || this.actionRunning) return;
         this.actionRunning = true;
         try { await action(); }
         catch (Exception error) when (RunDialogs.IsActionError(error))
         {
-            MessageBox.Show(this, "Die Änderung konnte gerade nicht gespeichert werden.", "SoulLink");
+            if (!this.closing) MessageBox.Show(this, "Die Änderung konnte gerade nicht gespeichert werden.", "SoulLink");
         }
         finally
         {
             this.actionRunning = false;
-            if (!this.IsDisposed) this.Render();
+            if (!this.closing && !this.IsDisposed) this.Render();
         }
     }
 
     private async Task OpenIdentityAsync()
     {
-        if (this.profile is null || this.runtime.Status().Registered) return;
+        if (this.closing || this.profile is null || this.runtime.Status().Registered) return;
         var view = this.runtime.Status();
         using var identity = new PlayerIdentityForm(view.Player.Length == 0 ? this.profile.Name : view.Player, view.Marker);
         if (identity.ShowDialog(this) != DialogResult.OK) return;
@@ -386,6 +438,7 @@ internal sealed class CompanionForm : Form
 
     private async void OpenSetup(object? sender, EventArgs e)
     {
+        if (this.closing) return;
         using var dialog = new SetupForm(this.runtime, !this.launching && this.game is not { HasExited: false }, this.profile);
         var result = dialog.ShowDialog(this);
         if (result == DialogResult.Retry) await this.StartGameAsync(chooseRom: true);

@@ -80,6 +80,20 @@ public sealed class AutomationTests : IDisposable
         Assert.Empty(this.engine.View(client.Registration).Encounters);
     }
 
+    [Fact]
+    public void OnlyDisconnectingTheCurrentSessionMakesThePlayerOffline()
+    {
+        var (_, client) = this.Active();
+        var current = this.engine.Connect(client.Registration, new Hello(client.Registration.ClientId));
+
+        this.engine.Disconnect(client.Registration, client.Session.SessionId);
+        Assert.Equal("Synchronizing", this.engine.Heartbeat(client.Registration, current.SessionId));
+
+        this.engine.Disconnect(client.Registration, current.SessionId);
+        Assert.Equal("Offline", this.engine.Connection(this.engine.View(client.Registration).Players.Single()));
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.Heartbeat(client.Registration, current.SessionId));
+    }
+
     [Theory]
     [InlineData("missing")]
     [InlineData("clock")]

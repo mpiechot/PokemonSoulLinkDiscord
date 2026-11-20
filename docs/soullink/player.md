@@ -6,6 +6,8 @@ Andere Runs haben eigene Spielerdateien und eigene ROM-Auswahlen. Wenn du deine 
 
 Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Über **mGBA lösen** kannst du zum separaten Emulatorfenster wechseln.
 
+Speichere wie gewohnt im Spiel. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
+
 Links zeigt der Newsfeed neue Fänge und weitere Ereignisse. Rechts stehen Team, Links, Box, Todesfälle, Shinies und die Übersicht **Fangorte**. Jedes Pokémon zeigt seinen im Spiel gespeicherten Fangort. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
 
 Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird deine Position aus der aktuellen Spielfeldkachel auf die Weltkarte übertragen. In Gebäuden erscheint der Marker am zugehörigen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position.

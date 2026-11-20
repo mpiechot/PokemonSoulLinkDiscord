@@ -179,6 +179,10 @@ try
     }
     if (verifyOnly)
     {
+        await hubs[1].StopAsync(lifetime.Token);
+        await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+            .Single(p => p.Id == sessions[1].PlayerId).Connection == "Offline");
+        Console.WriteLine("Verified: closing a player's connection releases its session while the shared server stays available.");
         host.Kill(true);
         await host.WaitForExitAsync(lifetime.Token);
         current = current with

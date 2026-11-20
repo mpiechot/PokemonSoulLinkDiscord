@@ -166,18 +166,19 @@ public sealed class ClientRuntime : BackgroundService
         }
     }
 
-    public async Task JoinAsync(JoinForm form)
+    public async Task JoinAsync(JoinForm form, CancellationToken cancellationToken = default)
     {
         ValidateJoin(form);
-        await this.connectionGate.WaitAsync();
+        await this.connectionGate.WaitAsync(cancellationToken);
         try
         {
             if (this.settings.Registration is not null) throw new InvalidOperationException("Already registered. Use a separate SettingsPath for another player or run.");
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var response = await http.PostAsJsonAsync(form.Server.TrimEnd('/') + "/api/soullink/join",
-                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker), Protocol.Json);
+                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker),
+                Protocol.Json, cancellationToken);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Join rejected. Check invitation, player name, edition and lobby state.");
-            var registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json)
+            var registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json, cancellationToken)
                 ?? throw new InvalidDataException("Server returned an empty registration.");
             lock (this.stateGate)
             {
@@ -193,7 +194,7 @@ public sealed class ClientRuntime : BackgroundService
             this.Note("Registration saved. Connecting to the server.");
         }
         finally { this.connectionGate.Release(); }
-        await this.ReconnectAsync();
+        await this.ReconnectAsync(cancellationToken);
     }
 
     public async Task QueueJoinAsync(JoinForm form)
@@ -231,9 +232,9 @@ public sealed class ClientRuntime : BackgroundService
         }
     }
 
-    public async Task ReconnectAsync()
+    public async Task ReconnectAsync(CancellationToken cancellationToken = default)
     {
-        await this.connectionGate.WaitAsync();
+        await this.connectionGate.WaitAsync(cancellationToken);
         try
         {
             await this.CloseConnectionAsync();
@@ -248,7 +249,10 @@ public sealed class ClientRuntime : BackgroundService
         await this.bridgeReady.Task.WaitAsync(cancellationToken);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        Task.Run(() => this.RunAsync(stoppingToken));
+
+    private async Task RunAsync(CancellationToken stoppingToken)
     {
         var bridge = this.ReadBridgeAsync(stoppingToken);
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
@@ -259,7 +263,7 @@ public sealed class ClientRuntime : BackgroundService
                 if (bridge.IsCompleted) await bridge;
                 if (this.GetPendingJoin() is { } pending)
                 {
-                    try { await this.JoinAsync(pending); }
+                    try { await this.JoinAsync(pending, stoppingToken); }
                     catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or InvalidDataException or IOException or UnauthorizedAccessException)
                     {
                         this.SetState("Anmeldung noch nicht möglich — wird automatisch erneut versucht.");
@@ -280,8 +284,8 @@ public sealed class ClientRuntime : BackgroundService
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
         finally
         {
-            await this.CloseConnectionAsync();
-            await bridge;
+            try { await this.CloseConnectionAsync(); }
+            finally { await bridge; }
         }
     }
 

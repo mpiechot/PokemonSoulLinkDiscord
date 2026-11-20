@@ -4,15 +4,17 @@ using System.IO.Compression;
 namespace SoulLink.Player;
 
 /// <summary>Installs and starts the bundled copy without changing the system mGBA installation.</summary>
-internal sealed class PortableMgba(string home)
+internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = false)
 {
     public bool Available => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
+
+    internal string ExecutablePath => Path.Combine(home, "mGBA-9187", "mGBA.exe");
 
     public Process Start(string rom, string bridge, string? testState = null, bool softwareDisplay = false)
     {
         string executable = this.Install();
         string directory = Path.GetDirectoryName(executable)!;
-        if (softwareDisplay)
+        if (softwareDisplay || preferSoftwareDisplay)
         {
             // Hosted Windows workers may not expose an accelerated OpenGL context.
             File.WriteAllText(Path.Combine(directory, "qt.ini"), "[General]\ndisplayDriver=0\n");
@@ -42,8 +44,8 @@ internal sealed class PortableMgba(string home)
 
     private string Install()
     {
-        string directory = Path.Combine(home, "mGBA-9187");
-        string executable = Path.Combine(directory, "mGBA.exe");
+        string executable = this.ExecutablePath;
+        string directory = Path.GetDirectoryName(executable)!;
         string installed = Path.Combine(directory, ".ready");
         if (File.Exists(installed) && File.Exists(executable)) return executable;
 

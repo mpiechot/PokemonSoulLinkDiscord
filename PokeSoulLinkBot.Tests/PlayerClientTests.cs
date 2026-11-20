@@ -130,6 +130,45 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ClosingClientCancelsAnInFlightJoinAndReleasesItsBridge()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        await using var app = builder.Build();
+        var joinStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        app.MapPost("/api/soullink/join", async (HttpContext context) =>
+        {
+            joinStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, context.RequestAborted);
+        });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await app.StartAsync(timeout.Token);
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = Path.Combine(this.directory, "shutdown.json"),
+            ["BridgePort"] = "0",
+        }).Build();
+        using var client = new ClientRuntime(configuration);
+        await client.QueueJoinAsync(new JoinForm(app.Urls.Single(), "INVITE", "Player"));
+        await client.StartAsync(timeout.Token);
+        int port = client.Status().BridgePort;
+        try
+        {
+            await joinStarted.Task.WaitAsync(timeout.Token);
+            await client.StopAsync(timeout.Token).WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.True(client.ExecuteTask!.IsCompleted);
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+            try { listener.Start(); }
+            finally { listener.Stop(); }
+        }
+        finally
+        {
+            await client.StopAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public void PlayerCopiesKeepExecutableBytesAndReplaceOnlyJoinDetails()
     {
         Directory.CreateDirectory(this.directory);

@@ -146,6 +146,12 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public AutomationRun View(Registration registration) => store.Execute(tx => tx.Run(registration.RunId));
 
+    public void Disconnect(Registration registration, Guid sessionId)
+    {
+        if (this.sessions.TryGetValue(registration.PlayerId, out var session) && session.Id == sessionId)
+            this.sessions.TryRemove(new KeyValuePair<Guid, LiveSession>(registration.PlayerId, session));
+    }
+
     public ObservationResult Observe(Registration registration, Observation observation)
     {
         ValidateSnapshot(observation.Snapshot);

@@ -1,11 +1,96 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using SoulLink;
 using SoulLink.Client;
-using System.Runtime.InteropServices;
 
 namespace SoulLink.Player;
 
 internal static class DockSmokeTest
 {
+    public static void RunClose(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, bool detached)
+    {
+        using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), path, null, home);
+        int port = 0;
+        string? failure = null;
+        Process? game = null;
+        var progress = Path.Combine(home, "shutdown-progress.txt");
+        File.WriteAllText(progress, "Starting the player.");
+        using var diagnostics = new System.Windows.Forms.Timer { Interval = 500 };
+        diagnostics.Tick += (_, _) => File.WriteAllText(progress,
+            $"Player status: {form.ConnectionStatus}; docked: {form.IsGameDocked}; emulator exited: {game?.HasExited}; client task: {runtime.ExecuteTask?.Status}.");
+        form.FormClosing += (_, _) => File.AppendAllText(progress, " Requested the player close.");
+        form.FormClosed += (_, _) => File.WriteAllText(progress, "The player window closed.");
+        form.Shown += async (_, _) =>
+        {
+            diagnostics.Start();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            try
+            {
+                while (!form.IsGameDocked || game is null)
+                {
+                    game ??= FindFixtureEmulator(emulator);
+                    await Task.Delay(50, timeout.Token);
+                }
+                port = runtime.Status().BridgePort;
+                File.WriteAllText(progress, $"The emulator is docked with bridge port {port}.");
+                if (detached)
+                {
+                    ((Button)form.Controls.Find("ToggleEmulatorDock", true).Single()).PerformClick();
+                    if (form.IsGameDocked) throw new InvalidOperationException("Could not detach mGBA before closing the player.");
+                }
+            }
+            catch (Exception error)
+            {
+                failure = $"The close setup could not complete (docked: {form.IsGameDocked}, bridge: {runtime.Status().Bridge}). {error}";
+                File.WriteAllText(Path.Combine(home, "game-error.txt"), failure);
+            }
+            form.Close();
+        };
+
+        Application.Run(form);
+        diagnostics.Stop();
+        try
+        {
+            if (failure is not null) throw new InvalidOperationException(failure);
+            if (game is not { HasExited: true }) throw new InvalidOperationException("Closing SoulLink left the owned mGBA process running.");
+            if (port <= 0) throw new InvalidOperationException("The bridge did not bind a port.");
+            var restartedBridge = new TcpListener(IPAddress.Loopback, port);
+            try { restartedBridge.Start(); }
+            finally { restartedBridge.Stop(); }
+            File.WriteAllText(Path.Combine(home, "shutdown-result.txt"), "Emulator exited and bridge port released.");
+        }
+        catch (Exception error)
+        {
+            File.WriteAllText(Path.Combine(home, "game-error.txt"), error + Environment.NewLine + string.Join(Environment.NewLine, runtime.Status().Log));
+            Environment.ExitCode = 1;
+        }
+        finally
+        {
+            game ??= FindFixtureEmulator(emulator);
+            if (game is { HasExited: false })
+            {
+                game.CloseMainWindow();
+                if (!game.WaitForExit(3000)) { game.Kill(); game.WaitForExit(); }
+            }
+            game?.Dispose();
+        }
+    }
+
+    private static Process? FindFixtureEmulator(PortableMgba emulator)
+    {
+        Process? owned = null;
+        foreach (var candidate in Process.GetProcessesByName("mGBA"))
+        {
+            if (owned is null && !candidate.HasExited &&
+                string.Equals(candidate.MainModule?.FileName, emulator.ExecutablePath, StringComparison.OrdinalIgnoreCase))
+                owned = candidate;
+            else candidate.Dispose();
+        }
+        return owned;
+    }
+
     public static void Run(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, string? testState)
     {
         using var window = new Form

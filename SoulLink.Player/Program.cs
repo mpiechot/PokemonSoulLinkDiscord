@@ -34,14 +34,15 @@ internal static class Program
         }
         bool smokeTest = args.Length == 2 && args[0] == "--smoke-test";
         bool smokeGame = args.Length is 3 or 4 && args[0] == "--smoke-game";
+        bool smokeClose = args.Length is 3 or 4 && args[0] == "--smoke-close";
         using var instance = new Mutex(true, "Local\\SoulLink.Player", out bool firstInstance);
-        if (!smokeTest && !smokeGame && !firstInstance)
+        if (!smokeTest && !smokeGame && !smokeClose && !firstInstance)
         {
             MessageBox.Show("SoulLink läuft bereits. Öffne das vorhandene SoulLink-Fenster.", "SoulLink");
             return;
         }
         bool customHome = args.Length is 2 or 3 && args[0] == "--data-directory";
-        string home = smokeTest || smokeGame || customHome ? Path.GetFullPath(args[1]) :
+        string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
         Directory.CreateDirectory(home);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -52,7 +53,7 @@ internal static class Program
             ["BridgePort"] = "0",
         }).Build();
         using var runtime = new ClientRuntime(configuration);
-        var emulator = new PortableMgba(home);
+        var emulator = new PortableMgba(home, preferSoftwareDisplay: smokeClose);
         string profileKey = profile is null ? "local" : profile.Id.ToString("N");
         var rom = new RomSelection(Path.Combine(home, $"rom-{profileKey}.txt"));
         if (smokeTest)
@@ -72,6 +73,11 @@ internal static class Program
         if (smokeGame)
         {
             DockSmokeTest.Run(runtime, emulator, rom, home, args[2], args.Length == 4 ? Path.GetFullPath(args[3]) : null);
+            return;
+        }
+        if (smokeClose)
+        {
+            DockSmokeTest.RunClose(runtime, emulator, rom, home, args[2], detached: args.Length == 4 && args[3] == "detached");
             return;
         }
         string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
