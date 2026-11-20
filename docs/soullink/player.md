@@ -16,7 +16,13 @@ Team und Karte zeigen im gemeinsamen Run die zuletzt vom Server angenommenen Dat
 
 Sobald du in Rubin die Pokébälle von Professor Birchs Labor erhalten hast, zählt der erste bestätigte Wildkampf pro Fangort. Flucht oder ein besiegtes wildes Pokémon ohne Fang sperrt den Ort für die ganze Gruppe. Bereits zugehörige Pokémon zählen als tot. Im Newsfeed steht, wer den Erstfang verpasst hat und welche Pokémon betroffen sind.
 
+Zu Beginn eines eigenen Wildkampfs zeigt der automatische **Catch-Check** unter der Karte das gegnerische Pokémon und das Ergebnis. SoulLink prüft die Evolutionsfamilie und ob der Ort für dich noch frei ist. Die Meldung lässt sich während des Spiels lesen, ohne die Steuerung zu unterbrechen.
+
 Unter der Karte erscheinen die **Live-Kämpfe** deiner Mitspieler. Dort siehst du die aktiven Pokémon und ihre KP. Bei einem beobachteten Treffer blitzt die Karte des betroffenen Pokémon kurz auf und zeigt den KP-Verlust.
+
+Der Geldstand steht in der Spielerliste unter der Karte neben dem Ort. Wenn ein Spieler offline ist, zeigt die Liste den zuletzt übertragenen Stand.
+
+Versionen mit eingebautem Updater prüfen beim Öffnen auf neue Releases. Steht eine bereit, findest du unter **SoulLink** den Eintrag **Update … installieren**. Vor der Bestätigung speicherst du in mGBA. SoulLink lädt das signierte Paket, beendet das eigene mGBA und öffnet danach die neue Version. Einladungen, Run-Auswahl und ROM-Pfade bleiben in deinem bisherigen Spielerprofil gespeichert.
 
 Klicke im Team, in der Box, unter **Tot**, **Shinies** oder im Live-Kampf auf ein Pokémon, um seine Werte, Level-Attacken und Entwicklungsmöglichkeiten zu sehen. SoulLink liest diese Tabellen aus der gewählten Rubin-ROM und berücksichtigt dadurch Änderungen des Randomizers. Bei einem Mitspieler fragt SoulLink dessen Spielversion an. Wenn sie gerade unerreichbar ist, kennzeichnet die App deine lokale ROM als Referenz.
 

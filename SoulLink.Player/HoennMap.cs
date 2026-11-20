@@ -3,7 +3,7 @@ using SoulLink;
 namespace SoulLink.Player;
 
 internal sealed record MapPlayer(string Name, PlayerMarker Marker, int? Area, bool Live, bool Local, MapPosition? Position = null,
-    string? SyncStatus = null);
+    string? SyncStatus = null, int? Money = null);
 
 internal sealed class HoennMap : Control
 {

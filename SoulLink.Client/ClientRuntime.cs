@@ -460,6 +460,7 @@ public sealed class ClientRuntime : BackgroundService
                 snapshot.WildBattles,
                 snapshot.Epoch,
                 snapshot.TrainerId,
+                snapshot.Money,
                 snapshot.BadgeMask,
                 snapshot.RubyStarterWindow
             });

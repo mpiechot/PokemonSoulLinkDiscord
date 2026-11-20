@@ -2,7 +2,7 @@ namespace SoulLink;
 
 public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null, int? LiveHp = null);
 public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex, bool FinishingBlow = false);
-public sealed record RawBattleStatus(long Started, string? TrainerHex, BattleCombatant[] Combatants);
+public sealed record RawBattleStatus(long Started, string? TrainerHex, BattleCombatant[] Combatants, bool CatchEncounter = false);
 public sealed record RawWildBattle(int MapGroup, int MapNumber, long Started, long Ended, int Outcome);
 
 public sealed record BridgeFrame
@@ -16,6 +16,7 @@ public sealed record BridgeFrame
     public long Frame { get; init; }
     public long PlaySeconds { get; init; }
     public uint? TrainerId { get; init; }
+    public int? Money { get; init; }
     public string? ItemSession { get; init; }
     public Guid? ItemRequest { get; init; }
     public string? ItemResult { get; init; }
@@ -79,6 +80,7 @@ public sealed record BridgeFrame
             Frame = this.Frame,
             PlaySeconds = this.PlaySeconds,
             TrainerId = this.TrainerId,
+            Money = this.Money is >= 0 and <= 999_999 ? this.Money : null,
             MapGroup = this.MapGroup,
             MapNumber = this.MapNumber,
             Area = MapCatalog.Section(this.MapGroup, this.MapNumber),
@@ -114,7 +116,8 @@ public sealed record BridgeFrame
     private BattleStatus? ParseBattle()
     {
         if (!this.InBattle || this.Battle is not { Started: >= 0 } battle || battle.Started > this.Frame) return null;
-        var status = new BattleStatus($"{this.Epoch}:{battle.Started}", DecodeTrainer(battle.TrainerHex), battle.Combatants);
+        string? trainer = DecodeTrainer(battle.TrainerHex);
+        var status = new BattleStatus($"{this.Epoch}:{battle.Started}", trainer, battle.Combatants, battle.CatchEncounter && trainer is null);
         return status.IsValid() ? status : null;
     }
 

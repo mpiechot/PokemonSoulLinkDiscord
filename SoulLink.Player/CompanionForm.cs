@@ -22,6 +22,16 @@ internal sealed class CompanionForm : Form
     private readonly RunFeed feed;
     private readonly BattlePanel battles;
     private readonly RowStyle battleRow = new(SizeType.Absolute, 0);
+    private readonly RowStyle catchRow = new(SizeType.Absolute, 0);
+    private readonly Label encounterCheck = new()
+    {
+        Dock = DockStyle.Fill,
+        BackColor = DashboardTheme.Panel,
+        TextAlign = ContentAlignment.MiddleLeft,
+        AutoEllipsis = true,
+        Padding = new Padding(9, 0, 7, 0),
+        AccessibleName = "Automatischer Catch-Check",
+    };
     private readonly RosterGrid team;
     private readonly RubySprites spriteCache;
     private readonly DiscordIcons discordIcons = new();
@@ -34,6 +44,9 @@ internal sealed class CompanionForm : Form
     private readonly ToolStripMenuItem startGame;
     private readonly ToolStripMenuItem toggleDock;
     private readonly ToolStripMenuItem joinRun;
+    private readonly ToolStripMenuItem updateMenu;
+    private readonly PlayerUpdater? updater = PlayerUpdater.Create();
+    private readonly CancellationTokenSource updateLifetime = new();
     private readonly ContextMenuStrip programMenu = new();
     private readonly System.Windows.Forms.Timer refresh = new() { Interval = 200 };
     private bool started;
@@ -48,6 +61,9 @@ internal sealed class CompanionForm : Form
     private string? gameError;
     private string? joinError;
     private string? shutdownError;
+    private string? updateStatus;
+    private PlayerUpdateManifest? availableUpdate;
+    private bool checkingUpdate;
     private readonly HashSet<Guid> shownDeaths = [];
     private bool deathDialogOpen;
     private DeathReasonForm? activeDeath;
@@ -107,6 +123,8 @@ internal sealed class CompanionForm : Form
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
         this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
         this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
+        if (this.updater is not null) this.programMenu.Items.Add(this.updateMenu);
         if (profiles is not null)
         {
             this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, (_, _) =>
@@ -188,13 +206,15 @@ internal sealed class CompanionForm : Form
         this.team.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
         var news = Section("Newsfeed", this.feed);
         var teamPanel = Section("Aktuelles Team", this.team);
-        var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
+        var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        sidebar.RowStyles.Add(this.catchRow);
         sidebar.RowStyles.Add(this.battleRow);
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
         sidebar.Controls.Add(this.dashboard, 0, 0);
-        sidebar.Controls.Add(Section("Live-Kämpfe", this.battles), 0, 1);
-        sidebar.Controls.Add(teamPanel, 0, 2);
+        sidebar.Controls.Add(this.encounterCheck, 0, 1);
+        sidebar.Controls.Add(Section("Live-Kämpfe", this.battles), 0, 2);
+        sidebar.Controls.Add(teamPanel, 0, 3);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(7, 4, 0, 0) };
         footer.Controls.AddRange([this.runConnection, this.gameConnection]);
@@ -209,7 +229,11 @@ internal sealed class CompanionForm : Form
 
 
         this.refresh.Tick += (_, _) => this.RefreshGame();
-        this.Shown += async (_, _) => await this.StartAsync();
+        this.Shown += async (_, _) =>
+        {
+            await this.StartAsync();
+            await this.CheckUpdatesAsync(interactive: false);
+        };
         this.Render();
     }
 
@@ -217,6 +241,62 @@ internal sealed class CompanionForm : Form
     internal string ConnectionStatus => this.status.Text;
 
     internal Guid? RequestedProfile { get; private set; }
+    internal StagedPlayerUpdate? PendingUpdate { get; private set; }
+
+    private async Task CheckUpdatesAsync(bool interactive)
+    {
+        if (this.updater is not { } service || this.closing || this.checkingUpdate) return;
+        this.checkingUpdate = true;
+        this.updateMenu.Enabled = false;
+        try
+        {
+            using var check = CancellationTokenSource.CreateLinkedTokenSource(this.updateLifetime.Token);
+            check.CancelAfter(TimeSpan.FromSeconds(8));
+            this.availableUpdate ??= await service.CheckAsync(check.Token);
+            if (this.closing || this.IsDisposed) return;
+            if (this.availableUpdate is not { } offer)
+            {
+                if (interactive) MessageBox.Show(this, "Deine SoulLink-Version ist aktuell.", "SoulLink-Update");
+                return;
+            }
+            this.updateMenu.Text = $"Update {offer.Version} installieren";
+            if (!interactive || MessageBox.Show(this,
+                $"Version {offer.Version} ist verfügbar. Speichere zuerst im Spiel. SoulLink beendet mGBA und startet nach der Installation neu.",
+                "SoulLink aktualisieren", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+
+            this.updateStatus = $"Update {offer.Version} wird heruntergeladen …";
+            this.Render();
+            using var download = CancellationTokenSource.CreateLinkedTokenSource(this.updateLifetime.Token);
+            download.CancelAfter(TimeSpan.FromMinutes(12));
+            var staged = await service.StageAsync(offer, download.Token);
+            if (this.closing || this.IsDisposed)
+            {
+                PlayerUpdater.CleanStage(staged.Directory);
+                return;
+            }
+            this.PendingUpdate = staged;
+            this.Close();
+        }
+        catch (Exception error) when (error is HttpRequestException or IOException or InvalidDataException or
+            System.Text.Json.JsonException or OperationCanceledException or UnauthorizedAccessException)
+        {
+            this.availableUpdate = null;
+            if (interactive && !this.closing && !this.IsDisposed)
+                MessageBox.Show(this, error is OperationCanceledException ? "Zeitüberschreitung beim Update." : error.Message,
+                    "SoulLink-Update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            this.checkingUpdate = false;
+            this.updateStatus = null;
+            if (!this.IsDisposed && !this.closing)
+            {
+                this.updateMenu.Enabled = true;
+                if (this.availableUpdate is null) this.updateMenu.Text = "Nach Updates suchen";
+                this.Render();
+            }
+        }
+    }
 
     private async Task JoinOrSwitchAsync()
     {
@@ -261,6 +341,10 @@ internal sealed class CompanionForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        this.updateLifetime.Cancel();
+        this.updateLifetime.Dispose();
+        if (this.updater is null) this.updateMenu.Dispose();
+        this.updater?.Dispose();
         this.refresh.Dispose();
         this.dock.Dispose();
         this.game?.Dispose();
@@ -290,6 +374,12 @@ internal sealed class CompanionForm : Form
         {
             this.RequestedProfile = null;
             this.closing = false;
+            this.updateMenu.Enabled = true;
+            if (this.PendingUpdate is { } update)
+            {
+                PlayerUpdater.CleanStage(update.Directory);
+                this.PendingUpdate = null;
+            }
             this.shutdownError = "Beenden noch nicht abgeschlossen. Prüfe mGBA und versuche es erneut.";
             this.Render();
             if (this.started) this.refresh.Start();
@@ -566,7 +656,7 @@ internal sealed class CompanionForm : Form
                 _ => "Abgeschlossen",
             }) + ")"
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
-        this.status.Text = this.shutdownError ?? this.joinError ?? registration;
+        this.status.Text = this.shutdownError ?? this.joinError ?? this.updateStatus ?? registration;
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
             view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
         var sharedPlayer = view.IsLocalRun ? null : view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId);
@@ -591,6 +681,7 @@ internal sealed class CompanionForm : Form
         this.checkCatch.Enabled = view.Run is not null;
         this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
         this.dashboard.Render(view);
+        this.RenderEncounterCheck(view);
         int battleHeight = this.battles.Render(view);
         float rowHeight = battleHeight == 0 ? 0 : Math.Min(160, battleHeight + 33);
         if (this.battleRow.Height != rowHeight) this.battleRow.Height = rowHeight;
@@ -598,6 +689,23 @@ internal sealed class CompanionForm : Form
         this.openRoster?.Render(view, this.openRosterFilter);
         this.feed.Render(view.Run?.History ?? [], view.Run is { Phase: RunPhase.Lobby }
             ? "Lobby. Fänge werden erfasst, sobald der Gastgeber auf „Starten“ klickt." : "Noch keine Ereignisse.");
+    }
+
+    private void RenderEncounterCheck(ClientView view)
+    {
+        EncounterCatchVerdict[] checks = view.Snapshot?.Battle?.CatchEncounter == true
+            ? view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId)?.CatchChecks ?? [] : [];
+        string text = string.Join(Environment.NewLine, checks.Select(check => check.Allowed
+            ? $"✓ {RubyNames.Pokemon(check.Species)}: Fang erlaubt"
+            : $"✕ {RubyNames.Pokemon(check.Species)}: {check.Reason}"));
+        if (this.encounterCheck.Text != text)
+        {
+            this.encounterCheck.Text = text;
+            this.encounterCheck.ForeColor = checks.All(check => check.Allowed) ? DashboardTheme.Accent : DashboardTheme.Danger;
+            this.hints.SetToolTip(this.encounterCheck, text);
+        }
+        float height = checks.Length == 0 ? 0 : 20 + checks.Length * 22;
+        if (this.catchRow.Height != height) this.catchRow.Height = height;
     }
 
     private static PendingDeath[] OwnDeaths(ClientView view) =>

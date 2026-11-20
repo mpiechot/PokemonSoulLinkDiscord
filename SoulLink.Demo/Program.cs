@@ -46,6 +46,24 @@ try
             (await hostTools.RunsAsync(friday.Id)).Single() != fridayRun)
             throw new InvalidOperationException("Discord-free groups did not retain separate runs.");
         Console.WriteLine("Verified: host API creates and lists isolated groups with Discord disabled.");
+
+        string updateFeed = server + "/api/soullink/player-update/";
+        using var beforePublishing = await http.GetAsync(updateFeed + "manifest.json", lifetime.Token);
+        if (beforePublishing.StatusCode != HttpStatusCode.NotFound)
+            throw new InvalidDataException("The empty player release feed should be unavailable.");
+        string releases = Directory.CreateDirectory(Path.Combine(data, "player-updates")).FullName;
+        byte[] testPackage = [1, 2, 3, 4];
+        string releaseFile = PlayerUpdateManifest.FileName("1.2.3");
+        await File.WriteAllBytesAsync(Path.Combine(releases, releaseFile), testPackage, lifetime.Token);
+        await File.WriteAllTextAsync(Path.Combine(releases, "manifest.json"), "{\"version\":\"1.2.3\"}", lifetime.Token);
+        using var published = await http.GetAsync(updateFeed + "manifest.json", lifetime.Token);
+        using var unrelated = await http.GetAsync(updateFeed + "server.sqlite", lifetime.Token);
+        byte[] served = await http.GetByteArrayAsync(updateFeed + releaseFile, lifetime.Token);
+        if (!published.IsSuccessStatusCode || published.Headers.CacheControl?.NoStore != true ||
+            unrelated.StatusCode != HttpStatusCode.NotFound ||
+            !testPackage.SequenceEqual(served))
+            throw new InvalidDataException("The public player update endpoints did not serve just the release files.");
+        Console.WriteLine("Verified: the isolated update feed exposes only the manifest and versioned package.");
     }
     var demoGroup = await hostTools.CreateGroupAsync("Demo group");
     var run = await hostTools.CreateRunAsync(demoGroup.Id, "Three-player Ruby demo");
@@ -212,6 +230,32 @@ try
         if (readDetails?.Moves.SingleOrDefault() != pokemonDetails.Moves[0] || readDetails.BaseStats != pokemonDetails.BaseStats)
             throw new InvalidDataException("The partner's ROM details could not be requested.");
         Console.WriteLine("Verified: a registered peer can request another player's actual ROM details for a known species.");
+
+        foreach (int money in new[] { 12_345, 0 })
+        {
+            current = current with { Frame = ++frame, PlaySeconds = frame, Money = money };
+            await Send(current);
+            await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+                .Single(p => p.Id == localPlayer).DisplayMoney == money);
+        }
+        Console.WriteLine("Verified: wallet-only updates, including zero, are shared with peers.");
+
+        foreach (int species in new[] { 25, 281 })
+        {
+            current = current with
+            {
+                Frame = ++frame,
+                PlaySeconds = frame,
+                MapNumber = 17,
+                InBattle = true,
+                Battle = new RawBattleStatus(combatStart, null, [new(0, 1, 7, 20, 100), new(1, species, 18, 22, 300)], true),
+            };
+            await Send(current);
+            await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
+                .Run?.Players.Single(p => p.Id == localPlayer).CatchChecks is [var verdict] &&
+                verdict.Species == species && verdict.Allowed == (species == 25));
+        }
+        Console.WriteLine("Verified: automatic wild Catch Check returns both the permitted and duplicate-family verdict.");
 
         long started = ++frame;
         current = current with { Frame = ++frame, PlaySeconds = frame, InBattle = false, WildBattles = [new RawWildBattle(0, 17, started, frame, 4)] };

@@ -37,6 +37,18 @@ Run `./scripts/Publish-SoulLinkServer.ps1` to produce `artifacts/server/soullink
 
 Apply each release with `sudo bash Update-SoulLinkServer.sh /path/to/soullink-linux-x64.tar.gz`. The updater checks the archive's launcher, takes an SQLite backup, applies versioned migrations transactionally, switches the release symlink and checks the service. It retains the previous release and the database backup. If startup fails after migration, inspect the service log before choosing a rollback. Restoring the pre-update backup can discard activity recorded after the update.
 
+### Windows player releases
+
+Deploy the server build with the player-update routes once. Then run the following on the Windows release account, with the local SoulLink player closed.
+
+```powershell
+./scripts/Publish-SoulLinkPlayerUpdate.ps1 -Version 1.0.0 -SshHost marco-netcup
+```
+
+The first release creates a Windows account-protected signing key under `%LOCALAPPDATA%\SoulLink\ReleaseSigning`. Keep using that account and key for subsequent releases. Distribute the first player from `artifacts/player/SoulLink.exe` once to bootstrap updates. For each subsequent release, increase the version and run the same command. Without `-SshHost` the command builds and signs the executable and writes the stable archive at `artifacts/server/soullink-player-release.zip`. A different HTTPS release host can be configured with `-Server`.
+
+The publisher uploads the signed bundle to the server and publishes the manifest after the corresponding package is available. The player feed is stored next to the automation database and has no database migration or service restart for player-only releases. The Windows player verifies package size, SHA-256, signature and version using its embedded public key, then replaces the existing executable after a normal shutdown. This update signature is independent of Windows Authenticode and SmartScreen.
+
 The reverse proxy forwards the authenticated admin and join API, the health route, and the SignalR `/soullink` route with WebSocket upgrades. Keep the admin key with the host. Player invitations contain only the server address and run invitation code.
 
 ## Client configuration and packaging

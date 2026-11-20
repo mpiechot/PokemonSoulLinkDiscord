@@ -12,7 +12,8 @@ public sealed record ClientRunView(string Name, RunPhase Phase, Guid Id, ClientP
 
 public sealed record ClientPlayerView(string Name, Guid Id, string Diagnostic, string Connection,
     PlayerMarker Marker = PlayerMarker.Circle, int? Area = null, DashboardPokemon[]? Pokemon = null,
-    MapPosition? Position = null, byte ArenaProgress = 0, PendingDeath[]? PendingDeaths = null, BattleStatus? Battle = null);
+    MapPosition? Position = null, byte ArenaProgress = 0, PendingDeath[]? PendingDeaths = null, BattleStatus? Battle = null, int? Money = null,
+    EncounterCatchVerdict[]? CatchChecks = null);
 
 public sealed record DashboardPokemon(PokemonState State, bool Dead, bool Present);
 public sealed record DashboardLinkMember(string Player, DashboardPokemon Pokemon, Guid PlayerId = default);

@@ -12,6 +12,12 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
         string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Executable path unavailable.");
+        if (args.Length > 0 && args[0] == "--apply-player-update")
+        {
+            PlayerUpdater.Apply(executable, args);
+            return;
+        }
+        args = PlayerUpdater.ConsumeCleanup(args);
         if (args.Length > 0 && args[0] == "--prepare-player")
         {
             try
@@ -49,6 +55,7 @@ internal static class Program
             MessageBox.Show("SoulLink läuft bereits. Öffne das vorhandene SoulLink-Fenster.", "SoulLink");
             return;
         }
+        if (firstInstance) PlayerUpdater.CleanOldStages();
         bool customHome = args.Length is 2 or 3 && args[0] == "--data-directory";
         string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
@@ -122,7 +129,17 @@ internal static class Program
         using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
             Path.Combine(home, "Artwork"), customHome ? null : profiles);
         Application.Run(form);
-        if (form.RequestedProfile is Guid runProfile)
+        if (form.PendingUpdate is { } update)
+        {
+            try { PlayerUpdater.StartInstaller(update, executable, args); }
+            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
+                System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                PlayerUpdater.CleanStage(update.Directory);
+                MessageBox.Show(error.Message, "SoulLink-Update fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        else if (form.RequestedProfile is Guid runProfile)
         {
             var restart = new ProcessStartInfo(executable) { UseShellExecute = false };
             restart.ArgumentList.Add("--run-profile");

@@ -267,8 +267,8 @@ local function observeLiveBattle(profile, frame)
                 end
             end
             if #combatants > 0 then
-                scene = string.format('{"started":%d,"trainerHex":%s,"combatants":[%s]}',
-                    battleStarted, battleTrainer(profile), table.concat(combatants, ","))
+                scene = string.format('{"started":%d,"trainerHex":%s,"catchEncounter":%s,"combatants":[%s]}',
+                    battleStarted, battleTrainer(profile), tostring(wildBattle ~= nil and read8(addresses.outcome) == 0), table.concat(combatants, ","))
             end
         end
     else
@@ -353,6 +353,7 @@ local function snapshot(frame)
     local minutes = read8(profile.save2 + 0x10)
     local seconds = read8(profile.save2 + 0x11)
     local trainerId = readTrainerId(profile)
+    local money = profile == reference and read32(profile.save1 + 0x490) or -1
     if count > 6 or currentBox > 13 or hours > 999 or minutes > 59 or seconds > 59 then
         error(string.format("Invalid %s memory layout: party=%d, box=%d, play time=%d:%02d:%02d.",
             code, count, currentBox, hours, minutes, seconds), 0)
@@ -414,8 +415,9 @@ local function snapshot(frame)
         rubyTypes = typesOk and types or ""
     end
     local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"battle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
-        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId, itemCapability,
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"money":%s,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"battle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId,
+        money >= 0 and money <= 999999 and tostring(money) or "null", itemCapability,
         group, number, lastPosition, tostring(battle), liveBattle, table.concat(faints, ","), table.concat(wildResults, ","), badges,
         tostring(starterWindow), gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end

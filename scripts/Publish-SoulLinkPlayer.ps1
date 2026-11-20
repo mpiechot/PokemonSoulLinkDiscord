@@ -2,7 +2,10 @@
 param(
     [string]$OutputDirectory,
     [string]$Server,
-    [string]$Invitation
+    [string]$Invitation,
+    [string]$UpdateVersion,
+    [string]$UpdateServer,
+    [string]$UpdatePublicKey
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -15,7 +18,8 @@ Push-Location $root
 try {
     dotnet publish SoulLink.Player/SoulLink.Player.csproj -c Release -r win-x64 --self-contained true -o $publishPath -m:1 `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true `
-        -p:DebugType=None -p:DebugSymbols=false -p:UseSharedCompilation=false "-p:MgbaBundlePath=$mgbaBundle"
+        -p:DebugType=None -p:DebugSymbols=false -p:UseSharedCompilation=false "-p:MgbaBundlePath=$mgbaBundle" `
+        "-p:PlayerUpdateVersion=$UpdateVersion" "-p:PlayerUpdateServer=$UpdateServer" "-p:PlayerUpdatePublicKey=$UpdatePublicKey"
     if ($LASTEXITCODE -ne 0) { throw 'Windows player build failed.' }
     $source = Join-Path $publishPath 'SoulLink.Player.exe'
     $destination = Join-Path $outputPath 'SoulLink.exe'

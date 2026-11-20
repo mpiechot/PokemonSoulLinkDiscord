@@ -35,7 +35,7 @@ public sealed record BattleCombatant(int Position, int Species, int Hp, int MaxH
         this.MaxHp is > 0 and <= 999 && this.Hp >= 0 && this.Hp <= this.MaxHp;
 }
 
-public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[] Combatants)
+public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[] Combatants, bool CatchEncounter = false)
 {
     public bool IsValid() => this.Key is { Length: > 0 and <= 100 } &&
         (this.Trainer is null || this.Trainer.Length <= 12 && !this.Trainer.Any(char.IsControl)) &&
@@ -90,6 +90,7 @@ public sealed record GameSnapshot
     public long Frame { get; init; }
     public long PlaySeconds { get; init; }
     public uint? TrainerId { get; init; }
+    public int? Money { get; init; }
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; }
@@ -151,10 +152,14 @@ public sealed class AutomationPlayer
     public MapPosition? DisplayPosition { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public BattleStatus? DisplayBattle { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public EncounterCatchVerdict[]? DisplayCatchChecks { get; set; }
     public byte ArenaConfirmed { get; set; }
     public byte ArenaReverted { get; set; }
     public byte ArenaProgress => (byte)(((this.LastSnapshot?.BadgeMask ?? this.DisplayBadges ?? 0) | this.ArenaConfirmed) & ~this.ArenaReverted);
     public byte? DisplayBadges { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DisplayMoney { get; set; }
     public bool RebaselineAllowed { get; set; }
     public uint? TrainerId { get; set; }
     public string? RunStartEpoch { get; set; }

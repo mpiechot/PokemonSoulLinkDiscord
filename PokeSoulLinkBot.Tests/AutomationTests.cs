@@ -289,6 +289,42 @@ public sealed class AutomationTests : IDisposable
         Assert.Null((frame with { Battle = frame.Battle with { Started = 25 } }).Parse().Battle);
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(0, 0)]
+    [InlineData(1250, 1250)]
+    [InlineData(1000000, null)]
+    public void WalletIgnoresInvalidValuesAndKeepsZero(int? received, int? expected)
+    {
+        var frame = SyntheticPokemon.Frame(1, SyntheticPokemon.Raw(101, 25)) with { Money = received };
+        Assert.Equal(expected, frame.Parse().Money);
+    }
+
+    [Fact]
+    public void AutomaticCatchCheckUsesTheWildOpponentFamilyAndTheEncounterSlot()
+    {
+        var (_, client) = this.Active();
+        var battle = new BattleStatus("fixture:2", null,
+            [new(0, 280, 20, 20, 1), new(1, 25, 20, 20, 2)], CatchEncounter: true);
+        Assert.True(this.Send(client, 2, false, Snapshot(2, Mon(1)) with { InBattle = true, Battle = battle }).Accepted);
+
+        var view = this.engine.View(client.Registration);
+        var player = Assert.Single(view.Players);
+        Assert.True(Assert.Single(EncounterCatchChecks.ForPlayer(view, player)).Allowed);
+
+        player.LastSnapshot = player.LastSnapshot! with
+        {
+            Battle = battle with { Combatants = [battle.Combatants[0], battle.Combatants[1] with { Species = 281 }] },
+        };
+        Assert.Contains("Evolutionsfamilie", Assert.Single(EncounterCatchChecks.ForPlayer(view, player)).Reason);
+
+        view.Encounters.Add(new Encounter { Area = 16, Failed = true, Dead = true });
+        Assert.Contains("Fangort gesperrt", Assert.Single(EncounterCatchChecks.ForPlayer(view, player)).Reason);
+
+        player.LastSnapshot = player.LastSnapshot with { Battle = battle with { Trainer = "Felizia", CatchEncounter = false } };
+        Assert.Empty(EncounterCatchChecks.ForPlayer(view, player));
+    }
+
     [Fact]
     public void SequenceGapResynchronizesFromTheServerOnReconnect()
     {

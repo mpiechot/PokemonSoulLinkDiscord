@@ -592,6 +592,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (snapshot.GameCode != "AXVD" || snapshot.Epoch.Length is < 1 or > 80 || snapshot.LayoutId.Length is < 1 or > 80 ||
             snapshot.Frame < 0 || snapshot.PlaySeconds < 0 || snapshot.Area is < 0 or > 255 ||
+            snapshot.Money is < 0 or > 999_999 ||
             snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426 ||
             snapshot.WildBattles is { Length: > 16 } || snapshot.WildBattles?.Any(battle =>
                 battle is null || battle.Area is < 0 or >= 255 || battle.Started < 0 || battle.Ended <= battle.Started ||

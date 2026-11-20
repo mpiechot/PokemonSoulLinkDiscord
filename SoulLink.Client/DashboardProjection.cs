@@ -11,7 +11,8 @@ internal static class DashboardProjection
         var players = run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection,
             p.Marker, p.DisplayArea ?? p.LastSnapshot?.Area, p.Pokemon.Select(ProjectPokemon).ToArray(),
             p.DisplayPosition ?? p.LastSnapshot?.Position, arenaProgress,
-            p.Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().ToArray(), p.DisplayBattle ?? p.LastSnapshot?.Battle)).ToArray();
+            p.Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().ToArray(), p.DisplayBattle ?? p.LastSnapshot?.Battle,
+            p.DisplayMoney ?? p.LastSnapshot?.Money, p.DisplayCatchChecks ?? EncounterCatchChecks.ForPlayer(run, p))).ToArray();
         var links = run.Encounters.Select(encounter =>
         {
             var members = encounter.Members.Select(pair =>

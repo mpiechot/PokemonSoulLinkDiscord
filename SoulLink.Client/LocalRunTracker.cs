@@ -89,8 +89,10 @@ internal sealed class LocalRunTracker : IDisposable
 
     private static bool Changed(GameSnapshot previous, GameSnapshot next) =>
         previous.Position != next.Position || previous.MapGroup != next.MapGroup || previous.MapNumber != next.MapNumber ||
+        previous.Money != next.Money ||
         previous.InBattle != next.InBattle || previous.BadgeMask != next.BadgeMask || !previous.Pokemon.SequenceEqual(next.Pokemon) ||
         previous.Battle?.Key != next.Battle?.Key ||
+        previous.Battle?.CatchEncounter != next.Battle?.CatchEncounter ||
         !(previous.Battle?.Combatants ?? []).SequenceEqual(next.Battle?.Combatants ?? []) ||
         !(previous.Faints ?? []).SequenceEqual(next.Faints ?? []) ||
         !(previous.WildBattles ?? []).SequenceEqual(next.WildBattles ?? []) ||

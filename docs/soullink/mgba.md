@@ -25,6 +25,7 @@ The profile `ruby-axvd-reference-v2` recognizes the twelve-byte `POKEMON RUBY` t
 | Faint context | Battlers, party slots, last hit, last landed move and opponent trainer from German battle symbols | German symbols and `include/pokemon.h` |
 | Badges | SaveBlock1 flags +0x1220, bits 0x807–0x80E | Ruby `include/global.h` and `include/constants/flags.h` |
 | Base types | `0x0820BBE8`, 28-byte records, types +6/+7 | AXVD Randomizer profile and Ruby `include/pokemon.h` |
+| Wallet | SaveBlock1 + `0x490`, unsigned 32-bit | [Ruby save structures](https://github.com/pret/pokeruby/blob/master/include/global.h) |
 | Pokémon details | Base stats +0..5, level-up pointer table `0x08214B98`, evolution table `0x08210B38`, item names `0x083D13DC` | German symbols for revisions 0/1 and [Randomizer cartridge layout](https://github.com/Ajarmar/universal-pokemon-randomizer-zx/blob/master/src/com/dabomstew/pkrandom/romhandlers/Gen3RomHandler.java) |
 | Trainers | `0x081FD478`, 40-byte records, gym leaders 265–272 | AXVD Randomizer profile and Ruby trainer definitions |
 | ROM title / code | `0x080000A0` / `0x080000AC` | GBA ROM header |

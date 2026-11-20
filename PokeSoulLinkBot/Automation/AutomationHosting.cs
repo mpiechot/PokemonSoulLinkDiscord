@@ -70,6 +70,27 @@ public static class AutomationHosting
         });
         app.MapPost("/api/soullink/join", (JoinRequest request, AutomationEngine engine) => engine.Join(request))
             .RequireRateLimiting("automation");
+        string databasePath = app.Configuration["SoulLink:DatabasePath"] ?? Path.Combine(AppContext.BaseDirectory, "Data", "soullink.sqlite");
+        string databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath)) ?? AppContext.BaseDirectory;
+        string updateDirectory = Path.GetFullPath(app.Configuration["SoulLink:PlayerUpdatesDirectory"] ?? Path.Combine(databaseDirectory, "player-updates"));
+        app.MapGet("/api/soullink/player-update/manifest.json", (HttpContext context) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            string path = Path.Combine(updateDirectory, "manifest.json");
+            return File.Exists(path) ? Results.File(path, "application/json") : Results.NotFound();
+        });
+        app.MapGet("/api/soullink/player-update/{filename}", (string filename) =>
+        {
+            if (!filename.StartsWith("SoulLink-", StringComparison.Ordinal) ||
+                !filename.EndsWith(".exe", StringComparison.Ordinal) ||
+                !PlayerUpdateManifest.TryVersion(filename[9..^4], out _))
+            {
+                return Results.NotFound();
+            }
+
+            string path = Path.Combine(updateDirectory, filename);
+            return File.Exists(path) ? Results.File(path, "application/octet-stream", filename, enableRangeProcessing: true) : Results.NotFound();
+        });
         app.MapHub<AutomationHub>("/soullink", options =>
         {
             options.ApplicationMaxBufferSize = Protocol.MaxMessageBytes * 2;

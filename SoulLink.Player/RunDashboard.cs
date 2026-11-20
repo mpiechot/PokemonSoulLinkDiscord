@@ -1,3 +1,4 @@
+using System.Globalization;
 using SoulLink;
 using SoulLink.Client;
 
@@ -5,6 +6,7 @@ namespace SoulLink.Player;
 
 internal sealed class RunDashboard : TableLayoutPanel
 {
+    private static readonly CultureInfo German = CultureInfo.GetCultureInfo("de-DE");
     private readonly HoennMap map = new() { Dock = DockStyle.Fill };
     private readonly RichTextBox locations = new();
     private readonly ArenaPanel arena;
@@ -31,7 +33,7 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.locations.BackColor = DashboardTheme.Surface;
         this.locations.ForeColor = DashboardTheme.Muted;
         this.locations.TabStop = false;
-        this.locations.AccessibleName = "Spielerpositionen";
+        this.locations.AccessibleName = "Spielerpositionen und Geld";
         this.arena.ProgressChange += (number, complete) =>
         {
             if (this.view?.Run is { } run) this.ArenaChanged?.Invoke(run.Id, number, complete);
@@ -64,16 +66,17 @@ internal sealed class RunDashboard : TableLayoutPanel
                     "Stale" => "Spieldaten pausiert",
                     "Offline" => "Offline",
                     _ => null,
-                });
+                }, localData ? view.Snapshot?.Money ?? p.Money : p.Money);
         }).ToList();
         if (!positions.Any(p => p.Local) && view.Snapshot is { } snapshot)
             positions.Insert(0, new MapPlayer(view.Player.Length > 0 ? view.Player : "Du", view.Marker,
-                snapshot.Area, true, true, snapshot.Position));
+                snapshot.Area, true, true, snapshot.Position, Money: snapshot.Money));
 
         this.map.UpdatePlayers(positions.ToArray());
         string legend = positions.Count == 0 ? "Warte auf Spielerpositionen."
             : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name}: " +
                 (p.Area is int area && area != 255 ? RubyNames.Area(area) : "Warte auf Position") +
+                (p.Money is int wallet ? $"  |  {wallet.ToString("N0", German)} ₽" : "") +
                 (p.SyncStatus is { } status ? $" ({status})" : p.Live ? "" : " (zuletzt)")));
         if (this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
         {

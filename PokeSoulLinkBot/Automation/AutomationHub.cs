@@ -177,7 +177,13 @@ public sealed class AutomationHub : Hub
             player.DisplayArea = player.LastSnapshot?.Area;
             player.DisplayPosition = player.LastSnapshot?.Position;
             player.DisplayBadges = player.LastSnapshot?.BadgeMask;
+            player.DisplayMoney = player.LastSnapshot?.Money;
             player.DisplayBattle = run.Phase == RunPhase.Active && player.Connection == "Ready" ? player.LastSnapshot?.Battle : null;
+            if (player.Id == registration.PlayerId && player.Connection == "Ready")
+            {
+                player.DisplayCatchChecks = EncounterCatchChecks.ForPlayer(run, player);
+            }
+
             if (player.Id != registration.PlayerId)
             {
                 foreach (var pokemon in player.Pokemon)

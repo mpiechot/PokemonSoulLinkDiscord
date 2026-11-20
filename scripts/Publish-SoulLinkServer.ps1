@@ -13,6 +13,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Linux server build failed.' }
     if (Test-Path -LiteralPath (Join-Path $stage 'appsettings.json')) { throw 'Local configuration must stay outside the Linux release.' }
     if (-not (Test-Path -LiteralPath (Join-Path $stage 'PokeSoulLinkBot'))) { throw 'The Linux launcher is missing.' }
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Install-SoulLinkPlayerRelease.py') -Destination $stage
     $tar = if ($IsWindows) { 'tar.exe' } else { 'tar' }
     & $tar -czf $temporaryArchive -C $stage .
     if ($LASTEXITCODE -ne 0) { throw 'Linux archive creation failed.' }
