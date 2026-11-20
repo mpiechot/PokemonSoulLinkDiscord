@@ -266,7 +266,7 @@ internal static class DockSmokeTest
         ], "");
         using var drawing = new Bitmap(feed.Width, feed.Height);
         feed.DrawToBitmap(drawing, feed.ClientRectangle);
-        if (feed.AutoScrollMinSize.Height <= feed.ClientSize.Height)
+        if (feed.VerticalRail.IsEmpty)
             throw new InvalidOperationException("The feed did not make the additional event cards scrollable.");
 
         feed.Render([
@@ -300,24 +300,59 @@ internal static class DockSmokeTest
         string cache = Path.Combine(home, "Artwork");
         using var sprites = new RubySprites(home, cache, client);
         var pikachu = RubyDashboardCatalog.Appearance(25)!;
-        sprites.TypeIcon("electric");
-        sprites.TypeIcon("ground");
+        foreach (string type in new[] { "electric", "normal", "flying", "ground", "rock", "fighting" })
+            sprites.TypeIcon(type);
         sprites.Find(pikachu, false);
 
         using var offline = new RubySprites(cache);
-        while (new FileInfo(Path.Combine(cache, "tcg-icons", "Électrique.png")) is not { Exists: true, Length: > 0 } ||
-            new FileInfo(Path.Combine(cache, "tcg-icons", "Combat.png")) is not { Exists: true, Length: > 0 } ||
-            new FileInfo(Path.Combine(cache, "25.png")) is not { Exists: true, Length: > 0 })
+        string[] artwork = ["tcg-icons/Électrique.png", "tcg-icons/Combat.png", "tcg-icons/Incolore.png",
+            "type-icons/flying.png", "type-icons/ground.png", "type-icons/rock.png", "25.png"];
+        while (artwork.Any(file => new FileInfo(Path.Combine(cache, file)) is not { Exists: true, Length: > 0 }))
             await Task.Delay(20, cancellationToken);
 
         if (offline.TypeIcon("electric") is not { Image.Width: 24, Label: "Elektro" } || offline.Find(pikachu, false)?.Width != 24)
             throw new InvalidOperationException("A downloaded type symbol or Pokémon sprite could not be reused offline.");
-        var ground = offline.TypeIcon("ground");
-        var fighting = offline.TypeIcon("fighting");
-        var rock = offline.TypeIcon("rock");
-        if (ground is not { Image.Width: 24, Label: "Boden" } || fighting.Label != "Kampf" || rock.Label != "Gestein" ||
-            !ReferenceEquals(ground.Image, fighting.Image) || !ReferenceEquals(ground.Image, rock.Image))
-            throw new InvalidOperationException("Ground, Fighting, and Rock must share the TCG symbol and retain their game type names.");
+        var expected = new[] { ("ground", "Boden"), ("rock", "Gestein"), ("fighting", "Kampf"), ("normal", "Normal"), ("flying", "Flug") };
+        var rendered = expected.Select(pair => offline.TypeIcon(pair.Item1)).ToArray();
+        if (rendered.Where((icon, index) => icon.Image?.Width != 24 || icon.Label != expected[index].Item2).Any() ||
+            rendered.Select(icon => icon.Image).Distinct().Count() != expected.Length)
+            throw new InvalidOperationException("The distinct types displayed for Geodude and Pidgeot must have separate symbols.");
+    }
+
+    internal static void VerifyScrollDesign()
+    {
+        using var sample = new ScrollProbe { Size = new Size(250, 150), ContentSize = new Size(750, 600) };
+        using var drawing = new Bitmap(sample.Width, sample.Height);
+        sample.DrawToBitmap(drawing, sample.ClientRectangle);
+        if (sample.VerticalRail.IsEmpty || sample.HorizontalRail.IsEmpty ||
+            drawing.GetPixel(sample.VerticalRail.Left + 1, sample.VerticalRail.Bottom - 5).ToArgb() != DashboardTheme.Background.ToArgb() ||
+            drawing.GetPixel(sample.HorizontalRail.Right - 5, sample.HorizontalRail.Top + 1).ToArgb() != DashboardTheme.Background.ToArgb())
+            throw new InvalidOperationException("Scrollbar tracks must use the dark theme on both axes.");
+        sample.WheelDown();
+        sample.PageRight();
+        if (sample.ScrollPosition.X <= 0 || sample.ScrollPosition.Y <= 0)
+            throw new InvalidOperationException("The styled scrollbars did not respond to scrolling.");
+        sample.ContentSize = new Size(10, 10);
+        if (!sample.VerticalRail.IsEmpty || !sample.HorizontalRail.IsEmpty || sample.ScrollPosition != Point.Empty)
+            throw new InvalidOperationException("Scrollbar state was not cleared when the content fit.");
+
+        var document = new RichTextBox { Text = string.Join(Environment.NewLine, Enumerable.Repeat("Eine zusätzliche Regel.", 24)) };
+        using var text = DashboardScrollHost.ForText(document);
+        text.Size = new Size(200, 100);
+        text.CreateControl();
+        if (text.VerticalRail.IsEmpty || document.ScrollBars != RichTextBoxScrollBars.None)
+            throw new InvalidOperationException("Long text must use the themed scrollbar.");
+        document.Text = "Eine Regel.";
+        if (!text.VerticalRail.IsEmpty)
+            throw new InvalidOperationException("The text scrollbar stayed visible after the content shrank.");
+    }
+
+    private sealed class ScrollProbe : DashboardScrollView
+    {
+        public void WheelDown() => this.OnMouseWheel(new MouseEventArgs(MouseButtons.None, 0, 20, 20, -120));
+
+        public void PageRight() => this.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, this.HorizontalRail.Right - 3,
+            this.HorizontalRail.Top + 3, 0));
     }
 
     private sealed class ArtworkResponse(byte[] png) : HttpMessageHandler
@@ -328,10 +363,15 @@ internal static class DockSmokeTest
             string path = Uri.UnescapeDataString(uri.AbsolutePath);
             bool symbol = uri.Host == "www.pokepedia.fr" && uri.Query == "?width=120" &&
                 path is "/Spécial:Chemin_du_fichier/Miniature_Type_Combat_(flat)_JCC.svg" or
-                    "/Spécial:Chemin_du_fichier/Miniature_Type_Électrique_(flat)_JCC.svg";
+                    "/Spécial:Chemin_du_fichier/Miniature_Type_Électrique_(flat)_JCC.svg" or
+                    "/Spécial:Chemin_du_fichier/Miniature_Type_Incolore_(flat)_JCC.svg";
+            bool game = uri.Host == "raw.githubusercontent.com" &&
+                (path.EndsWith("/legends-arceus/small/3.png", StringComparison.Ordinal) ||
+                 path.EndsWith("/legends-arceus/small/5.png", StringComparison.Ordinal) ||
+                 path.EndsWith("/legends-arceus/small/6.png", StringComparison.Ordinal));
             bool pokemon = uri.Host == "raw.githubusercontent.com" &&
                 path.EndsWith("/pokemon/versions/generation-iii/ruby-sapphire/25.png", StringComparison.Ordinal);
-            if (!symbol && !pokemon)
+            if (!symbol && !pokemon && !game)
                 throw new InvalidOperationException($"Unexpected artwork request: {request.RequestUri}.");
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(png) });
         }

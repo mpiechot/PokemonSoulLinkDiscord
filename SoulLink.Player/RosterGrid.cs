@@ -4,7 +4,7 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class RosterGrid : ScrollableControl
+internal sealed class RosterGrid : DashboardScrollView
 {
     private const int Header = 35;
     private const int RowHeight = 122;
@@ -22,9 +22,6 @@ internal sealed class RosterGrid : ScrollableControl
     {
         this.sprites = sprites;
         this.sprites.Changed += this.Invalidate;
-        this.DoubleBuffered = true;
-        this.AutoScroll = true;
-        this.TabStop = true;
         this.BackColor = DashboardTheme.Background;
         this.AccessibleName = "Pokémon-Grid";
     }
@@ -47,24 +44,27 @@ internal sealed class RosterGrid : ScrollableControl
         int count = this.data.Columns.Length;
         if (count == 0 || this.data.Rows.Length == 0)
         {
-            this.AutoScrollMinSize = Size.Empty;
+            this.ContentSize = Size.Empty;
             return;
         }
-        int scrollbar = this.VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
+        int height = Header + this.data.Rows.Length * RowHeight + 3;
+        int minimumWidth = count * 152 + (count - 1) * Gap;
+        int availableHeight = this.ClientSize.Height - (minimumWidth > this.ClientSize.Width ? this.RailSize : 0);
+        int scrollbar = height > availableHeight ? this.RailSize : 0;
         this.cellWidth = Math.Max(152, (this.ClientSize.Width - scrollbar - (count - 1) * Gap) / count);
-        this.AutoScrollMinSize = new Size((this.cellWidth + Gap) * count - Gap, Header + this.data.Rows.Length * RowHeight + 3);
+        this.ContentSize = new Size((this.cellWidth + Gap) * count - Gap, height);
     }
 
-    protected override void OnPaint(PaintEventArgs e)
+    protected override void PaintViewport(PaintEventArgs e)
     {
-        base.OnPaint(e);
         var canvas = e.Graphics;
-        var scroll = this.AutoScrollPosition;
+        var scroll = new Point(-this.ScrollPosition.X, -this.ScrollPosition.Y);
         this.typeIcons.Clear();
-        var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
+        var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
+            TextFormatFlags.PreserveGraphicsClipping;
         if (this.data.Rows.Length == 0)
         {
-            TextRenderer.DrawText(canvas, "Keine Pokémon in dieser Ansicht", this.heading, this.ClientRectangle, DashboardTheme.Muted, center);
+            TextRenderer.DrawText(canvas, "Keine Pokémon in dieser Ansicht", this.heading, this.Viewport, DashboardTheme.Muted, center);
             return;
         }
         for (int col = 0; col < this.data.Columns.Length; col++)
@@ -76,7 +76,7 @@ internal sealed class RosterGrid : ScrollableControl
         for (int row = 0; row < this.data.Rows.Length; row++)
         {
             int y = scroll.Y + Header + row * RowHeight;
-            if (y + RowHeight < this.ClientRectangle.Top || y > this.ClientRectangle.Bottom) continue;
+            if (y + RowHeight < this.Viewport.Top || y > this.Viewport.Bottom) continue;
             var group = this.data.Rows[row];
             int first = Array.FindIndex(group.Slots, p => p is not null);
             int last = Array.FindLastIndex(group.Slots, p => p is not null);

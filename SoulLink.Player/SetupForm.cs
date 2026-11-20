@@ -118,15 +118,19 @@ internal sealed class SetupForm : Form
         var page = new TabPage("Diagnose");
         var view = this.runtime.Status();
         AddText(page, "Nur bei Verbindungsproblemen benötigt", 22, 25, 530, 32, true);
-        var details = new TextBox
+        var details = new RichTextBox
         {
-            Bounds = new Rectangle(22, 80, 530, 350),
             Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.None,
+            BackColor = DashboardTheme.Background,
+            ForeColor = DashboardTheme.Text,
+            DetectUrls = false,
             Text = $"mGBA: {view.Bridge}\r\nRun: {view.State}\r\n\r\n" + string.Join("\r\n", view.Log),
         };
-        page.Controls.Add(details);
+        var diagnostics = DashboardScrollHost.ForText(details);
+        diagnostics.Bounds = new Rectangle(22, 80, 530, 350);
+        page.Controls.Add(diagnostics);
         return page;
     }
 

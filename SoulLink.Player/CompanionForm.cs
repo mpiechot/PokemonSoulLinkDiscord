@@ -303,7 +303,7 @@ internal sealed class CompanionForm : Form
         if (this.closing) return;
         using var dialog = new Form();
         RunDialogs.Configure(dialog, "Fangorte", new Size(540, 330));
-        var tags = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(4) };
+        var tags = new FlowLayoutPanel { Padding = new Padding(4), BackColor = DashboardTheme.Surface };
         var places = (this.runtime.Status().Run?.CaughtAreas ?? []).Select(RubyNames.Area).Distinct().ToArray();
         if (places.Length == 0)
             tags.Controls.Add(new Label { Text = "Noch keine Fänge erfasst.", AutoSize = true, ForeColor = DashboardTheme.Muted });
@@ -315,7 +315,11 @@ internal sealed class CompanionForm : Form
             tag.ForeColor = DashboardTheme.Accent;
             tags.Controls.Add(tag);
         }
-        dialog.Controls.Add(tags);
+        dialog.Controls.Add(new DashboardScrollHost(tags, width => tags.GetPreferredSize(new Size(width, 0)).Height)
+        {
+            Dock = DockStyle.Fill,
+            AccessibleName = "Fangorte",
+        });
         dialog.ShowDialog(this);
     }
 

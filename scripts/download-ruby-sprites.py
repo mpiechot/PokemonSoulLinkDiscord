@@ -23,6 +23,8 @@ if artifact_root not in directory.parents:
 directory.mkdir(parents=True, exist_ok=True)
 type_directory = directory / "tcg-icons"
 type_directory.mkdir(exist_ok=True)
+game_type_directory = directory / "type-icons"
+game_type_directory.mkdir(exist_ok=True)
 
 
 def download(item):
@@ -60,6 +62,10 @@ energies = ("Combat", "Dragon", "Eau", "Électrique", "Fée", "Feu", "Incolore",
 items.extend((type_directory / f"{energy}.png",
               ENERGY_SOURCE + urllib.parse.quote(f"Miniature_Type_{energy}_(flat)_JCC.svg") + "?width=120")
              for energy in energies)
+game_types = {"flying": 3, "poison": 4, "ground": 5, "rock": 6, "bug": 7, "ghost": 8, "ice": 15}
+items.extend((game_type_directory / f"{kind}.png",
+              SOURCE + f"sprites/types/generation-viii/legends-arceus/small/{index}.png")
+             for kind, index in game_types.items())
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     failures = [error for error in pool.map(download, items) if error]
 if not arguments.type_icons_only:

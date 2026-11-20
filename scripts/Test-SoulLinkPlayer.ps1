@@ -20,7 +20,8 @@ function Run-Player([string]$Path, [string[]]$Arguments) {
             throw "Packaged check timed out ($($Arguments[0]))."
         }
         if ($process.ExitCode -ne 0) {
-            $report = if ($Arguments[0] -in '--smoke-game','--smoke-pc-items','--smoke-close') { Join-Path $Arguments[1] 'game-error.txt' }
+            $report = if ($Arguments[0] -eq '--smoke-test') { Join-Path $Arguments[1] 'package-error.txt' }
+                elseif ($Arguments[0] -in '--smoke-game','--smoke-pc-items','--smoke-close') { Join-Path $Arguments[1] 'game-error.txt' }
             if ($report -and (Test-Path -LiteralPath $report)) { Get-Content -LiteralPath $report | Write-Host }
             throw "Packaged startup failed: $($process.ExitCode)."
         }

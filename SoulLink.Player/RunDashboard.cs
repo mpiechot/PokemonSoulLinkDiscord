@@ -25,7 +25,6 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.locations.Dock = DockStyle.Fill;
         this.locations.Multiline = true;
         this.locations.ReadOnly = true;
-        this.locations.ScrollBars = RichTextBoxScrollBars.Vertical;
         this.locations.WordWrap = false;
         this.locations.DetectUrls = false;
         this.locations.BorderStyle = BorderStyle.None;
@@ -38,7 +37,10 @@ internal sealed class RunDashboard : TableLayoutPanel
             if (this.view?.Run is { } run) this.ArenaChanged?.Invoke(run.Id, number, complete);
         };
         this.Controls.Add(this.map, 0, 0);
-        this.Controls.Add(this.locations, 0, 1);
+        var legend = DashboardScrollHost.ForText(this.locations);
+        legend.Dock = DockStyle.Fill;
+        legend.TabStop = false;
+        this.Controls.Add(legend, 0, 1);
         this.Controls.Add(this.arena, 0, 2);
     }
 

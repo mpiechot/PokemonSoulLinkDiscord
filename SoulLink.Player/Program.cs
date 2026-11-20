@@ -60,8 +60,18 @@ internal static class Program
         var rom = new RomSelection(Path.Combine(home, $"rom-{profileKey}.txt"));
         if (smokeTest)
         {
-            using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
+            try
+            {
+                using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
+                DockSmokeTest.VerifyScrollDesign();
+            }
+            catch (Exception error)
+            {
+                File.WriteAllText(Path.Combine(home, "package-error.txt"), error.ToString());
+                Environment.ExitCode = 1;
+                return;
+            }
             string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"));
             File.WriteAllText(Path.Combine(home, "smoke-result.json"), Protocol.Serialize(new
             {

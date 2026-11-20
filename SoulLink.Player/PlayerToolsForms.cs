@@ -145,7 +145,9 @@ internal sealed class RulesForm : Form
         this.input.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         editor.Controls.Add(this.input, 0, 0);
         editor.Controls.Add(this.add, 1, 0);
-        this.Controls.Add(this.rules);
+        var document = DashboardScrollHost.ForText(this.rules);
+        document.Dock = DockStyle.Fill;
+        this.Controls.Add(document);
         this.Controls.Add(editor);
         this.Controls.Add(this.feedback);
         this.input.TextChanged += (_, _) => this.RenderRules();

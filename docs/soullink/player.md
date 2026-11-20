@@ -47,6 +47,6 @@ Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise
 
 Für einen automatischen Test der Mehrspieler-Verbindung auf einem Rechner gibt es `./scripts/Start-SoulLinkDemo.ps1 -Verify`.
 
-Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink lädt Pokémon-Sprites von PokéAPI und transparente Energiesymbole des Sammelkartenspiels über Poképédia. Die Bilder werden lokal gespeichert und sind danach auch offline verfügbar. Boden, Gestein und Kampf verwenden die orange Faust. Der Tooltip nennt den jeweiligen Spieltyp. Die Icons des Discord-Bots sind in der EXE enthalten.
+Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink verwendet die flachen Sammelkarten-Symbole und ergänzt für Typen wie Boden, Gestein und Flug die eigenen Spielsymbole aus Pokémon Legenden: Arceus. Jeder Typ hat ein eigenes Symbol und einen deutschen Tooltip. Heruntergeladene Bilder sind danach auch offline verfügbar. Die Icons des Discord-Bots sind in der EXE enthalten.
 
 Der lokale Spieltest speichert seinen Feed und bestätigte Tode in einer privaten SQLite-Datei pro ROM und Trainer. Bereits erfasste Fänge behalten beim Schnellladen und Neustarten ihre ursprüngliche Uhrzeit. Aus dem Spielstand lässt sich der aktuelle Stand von Team und Box lesen. Fangzeiten und bestätigte SoulLink-Tode stammen aus der Run-Historie.

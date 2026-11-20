@@ -36,6 +36,8 @@ Für einen parallelen Test zu einem laufenden Run **einen eigenen Discord-Test-B
 
    Beende den Testserver mit **Strg+C** im Serverterminal. Ein Spieler beendet mit seiner EXE nur seine Verbindung und die lokal gestartete Spielersitzung. Der gemeinsame Run-Server bleibt für die übrigen Spieler verfügbar.
 
+   Der lokale Standardstart ist unter `http://127.0.0.1:5080` auf diesem Rechner erreichbar. Für zwei Rechner braucht die Spielerdatei eine gemeinsame HTTPS-Adresse mit WebSocket-Unterstützung. Du kannst den Prozess lokal starten und über einen HTTPS-Proxy erreichbar machen oder ihn auf deinem Webserver betreiben. Der Webserver muss den .NET-Prozess ausführen können oder Anfragen daran weiterleiten.
+
 2. In Discord `/run-init name:Test edition:ruby` aufrufen. Der Bot liefert einen Einladungscode. Optional `death-rule:zero-hp-outside-battle` wählen; standardmäßig sind automatische Todesmeldungen deaktiviert.
 3. Falls du die EXE selbst baust, in PowerShell 7 `./scripts/Publish-SoulLinkPlayer.ps1` ausführen. Die fertige Datei liegt unter `artifacts/player/SoulLink.exe`.
 4. Unter **Einrichtung → Für Gastgeber** Server und Einladung eintragen und eine EXE für alle Mitspieler erzeugen. Für entfernte Server HTTPS verwenden. Die Dashboard-EXE verwendet den aktualisierten Testserver aus diesem Branch.

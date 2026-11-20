@@ -3,7 +3,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : ScrollableControl
+internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : DashboardScrollView
 {
     private const int SpriteSize = 66;
     private const int SpriteColumn = SpriteSize + 5;
@@ -32,9 +32,6 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Scrolla
 
     protected override void OnHandleCreated(EventArgs e)
     {
-        this.DoubleBuffered = true;
-        this.AutoScroll = true;
-        this.TabStop = true;
         this.AccessibleName = "Newsfeed";
         sprites.Changed += this.Invalidate;
         base.OnHandleCreated(e);
@@ -46,20 +43,18 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Scrolla
         base.OnHandleDestroyed(e);
     }
 
-    protected override void OnPaint(PaintEventArgs e)
+    protected override void PaintViewport(PaintEventArgs e)
     {
-        base.OnPaint(e);
         var graphics = e.Graphics;
         if (this.cards.Length == 0)
         {
-            this.AutoScrollMinSize = Size.Empty;
-            TextRenderer.DrawText(graphics, this.empty, this.body, Rectangle.Inflate(this.ClientRectangle, -8, -8),
+            this.ContentSize = Size.Empty;
+            TextRenderer.DrawText(graphics, this.empty, this.body, Rectangle.Inflate(this.Viewport, -8, -8),
                 DashboardTheme.Muted, LineFormat);
             return;
         }
 
-        int scrollbar = this.VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
-        int width = Math.Max(1, this.ClientSize.Width - scrollbar - 4);
+        int width = Math.Max(1, this.ClientSize.Width - this.RailSize - 4);
         if (this.measuredWidth != width)
         {
             int top = 4;
@@ -72,10 +67,10 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Scrolla
                 top += card.Height + 7;
             }
             this.measuredWidth = width;
-            this.AutoScrollMinSize = new Size(0, top);
+            this.ContentSize = new Size(0, top);
         }
 
-        int offset = this.AutoScrollPosition.Y;
+        int offset = -this.ScrollPosition.Y;
         foreach (var card in this.cards)
         {
             int y = card.Top + offset;

@@ -8,26 +8,29 @@ internal sealed class RubySprites(string directory, string? cache = null, HttpCl
     private const string EnergySource = "https://www.pokepedia.fr/Sp%C3%A9cial:Chemin_du_fichier/";
     private const int ImageLimit = 256 * 1024;
     private static readonly HttpClient Http = new();
-    private static readonly Dictionary<string, (string Energy, string Label)> Types = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, (string Energy, string Label)> EnergyTypes = new(StringComparer.Ordinal)
     {
         ["normal"] = ("Incolore", "Normal"),
         ["fighting"] = ("Combat", "Kampf"),
-        ["flying"] = ("Incolore", "Flug"),
-        ["poison"] = ("Obscurité", "Gift"),
-        ["ground"] = ("Combat", "Boden"),
-        ["rock"] = ("Combat", "Gestein"),
-        ["bug"] = ("Plante", "Käfer"),
-        ["ghost"] = ("Psy", "Geist"),
         ["steel"] = ("Métal", "Stahl"),
         ["fire"] = ("Feu", "Feuer"),
         ["water"] = ("Eau", "Wasser"),
         ["grass"] = ("Plante", "Pflanze"),
         ["electric"] = ("Électrique", "Elektro"),
         ["psychic"] = ("Psy", "Psycho"),
-        ["ice"] = ("Eau", "Eis"),
         ["dragon"] = ("Dragon", "Drache"),
         ["dark"] = ("Obscurité", "Unlicht"),
         ["fairy"] = ("Fée", "Fee"),
+    };
+    private static readonly Dictionary<string, (int Id, string Label)> GameTypes = new(StringComparer.Ordinal)
+    {
+        ["flying"] = (3, "Flug"),
+        ["poison"] = (4, "Gift"),
+        ["ground"] = (5, "Boden"),
+        ["rock"] = (6, "Gestein"),
+        ["bug"] = (7, "Käfer"),
+        ["ghost"] = (8, "Geist"),
+        ["ice"] = (15, "Eis"),
     };
 
     private readonly Dictionary<string, Bitmap?> loaded = new(StringComparer.Ordinal);
@@ -45,7 +48,10 @@ internal sealed class RubySprites(string directory, string? cache = null, HttpCl
 
     public (Image? Image, string Label) TypeIcon(string type)
     {
-        if (!Types.TryGetValue(type, out var entry)) return (null, type);
+        if (GameTypes.TryGetValue(type, out var game))
+            return (this.Load(Path.Combine("type-icons", type + ".png"),
+                $"{SpriteSource}types/generation-viii/legends-arceus/small/{game.Id}.png"), game.Label);
+        if (!EnergyTypes.TryGetValue(type, out var entry)) return (null, type);
         string filename = Uri.EscapeDataString($"Miniature_Type_{entry.Energy}_(flat)_JCC.svg");
         return (this.Load(Path.Combine("tcg-icons", entry.Energy + ".png"), $"{EnergySource}{filename}?width=120"), entry.Label);
     }
