@@ -19,9 +19,17 @@ public static class Protocol
 }
 
 public enum RunPhase { Lobby, Active, Paused, Finished }
-public enum DeathRule { Disabled, ZeroHpOutsideBattle }
+public enum DeathRule { Disabled, ZeroHpOutsideBattle, ConfirmFaint }
 public enum Placement { Party, Box }
 public enum PlayerMarker { Circle, Diamond, Star, Triangle, Square, Heart, Moon, Sun }
+
+public sealed record MapPosition(int X, int Y, int Width, int Height, bool Outdoor)
+{
+    public bool Valid => Width is > 0 and <= 1024 && Height is > 0 and <= 1024 && X >= 0 && Y >= 0 && X < Width && Y < Height;
+}
+
+public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer);
+public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default);
 
 public sealed record PokemonState
 {
@@ -54,10 +62,13 @@ public sealed record GameSnapshot
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; }
+    public MapPosition? Position { get; init; }
     public string AreaName => AreaCatalog.Name(this.Area);
     public bool InBattle { get; init; }
+    public BattleTrace[]? Faints { get; init; }
     public byte? BadgeMask { get; init; }
     public int[]? GymLevels { get; init; }
+    public int[]?[]? GymLineups { get; init; }
     public List<PokemonState> Pokemon { get; init; } = [];
 }
 
@@ -100,6 +111,11 @@ public sealed class AutomationPlayer
     public GameSnapshot? LastSnapshot { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? DisplayArea { get; set; }
+    public MapPosition? DisplayPosition { get; set; }
+    public byte ArenaConfirmed { get; set; }
+    public byte ArenaReverted { get; set; }
+    public byte ArenaProgress => (byte)(((this.LastSnapshot?.BadgeMask ?? this.DisplayBadges ?? 0) | this.ArenaConfirmed) & ~this.ArenaReverted);
+    public byte? DisplayBadges { get; set; }
     public bool RebaselineAllowed { get; set; }
     public List<TrackedPokemon> Pokemon { get; set; } = [];
 }
@@ -112,6 +128,9 @@ public sealed class TrackedPokemon
     public bool Present { get; set; } = true;
     public bool Imported { get; set; }
     public int ZeroHpSamples { get; set; }
+    public PendingDeath? PendingDeath { get; set; }
+    public BattleTrace? FaintBattle { get; set; }
+    public bool FaintDismissed { get; set; }
 }
 
 public sealed class Encounter
@@ -127,8 +146,9 @@ public sealed class Encounter
     public Dictionary<Guid, Guid> Members { get; set; } = [];
 }
 
-public sealed record AutomationEvent(Guid Id, DateTimeOffset At, string Kind, string Message);
+public sealed record AutomationEvent(Guid Id, DateTimeOffset At, string Kind, string Message,
+    Guid? PlayerId = null, int? Area = null, int? MapGroup = null, int? MapNumber = null, MapPosition? Position = null);
 public sealed record Notification(Guid Id, Guid RunId, ulong ChannelId, string Message);
 
-public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.Disabled);
+public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.ConfirmFaint);
 public sealed record RunAction(string Guild, string? Reason = null);

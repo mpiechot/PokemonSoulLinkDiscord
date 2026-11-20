@@ -4,9 +4,17 @@ Du bekommst **eine Spielerdatei als EXE**. Beim ersten Start wählst du deinen S
 
 Andere Runs haben eigene Spielerdateien und eigene ROM-Auswahlen. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
-Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint links mit seiner eigenen Menüleiste. Mit **Spiel fokussieren** gehen Tastatureingaben zurück an den Emulator. Über **mGBA lösen** kannst du zum separaten Emulatorfenster wechseln. Rechts siehst du Team, Links, Box, Todesfälle, Shinies und Run-Verlauf. Die Minimap zeigt die originale Hoenn-Karte aus deiner ROM und platziert Spieler in ihrem aktuellen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position. Die nächste Arena richtet sich nach deinen Orden. SoulLink verwendet die Level aus der aktiven Rubin-ROM, wenn deren Trainertabelle erkannt wird, und kennzeichnet sonst die Standardlevel.
+Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Über **mGBA lösen** kannst du zum separaten Emulatorfenster wechseln.
 
-Falls mGBA beim Start sein Skriptfenster öffnet, kannst du weiterhin im Spielfenster spielen. SoulLink liest das Spiel über die mitgelieferte Brücke. Gespeichert wird wie gewohnt im Emulator.
+Links zeigt der Newsfeed neue Fänge und weitere Ereignisse. Rechts stehen Team, Links, Box, Todesfälle, Shinies und die Übersicht **Fangorte**. Jedes Pokémon zeigt seinen im Spiel gespeicherten Fangort. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
+
+Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird deine Position aus der aktuellen Spielfeldkachel auf die Weltkarte übertragen. In Gebäuden erscheint der Marker am zugehörigen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position.
+
+Die nächste Arena richtet sich nach deinen Orden. **Abschließen** verbucht sie für deinen Spieler. **Zurücknehmen** nimmt den zuletzt verbuchten Arena-Fortschritt zurück. Für erkannte Arenateams zeigt SoulLink die Level aus der geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
+
+Nach den ersten gültigen Spieldaten schließt SoulLink das bei der automatischen Skripteinrichtung geöffnete Fenster. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Im gemeinsamen Run beginnt die Fang-Erfassung mit dem Start der Lobby.
+
+Neue Runs fragen bei einem erkannten Kampfunfähigkeitsfall nach. Im Dialog kannst du den Tod bestätigen und einen Grund angeben. Erkannte Gegner und die zuletzt erfasste Attacke werden angezeigt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
 
 Für einen ROM-Wechsel mGBA schließen und in SoulLink **Einrichtung → Spiel → Andere ROM auswählen** öffnen. Falls mGBA bereits offen ist, fordert SoulLink vor dem Start zum Schließen auf. So läuft jeweils nur eine Emulatorinstanz.
 

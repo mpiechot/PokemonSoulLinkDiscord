@@ -70,6 +70,37 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species) {
     $rom[0x154] = 5
     $rom[0x156] = 15
     $rom[0x158] = 20
+    # Branch from the party initializer to a short series of 32-bit writes.
+    [BitConverter]::GetBytes(0xEA000054u).CopyTo($rom, 0xE8)
+    $writes = [ordered]@{
+        '0202E828' = 0x08000600u # Map header: pointer to a 28 x 24 layout.
+        '030048B0' = 0x00010001u # Active player object.
+        '030048C0' = 0x000E000Cu # Live (5, 7), padding of seven metatiles.
+    }
+    [BitConverter]::GetBytes(28).CopyTo($rom, 0x600)
+    [BitConverter]::GetBytes(24).CopyTo($rom, 0x604)
+    if ($Revision -eq 1) {
+        $rom[0x156] = 0
+        $writes['03001BAC'] = 0x200u # Main.inBattle.
+        $writes['020239F8'] = 8u # Trainer battle.
+        $writes['02024A68'] = 2u # Battler count; first battler maps to party slot zero.
+        $writes['02024A70'] = 0x01000000u # Opposing side for battler one.
+        $writes['02024AAC'] = 20u # Downed battler's max HP.
+        $writes['02024AD8'] = 25u # Opposing Pikachu.
+        $writes['02024C3C'] = 33u # Last landed move: Tackle.
+        $writes['02024C5C'] = 1u # Target was hit by battler one.
+        $writes['0202FF5C'] = 0x10000u # Trainer ID one.
+        [byte[]]$trainerName = 0xC7,0xBB,0xD2,0xFF
+        $trainerName.CopyTo($rom, 0x1FD478 + 40 + 4)
+    }
+    $cursor = 0x240
+    foreach ($address in $writes.Keys) {
+        # ARM instructions: load address and value, store, jump past the literals.
+        [uint[]]$setter = 0xE59F0008u,0xE59F1008u,0xE5801000u,0xEA000001u,([Convert]::ToUInt32($address, 16)),$writes[$address]
+        [Buffer]::BlockCopy($setter, 0, $rom, $cursor, 24)
+        $cursor += 24
+    }
+    [BitConverter]::GetBytes(0xEAFFFFFEu).CopyTo($rom, $cursor)
     # An original single-color tile and a map of that tile test the cartridge decoder without game artwork.
     $rom[0x3F213A] = 0x1F
     (New-CompressedFill 64 0x71).CopyTo($rom, 0x3F2178)
@@ -100,8 +131,15 @@ for ($revision = 0; $revision -le 1; $revision++) {
     if (Test-Path -LiteralPath $mapResult) { Remove-Item -LiteralPath $mapResult }
     Run-Player $player @('--smoke-game', $preparedHome, $romPath)
     $game = Get-Content (Join-Path $preparedHome 'game-result.json') -Raw | ConvertFrom-Json
-    if ($game.layoutId -ne 'ruby-axvd-reference-v2' -or $game.pokemon.Count -ne 1 -or $game.pokemon[0].species -ne $species -or $game.pokemon[0].hp -ne 15) {
+    if ($game.layoutId -ne 'ruby-axvd-reference-v2' -or $game.pokemon.Count -ne 1 -or $game.pokemon[0].species -ne $species) {
         throw "Live emulator bridge returned incorrect party data for revision $revision."
+    }
+    if ($revision -eq 0 -and ($game.pokemon[0].hp -ne 15 -or $game.position.x -ne 5 -or $game.position.y -ne 7)) {
+        throw 'Live emulator bridge did not read the expected coordinates.'
+    }
+    if ($revision -eq 1 -and ($game.pokemon[0].hp -ne 0 -or -not $game.inBattle -or $game.faints.Count -ne 1 -or
+        $game.faints[0].opponentSpecies -ne 25 -or $game.faints[0].move -ne 33 -or $game.faints[0].trainer -ne 'MAX')) {
+        throw 'Live emulator bridge did not read the expected battle context.'
     }
     if ((Get-Content -LiteralPath $mapResult -Raw) -ne '224×120') {
         throw "The original-map decoder failed for revision $revision."

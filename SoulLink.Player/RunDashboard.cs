@@ -5,16 +5,25 @@ namespace SoulLink.Player;
 
 internal sealed class RunDashboard : TableLayoutPanel
 {
-    private static readonly string[] Tabs = ["Team", "Links", "Box", "Tot", "Shinies", "Feed"];
+    private static readonly string[] Tabs = ["Team", "Links", "Box", "Tot", "Shinies", "Fangorte"];
     private readonly ComboBox player = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly HoennMap map = new() { Dock = DockStyle.Fill };
     private readonly RichTextBox locations = new();
-    private readonly Label arena = new();
-    private readonly TabControl navigation = new();
-    private readonly DashboardCards[] cards;
+    private readonly ArenaPanel arena = new() { Dock = DockStyle.Fill };
+    private readonly DashboardCards cards;
+    private readonly FlowLayoutPanel places = new() { Dock = DockStyle.Fill, AutoScroll = true, Visible = false, Padding = new Padding(2) };
+    private readonly Button[] navigation;
     private readonly RubySprites sprites;
     private ClientView? view;
     private PlayerChoice[] choices = [];
+    private int selectedPanel;
+    private string[] lastTags = [];
+
+    public event Action<int, bool>? ArenaChanged
+    {
+        add => this.arena.ProgressChange += value;
+        remove => this.arena.ProgressChange -= value;
+    }
 
     public RunDashboard(string spriteDirectory)
     {
@@ -23,11 +32,12 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.BackColor = DashboardTheme.Surface;
         this.Padding = new Padding(9);
         this.ColumnCount = 1;
-        this.RowCount = 5;
+        this.RowCount = 6;
         this.RowStyles.Add(new RowStyle(SizeType.Absolute, 172));
         this.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        this.RowStyles.Add(new RowStyle(SizeType.Absolute, 63));
+        this.RowStyles.Add(new RowStyle(SizeType.Absolute, 105));
         this.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        this.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         this.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         this.locations.Dock = DockStyle.Fill;
@@ -41,32 +51,33 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.locations.ForeColor = DashboardTheme.Muted;
         this.locations.TabStop = false;
         this.locations.AccessibleName = "Spielerpositionen";
-        this.arena.Dock = DockStyle.Fill;
-        this.arena.Padding = new Padding(9, 7, 0, 0);
-        this.arena.BackColor = DashboardTheme.Panel;
-        this.arena.ForeColor = DashboardTheme.Text;
         this.arena.AccessibleName = "Nächste Arena";
         this.player.AccessibleName = "Spieler auswählen";
         this.player.BackColor = DashboardTheme.Panel;
         this.player.ForeColor = DashboardTheme.Text;
         this.player.SelectedIndexChanged += (_, _) => this.RenderCards();
-        this.navigation.Dock = DockStyle.Fill;
-        this.navigation.SelectedIndexChanged += (_, _) => this.RenderCards();
-        this.cards = new DashboardCards[Tabs.Length];
-
+        var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(0, 0, 0, 5) };
+        this.navigation = new Button[Tabs.Length];
         for (int i = 0; i < Tabs.Length; i++)
         {
-            var tab = new TabPage(Tabs[i]) { BackColor = DashboardTheme.Surface };
-            var list = this.cards[i] = new DashboardCards(this.sprites) { Dock = DockStyle.Fill };
-            tab.Controls.Add(list);
-            this.navigation.TabPages.Add(tab);
+            int index = i;
+            var tab = this.navigation[i] = DashboardTheme.Button(Tabs[i]);
+            tab.Height = 29;
+            tab.Click += (_, _) => this.SelectPanel(index);
+            toolbar.Controls.Add(tab);
         }
+        this.cards = new DashboardCards(this.sprites) { Dock = DockStyle.Fill };
+        this.SelectPanel(0);
 
         this.Controls.Add(this.map, 0, 0);
         this.Controls.Add(this.locations, 0, 1);
         this.Controls.Add(this.arena, 0, 2);
         this.Controls.Add(this.player, 0, 3);
-        this.Controls.Add(this.navigation, 0, 4);
+        this.Controls.Add(toolbar, 0, 4);
+        var roster = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        roster.Controls.Add(this.cards);
+        roster.Controls.Add(this.places);
+        this.Controls.Add(roster, 0, 5);
     }
 
     public void Render(ClientView view)
@@ -90,15 +101,16 @@ internal sealed class RunDashboard : TableLayoutPanel
         {
             bool local = p.Id == view.LocalPlayerId;
             int? area = local ? view.Snapshot?.Area ?? p.Area : p.Area;
-            return new MapPlayer(p.Name, p.Marker, area, local ? view.Snapshot is not null : p.Connection == "Ready", local);
+            return new MapPlayer(p.Name, local && view.IsLocalRun ? view.Marker : p.Marker, area,
+                local ? view.Snapshot is not null : p.Connection == "Ready", local, local ? view.Snapshot?.Position ?? p.Position : p.Position);
         }).ToList();
         if (!positions.Any(p => p.Local) && view.Snapshot is { } snapshot)
-            positions.Insert(0, new MapPlayer(view.Player.Length > 0 ? view.Player : "Du", view.Marker, snapshot.Area, true, true));
+            positions.Insert(0, new MapPlayer(view.Player.Length > 0 ? view.Player : "Du", view.Marker, snapshot.Area, true, true, snapshot.Position));
         this.map.UpdatePlayers(positions.ToArray());
         string legend = positions.Count == 0
             ? "Spieler erscheinen auf der Karte, sobald Spieldaten vorliegen."
             : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name}  ·  " +
-                (p.Area is not null and not 255 ? AreaCatalog.Name(p.Area.Value) + (p.Live ? "" : " (zuletzt)") : "Warte auf Position")));
+                (p.Area is not null and not 255 ? RubyNames.Area(p.Area.Value) + (p.Live ? "" : " (zuletzt)") : "Warte auf Position")));
         if (this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
         {
             this.locations.Text = legend;
@@ -111,7 +123,7 @@ internal sealed class RunDashboard : TableLayoutPanel
             }
             this.locations.Select(0, 0);
         }
-        this.arena.Text = ArenaText(view.Snapshot);
+        this.arena.Render(view.Snapshot, peers.FirstOrDefault(p => p.Id == view.LocalPlayerId), view.Run?.Phase == RunPhase.Active);
         this.RenderCards();
     }
 
@@ -123,19 +135,21 @@ internal sealed class RunDashboard : TableLayoutPanel
         base.Dispose(disposing);
     }
 
-    private static string ArenaText(GameSnapshot? snapshot)
+    private void SelectPanel(int index)
     {
-        if (snapshot?.BadgeMask is not byte badges) return "NÄCHSTE ARENA\nWarte auf deinen Ordenstand";
-        var gym = RubyDashboardCatalog.NextGym(badges);
-        string label = snapshot.GymLevels is null ? "Rubin-Standardlevel" : "Level aus deiner ROM";
-        return gym is null
-            ? "ARENA-FORTSCHRITT\n8 von 8 Orden"
-            : $"ARENA {gym.Number}  ·  {gym.Name}\n{label}: {string.Join(" / ", snapshot.GymLevels ?? gym.Levels)}";
+        this.selectedPanel = index;
+        for (int i = 0; i < this.navigation.Length; i++)
+        {
+            if (this.navigation[i] is not { } tab) continue;
+            tab.ForeColor = i == index ? DashboardTheme.Accent : DashboardTheme.Text;
+            tab.FlatAppearance.BorderColor = i == index ? DashboardTheme.Accent : DashboardTheme.Border;
+        }
+        this.RenderCards();
     }
 
     private void RenderCards()
     {
-        if (this.view is not { } view || this.navigation.SelectedIndex < 0) return;
+        if (this.view is not { } view) return;
         var selected = this.player.SelectedItem as PlayerChoice;
         var peer = view.Run?.Players.FirstOrDefault(p => p.Id == selected?.Id);
         bool local = peer is null || peer.Id == view.LocalPlayerId;
@@ -143,8 +157,15 @@ internal sealed class RunDashboard : TableLayoutPanel
         var seen = local && view.Snapshot is { } snapshot
             ? snapshot.Pokemon.Select(p => new DashboardPokemon(p, data.Any(old => old.State.Identity == p.Identity && old.Dead), true)).ToArray()
             : data;
-        int panel = this.navigation.SelectedIndex;
+        int panel = this.selectedPanel;
         this.player.Enabled = (panel is 0 or 2 or 3 or 4) && this.choices.Length > 1;
+        this.cards.Visible = panel != 5;
+        this.places.Visible = panel == 5;
+        if (panel == 5)
+        {
+            this.RenderPlaces(view.Run?.Players.SelectMany(p => p.Pokemon ?? []) ?? seen);
+            return;
+        }
         var entries = panel switch
         {
             0 => seen.Where(p => p.Present && p.State.Container == Placement.Party).OrderBy(p => p.State.Slot).Select(Card).ToArray(),
@@ -152,7 +173,6 @@ internal sealed class RunDashboard : TableLayoutPanel
             2 => seen.Where(p => p.Present && p.State.Container == Placement.Box).OrderBy(p => p.State.Box).ThenBy(p => p.State.Slot).Select(Card).ToArray(),
             3 => data.Where(p => p.Dead).Select(Card).ToArray(),
             4 => (data.Length > 0 ? data : seen).Where(p => p.State.IsShiny).Select(Card).ToArray(),
-            5 => (view.Run?.History ?? []).Reverse().Select(e => new DashboardEntry(EventTitle(e.Kind), e.Message, e.At.ToLocalTime().ToString("HH:mm"))).ToArray(),
             _ => [],
         };
         string empty = panel switch
@@ -162,21 +182,47 @@ internal sealed class RunDashboard : TableLayoutPanel
             2 => "Keine Pokémon in der Box erfasst",
             3 => "Keine Todesfälle erfasst",
             4 => "Keine Shinies erfasst",
-            _ => "Noch keine Ereignisse",
+            _ => "Noch nichts erfasst",
         };
-        this.cards[panel].Render(entries.Length == 0 ? [new DashboardEntry(empty, "")] : entries);
+        this.cards.Render(entries.Length == 0 ? [new DashboardEntry(empty, "")] : entries);
+    }
+
+    private void RenderPlaces(IEnumerable<DashboardPokemon> pokemon)
+    {
+        var labels = pokemon.Where(p => !p.State.IsEgg && p.State.MetArea != 255)
+            .GroupBy(p => RubyNames.Area(p.State.MetArea)).OrderBy(group => group.Min(p => p.State.MetArea))
+            .Select(group => $"{group.Key}  ·  {group.Count()}").ToArray();
+        if (labels.Length == 0) labels = ["Noch keine Fangorte erfasst"];
+        if (labels.SequenceEqual(this.lastTags)) return;
+        this.lastTags = labels;
+        this.places.SuspendLayout();
+        foreach (Control old in this.places.Controls.Cast<Control>().ToArray()) old.Dispose();
+        foreach (string text in labels)
+        {
+            this.places.Controls.Add(new Label
+            {
+                Text = text,
+                AutoSize = true,
+                ForeColor = DashboardTheme.Accent,
+                BackColor = DashboardTheme.Panel,
+                Padding = new Padding(7, 5, 7, 5),
+                Margin = new Padding(3),
+            });
+        }
+        this.places.ResumeLayout();
     }
 
     private static DashboardEntry Card(DashboardPokemon pokemon)
     {
         var state = pokemon.State;
-        string heading = state.IsEgg ? "Ei" : state.DisplayName;
+        string heading = state.IsEgg ? "Ei" : RubyNames.Pokemon(state.Species);
         if (heading.Length > 0) heading = char.ToUpperInvariant(heading[0]) + heading[1..];
         if (state.IsShiny && !state.IsEgg) heading = "★ " + heading;
         string details = state.Container == Placement.Party
             ? $"Lv. {state.Level}  ·  KP {state.Hp}/{state.MaxHp}"
             : $"Box {(state.Box ?? 0) + 1}  ·  Platz {state.Slot + 1}";
-        return new DashboardEntry(heading, details, pokemon.Dead ? "TOT" : "", state);
+        return new DashboardEntry(heading, details, pokemon.Dead ? "TOT" : "", state,
+            state.IsEgg ? "" : $"Fangort · {RubyNames.Area(state.MetArea)}");
     }
 
     private static IEnumerable<DashboardEntry> LinkCards(DashboardLink link)
@@ -198,7 +244,7 @@ internal sealed class RunDashboard : TableLayoutPanel
         }
     }
 
-    private static string EventTitle(string kind) => kind switch
+    internal static string EventTitle(string kind) => kind switch
     {
         "caught" or "extra-catch" => "Fang",
         "linked" => "Link vollständig",
@@ -207,26 +253,28 @@ internal sealed class RunDashboard : TableLayoutPanel
         "death-undone" => "Tod zurückgenommen",
         "encounter-failed" => "Fang verpasst",
         "badge" => "Orden",
+        "arena-completed" => "Arena abgeschlossen",
+        "arena-reverted" => "Arena zurückgenommen",
         _ => "Run",
     };
 
     private sealed record PlayerChoice(Guid Id, string Name);
 }
 
-internal sealed record DashboardEntry(string Title, string Detail, string Badge = "", PokemonState? Pokemon = null);
+internal sealed record DashboardEntry(string Title, string Detail, string Badge = "", PokemonState? Pokemon = null, string Location = "");
 
 internal sealed class DashboardCards : ListBox
 {
-    private readonly RubySprites sprites;
+    private readonly RubySprites? sprites;
     private readonly Font heading = new("Segoe UI", 10, FontStyle.Bold);
     private readonly Font small = new("Segoe UI", 8);
     private DashboardEntry[] current = [];
 
-    public DashboardCards(RubySprites sprites)
+    public DashboardCards(RubySprites? sprites = null)
     {
         this.sprites = sprites;
         this.DrawMode = DrawMode.OwnerDrawFixed;
-        this.ItemHeight = 72;
+        this.ItemHeight = 92;
         this.IntegralHeight = false;
         this.BorderStyle = BorderStyle.None;
         this.BackColor = DashboardTheme.Surface;
@@ -270,7 +318,7 @@ internal sealed class DashboardCards : ListBox
             var icon = new Rectangle(textX, rect.Y + 8, 46, 46);
             using var tile = new SolidBrush(DashboardTheme.Surface);
             e.Graphics.FillEllipse(tile, icon);
-            if (this.sprites.Find(appearance, entry.Pokemon!.IsShiny) is { } image)
+            if (this.sprites?.Find(appearance, entry.Pokemon!.IsShiny) is { } image)
             {
                 e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                 e.Graphics.DrawImage(image, icon);
@@ -284,7 +332,7 @@ internal sealed class DashboardCards : ListBox
         }
 
         int width = Math.Max(1, rect.Right - textX - 7);
-        TextRenderer.DrawText(e.Graphics, entry.Title, this.heading, new Rectangle(textX, rect.Y + 5, width - (entry.Badge.Length > 0 ? 92 : 0), 20),
+        TextRenderer.DrawText(e.Graphics, entry.Title, this.heading, new Rectangle(textX, rect.Y + 5, Math.Max(1, width - (entry.Badge.Length > 0 ? 60 : 0)), 20),
             entry.Pokemon?.IsShiny == true ? DashboardTheme.Gold : DashboardTheme.Text, TextFormatFlags.EndEllipsis);
         if (entry.Badge.Length > 0)
         {
@@ -308,6 +356,9 @@ internal sealed class DashboardCards : ListBox
                 x += tagWidth + 5;
             }
         }
+        if (entry.Location.Length > 0)
+            TextRenderer.DrawText(e.Graphics, entry.Location, this.small, new Rectangle(textX, rect.Y + 63, width, 17),
+                DashboardTheme.Muted, TextFormatFlags.EndEllipsis);
     }
 
     protected override void Dispose(bool disposing)

@@ -8,7 +8,9 @@ internal static class DashboardProjection
     {
         var playerById = run.Players.ToDictionary(p => p.Id);
         var players = run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection,
-            p.Marker, p.DisplayArea ?? p.LastSnapshot?.Area, p.Pokemon.Select(ProjectPokemon).ToArray())).ToArray();
+            p.Marker, p.DisplayArea ?? p.LastSnapshot?.Area, p.Pokemon.Select(ProjectPokemon).ToArray(),
+            p.DisplayPosition ?? p.LastSnapshot?.Position, p.ArenaProgress,
+            p.Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().ToArray())).ToArray();
         var links = run.Encounters.Select(encounter =>
         {
             var members = encounter.Members.Select(pair =>
@@ -16,7 +18,7 @@ internal static class DashboardProjection
                 var player = playerById[pair.Key];
                 return (player.Name, Pokemon: player.Pokemon.Single(p => p.Id == pair.Value));
             }).ToArray();
-            return new DashboardLink(encounter.Name, StatusPresenter.LinkState(encounter, members.Select(m => m.Pokemon)),
+            return new DashboardLink(RubyNames.Area(encounter.Area), StatusPresenter.LinkState(encounter, members.Select(m => m.Pokemon)),
                 members.Select(m => new DashboardLinkMember(m.Name, ProjectPokemon(m.Pokemon))).ToArray());
         }).ToArray();
         return new ClientRunView(run.Name, run.Phase, run.Id, players, StatusPresenter.Lines(run, p => p.Connection).ToArray(),

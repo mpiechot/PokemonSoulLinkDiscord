@@ -9,7 +9,10 @@ local profiles = {
         id = "ruby-axvd-reference-v2",
         party = 0x03004370, partyCount = 0x03004360,
         storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770,
-        stats = 0x0820BBE8, trainers = 0x081FD478
+        stats = 0x0820BBE8, trainers = 0x081FD478,
+        mapHeader = 0x0202E828, avatar = 0x0202E858, objects = 0x030048B0,
+        battle = {flags = 0x020239F8, count = 0x02024A68, slots = 0x02024A6A, sides = 0x02024A72,
+            mons = 0x02024A80, lastMoves = 0x02024C3C, lastHitBy = 0x02024C5C, trainer = 0x0202FF5E}
     }
 }
 local port = SOULLINK_PORT or 5091
@@ -17,6 +20,9 @@ local peer, pending, position = nil, nil, 1
 local epoch = tostring({}):gsub("[^%w]", "")
 local tick, lastFrame = 0, -1
 local lastError = ""
+local activeProfile
+local battleFaints, lastPosition = {}, "null"
+local gymLineups, rubyTypes
 
 -- Resolve the core for each read because the newer bindings return a short-lived reference.
 local function readCore()
@@ -67,29 +73,71 @@ local function readTypes(profile)
     return table.concat(result)
 end
 
-local function readNextGym(profile, badges)
+local function readGym(profile, gym)
     if not profile.trainers then return "null" end
-    for gym = 0, 7 do
-        if (badges & (1 << gym)) == 0 then
-            local trainer = profile.trainers + (265 + gym) * 40
-            local flags = read8(trainer)
-            local count = read8(trainer + 0x20)
-            local party = read32(trainer + 0x24)
-            local stride = (flags & 1) == 0 and 8 or 16
-            if flags > 3 or count < 1 or count > 6 or read8(trainer + 1) ~= 25 or
-                read8(trainer + 3) ~= 71 + gym or party < 0x08000000 or party + count * stride > 0x0A000000 then
-                return "null"
+    local trainer = profile.trainers + (265 + gym) * 40
+    local flags = read8(trainer)
+    local count = read8(trainer + 0x20)
+    local party = read32(trainer + 0x24)
+    local stride = (flags & 1) == 0 and 8 or 16
+    if flags > 3 or count < 1 or count > 6 or read8(trainer + 1) ~= 25 or
+        read8(trainer + 3) ~= 71 + gym or party < 0x08000000 or party + count * stride > 0x0A000000 then
+        return "null"
+    end
+    local levels = {}
+    for slot = 0, count - 1 do
+        local level = read16(party + slot * stride + 2)
+        if level < 1 or level > 100 then return "null" end
+        levels[slot + 1] = level
+    end
+    return "[" .. table.concat(levels, ",") .. "]"
+end
+
+local function readPosition(profile, group)
+    if not profile.mapHeader or not profile.avatar or not profile.objects then return "null" end
+    local layout = read32(profile.mapHeader)
+    local avatar = read8(profile.avatar + 5)
+    if layout < 0x08000000 or layout >= 0x0A000000 or avatar >= 16 then return "null" end
+    local object = profile.objects + 36 * avatar
+    if (read8(object) & 1) == 0 or (read8(object + 2) & 1) == 0 then return "null" end
+    local x, y = read16(object + 0x10) - 7, read16(object + 0x12) - 7
+    local width, height = read32(layout), read32(layout + 4)
+    if width < 1 or width > 1024 or height < 1 or height > 1024 or x < 0 or x >= width or y < 0 or y >= height then return "null" end
+    return string.format('{"x":%d,"y":%d,"width":%d,"height":%d,"outdoor":%s}', x, y, width, height, tostring(group == 0))
+end
+
+local function captureBattle(profile)
+    local addresses = profile.battle
+    if not addresses or (read8(profile.main + 0x43D) & 2) == 0 then return end
+    local count = read8(addresses.count)
+    if count < 2 or count > 4 then return end
+    local trainer = "null"
+    if profile.trainers and (read32(addresses.flags) & 8) ~= 0 then
+        local id = read16(addresses.trainer)
+        if id > 0 and id < 694 then trainer = '"' .. hex(profile.trainers + id * 40 + 4, 12) .. '"' end
+    end
+    for battler = 0, count - 1 do
+        local partySlot = read16(addresses.slots + battler * 2)
+        if (read8(addresses.sides + battler) & 1) == 0 and partySlot < 6 then
+            local mon = addresses.mons + battler * 88
+            local hp = read16(mon + 0x28)
+            if hp == 0 and read16(mon + 0x2C) > 0 then
+                local attacker = read8(addresses.lastHitBy + battler)
+                local move = read16(addresses.lastMoves + battler * 2)
+                local species = 0
+                if attacker < count and (read8(addresses.sides + attacker) & 1) ~= 0 then
+                    species = read16(addresses.mons + attacker * 88)
+                end
+                local earlier = battleFaints[partySlot]
+                if not earlier or (earlier.move == 0 and species > 0 and move > 0 and move < 355) then
+                    battleFaints[partySlot] = {species = species, move = move > 0 and move < 355 and species > 0 and move or 0,
+                        trainer = trainer, pid = read32(mon + 0x48), ot = read32(mon + 0x54)}
+                end
+            elseif hp > 0 then
+                battleFaints[partySlot] = nil
             end
-            local levels = {}
-            for slot = 0, count - 1 do
-                local level = read16(party + slot * stride + 2)
-                if level < 1 or level > 100 then return "null" end
-                levels[slot + 1] = level
-            end
-            return "[" .. table.concat(levels, ",") .. "]"
         end
     end
-    return "null"
 end
 
 local function sendPending()
@@ -113,6 +161,7 @@ local function snapshot(frame)
         error(string.format("No read-only profile for ROM %q revision %d.", code, revision), 0)
     end
     local profile = SOULLINK_PROFILE or reference
+    activeProfile = profile
     local count = read8(profile.partyCount)
     local currentBox = read8(profile.storage)
     local hours = read16(profile.save2 + 0x0E)
@@ -140,14 +189,42 @@ local function snapshot(frame)
         end
     end
     local battle = (read8(profile.main + 0x43D) & 2) ~= 0
+    local group, number = read8(profile.save1 + 4), read8(profile.save1 + 5)
+    if not battle then
+        local positionOk, currentPosition = pcall(readPosition, profile, group)
+        lastPosition = positionOk and currentPosition or "null"
+    end
+    local faints = {}
+    for slot = 0, count - 1 do
+        local hp = read16(profile.party + slot * 100 + 86)
+        if hp > 0 and not battle then battleFaints[slot] = nil end
+        local faint = battleFaints[slot]
+        if hp == 0 and faint and read32(profile.party + slot * 100) == faint.pid and read32(profile.party + slot * 100 + 4) == faint.ot then
+            faints[#faints + 1] = string.format('{"partySlot":%d,"opponentSpecies":%s,"move":%s,"trainerHex":%s}',
+                slot, faint.species > 0 and faint.species or "null", faint.move > 0 and faint.move or "null", faint.trainer)
+        end
+    end
     -- Badges are eight consecutive flags starting at FLAG_BADGE01_GET (0x807).
     local badges = (read16(profile.save1 + 0x1220 + 0x100) >> 7) & 0xFF
-    local gymOk, gym = pcall(readNextGym, profile, badges)
-    local typesOk, types = pcall(readTypes, profile)
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"inBattle":%s,"badgeMask":%d,"gymLevels":%s,"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+    if not gymLineups then
+        gymLineups = {}
+        for index = 0, 7 do
+            local ok, lineup = pcall(readGym, profile, index)
+            gymLineups[index + 1] = ok and lineup or "null"
+        end
+    end
+    local gym = "null"
+    for index = 0, 7 do
+        if (badges & (1 << index)) == 0 then gym = gymLineups[index + 1]; break end
+    end
+    if not rubyTypes then
+        local typesOk, types = pcall(readTypes, profile)
+        rubyTypes = typesOk and types or ""
+    end
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds,
-        read8(profile.save1 + 4), read8(profile.save1 + 5), tostring(battle), badges,
-        gymOk and gym or "null", typesOk and types or "", table.concat(pokemon, ","))
+        group, number, lastPosition, tostring(battle), table.concat(faints, ","), badges,
+        gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
 
 local function onFrame()
@@ -155,8 +232,9 @@ local function onFrame()
     local frame = readCore():currentFrame()
     if frame < lastFrame then epoch = tostring({}):gsub("[^%w]", "") end
     lastFrame = frame
+    if activeProfile then pcall(captureBattle, activeProfile) end
     sendPending()
-    if tick % 60 ~= 0 or pending then return end
+    if tick % 30 ~= 0 or pending then return end
     if not peer then
         peer = socket.tcp()
         peer:add("error", function() stop() end)
@@ -172,8 +250,13 @@ end
 -- Re-loading this file removes only callbacks installed by its previous instance.
 if SOULLINK_STOP then SOULLINK_STOP() end
 local frameCallback = callbacks:add("frame", onFrame)
-local resetCallback = callbacks:add("reset", function() epoch = tostring({}):gsub("[^%w]", ""); stop() end)
-local loadCallback = callbacks:add("loadState", function() epoch = tostring({}):gsub("[^%w]", ""); stop() end)
+local function reset()
+    epoch = tostring({}):gsub("[^%w]", "")
+    activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
+    stop()
+end
+local resetCallback = callbacks:add("reset", reset)
+local loadCallback = callbacks:add("loadState", reset)
 SOULLINK_STOP = function()
     callbacks:remove(frameCallback)
     callbacks:remove(resetCallback)

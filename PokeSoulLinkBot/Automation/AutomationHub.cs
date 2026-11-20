@@ -69,13 +69,42 @@ public sealed class AutomationHub : Hub
     public string HeartbeatWithBridge(Guid sessionId, bool available)
         => this.engine.Heartbeat(this.Registration(), sessionId, available);
 
+    /// <summary>Checks the catch family against the caller's run.</summary>
+    public CatchCheck CheckCatch(string name) => this.engine.CheckCatch(this.Registration(), name);
+
+    /// <summary>Updates arena progress for the registered player.</summary>
+    public void ChangeArena(int number, bool complete)
+    {
+        this.RequireReadTracking();
+        this.engine.ChangeArena(this.Registration(), number, complete);
+    }
+
+    /// <summary>Confirms or dismisses the registered player's pending faint.</summary>
+    public void ResolveFaint(Guid pokemonId, Guid incidentId, bool confirm, string? reason)
+    {
+        this.RequireReadTracking();
+        this.engine.ResolveFaint(this.Registration(), pokemonId, incidentId, confirm, reason);
+    }
+
     /// <summary>Returns only the caller's run.</summary>
     public AutomationRun Status()
     {
-        var run = this.engine.View(this.Registration());
+        var registration = this.Registration();
+        var run = this.engine.View(registration);
         foreach (var player in run.Players)
         {
             player.DisplayArea = player.LastSnapshot?.Area;
+            player.DisplayPosition = player.LastSnapshot?.Position;
+            player.DisplayBadges = player.LastSnapshot?.BadgeMask;
+            if (player.Id != registration.PlayerId)
+            {
+                foreach (var pokemon in player.Pokemon)
+                {
+                    pokemon.PendingDeath = null;
+                    pokemon.FaintBattle = null;
+                }
+            }
+
             player.LastSnapshot = null;
             player.Connection = this.engine.Connection(player);
         }
@@ -85,4 +114,12 @@ public sealed class AutomationHub : Hub
 
     private Registration Registration() => this.Context.Items["registration"] as Registration
         ?? throw new HubException("Authentication required.");
+
+    private void RequireReadTracking()
+    {
+        if (!this.options.Value.Enabled || !this.options.Value.EnableReadTracking)
+        {
+            throw new HubException("Read tracking is disabled.");
+        }
+    }
 }

@@ -14,11 +14,21 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
     private const uint NoActivate = 0x0010;
     private const uint NoZOrder = 0x0004;
     private const uint FrameChanged = 0x0020;
+    private const uint CloseWindow = 0x0010;
     private nint window;
     private int originalStyle;
     private Rectangle originalBounds;
 
     public bool Attached => this.window != 0 && IsWindow(this.window) && GetParent(this.window) == surface.Handle;
+
+    public bool IsFocused
+    {
+        get
+        {
+            nint focused = GetFocus();
+            return this.Attached && (focused == this.window || IsChild(this.window, focused));
+        }
+    }
 
     public bool TryAttach(Process process)
     {
@@ -53,10 +63,22 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
     public bool FocusGame()
     {
         if (!this.Attached) return false;
+        if (this.IsFocused) return true;
         SetFocus(this.window);
-        nint focused = GetFocus();
-        return focused == this.window || IsChild(this.window, focused);
+        return this.IsFocused;
     }
+
+    public static bool CloseStartupScriptingWindow(Process process)
+    {
+        if (process.HasExited) return false;
+        nint view = ScriptingWindow(process);
+        return view != 0 && PostMessage(view, CloseWindow, 0, 0);
+    }
+
+    public static bool HasScriptingWindow(Process process) => !process.HasExited && ScriptingWindow(process) != 0;
+
+    private static nint ScriptingWindow(Process process) =>
+        FindWindow((uint)process.Id, title => title is "Scripting" or "Skripting" or "Skriptverwaltung");
 
     public bool Detach()
     {
@@ -72,7 +94,10 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
 
     public void Dispose() => this.Detach();
 
-    private static nint FindMainWindow(uint processId)
+    private static nint FindMainWindow(uint processId) =>
+        FindWindow(processId, title => title.StartsWith("mGBA", StringComparison.OrdinalIgnoreCase));
+
+    private static nint FindWindow(uint processId, Func<string, bool> matchesTitle)
     {
         nint result = 0;
         EnumWindows((handle, _) =>
@@ -81,7 +106,7 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
             if (owner != processId || !IsWindowVisible(handle)) return true;
             var title = new StringBuilder(256);
             GetWindowText(handle, title, title.Capacity);
-            if (!title.ToString().StartsWith("mGBA", StringComparison.OrdinalIgnoreCase)) return true;
+            if (!matchesTitle(title.ToString())) return true;
             result = handle;
             return false;
         }, 0);
@@ -146,5 +171,27 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
+}
+
+internal sealed class EmulatorSurface : Panel
+{
+    private const int MouseActivate = 0x0021;
+    private const int ParentNotify = 0x0210;
+    private const int LeftButtonDown = 0x0201;
+
+    public event Action? GameClicked;
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        // Qt receives the actual click. This is the parent notification for the native child.
+        if ((message.Msg == ParentNotify && ((long)message.WParam & 0xFFFF) == LeftButtonDown) ||
+            (message.Msg == MouseActivate && ((long)message.LParam >> 16 & 0xFFFF) == LeftButtonDown))
+            this.GameClicked?.Invoke();
+    }
 }

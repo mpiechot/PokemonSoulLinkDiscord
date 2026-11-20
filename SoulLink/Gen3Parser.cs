@@ -83,7 +83,7 @@ public static class Gen3Parser
         };
     }
 
-    private static string DecodeName(ReadOnlySpan<byte> bytes)
+    internal static string DecodeName(ReadOnlySpan<byte> bytes)
     {
         var result = new StringBuilder();
         foreach (byte value in bytes)
@@ -95,8 +95,16 @@ public static class Gen3Parser
                 >= 0xA1 and <= 0xAA => (char)('0' + value - 0xA1),
                 >= 0xBB and <= 0xD4 => (char)('A' + value - 0xBB),
                 >= 0xD5 and <= 0xEE => (char)('a' + value - 0xD5),
-                0xF1 => 'Ä', 0xF2 => 'Ö', 0xF3 => 'Ü', 0xF4 => 'ä', 0xF5 => 'ö', 0xF6 => 'ü',
-                0xAB => '!', 0xAC => '?', 0xAD => '.', 0xAE => '-',
+                0xF1 => 'Ä',
+                0xF2 => 'Ö',
+                0xF3 => 'Ü',
+                0xF4 => 'ä',
+                0xF5 => 'ö',
+                0xF6 => 'ü',
+                0xAB => '!',
+                0xAC => '?',
+                0xAD => '.',
+                0xAE => '-',
                 _ => '�',
             });
         }

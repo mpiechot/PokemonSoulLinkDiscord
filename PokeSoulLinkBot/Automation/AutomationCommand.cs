@@ -39,7 +39,7 @@ public sealed class AutomationCommand : ISlashCommand
         {
             builder.AddOption("name", ApplicationCommandOptionType.String, "Run name.", isRequired: true)
                 .AddOption("edition", ApplicationCommandOptionType.String, "Edition (currently ruby / AXVD).")
-                .AddOption("death-rule", ApplicationCommandOptionType.String, "disabled or zero-hp-outside-battle.");
+                .AddOption("death-rule", ApplicationCommandOptionType.String, "confirm-faint (default), disabled or zero-hp-outside-battle.");
         }
         else if (this.name == "run-load")
         {
@@ -74,17 +74,20 @@ public sealed class AutomationCommand : ISlashCommand
                 throw new InvalidDataException("Only Ruby AXVD is currently supported.");
             }
 
-            string rule = command.Data.Options.FirstOrDefault(o => o.Name == "death-rule")?.Value?.ToString() ?? "disabled";
-            if (rule != "disabled" && rule != "zero-hp-outside-battle")
+            string rule = command.Data.Options.FirstOrDefault(o => o.Name == "death-rule")?.Value?.ToString() ?? "confirm-faint";
+            var deathRule = rule switch
             {
-                throw new InvalidDataException("Unknown death rule.");
-            }
+                "confirm-faint" => DeathRule.ConfirmFaint,
+                "disabled" => DeathRule.Disabled,
+                "zero-hp-outside-battle" => DeathRule.ZeroHpOutsideBattle,
+                _ => throw new InvalidDataException("Unknown death rule."),
+            };
 
             var run = this.engine.Initialize(
                 guild,
                 command.Channel.Id,
                 CommandOptionHelper.GetRequiredStringOption(command, "name"),
-                rule == "disabled" ? DeathRule.Disabled : DeathRule.ZeroHpOutsideBattle);
+                deathRule);
             await response.SendAsync($"Lobby **{run.Name}** created. Invitation: `{run.Invitation}`\nJoin with the local client, then `/soullink action:start`. Existing manual runs remain available.", ephemeral: true);
             return;
         }

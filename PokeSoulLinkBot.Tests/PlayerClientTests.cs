@@ -55,6 +55,23 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public void LocalPlayerFeedShowsACatchAfterTheInitialInventory()
+    {
+        using var client = this.Client(demo: true);
+        var starter = SyntheticPokemon.Raw(1, 392);
+        client.AcceptFrame(SyntheticPokemon.Frame(1, starter));
+        Assert.Empty(client.Status().Run!.History);
+
+        var caught = SyntheticPokemon.Raw(2, 25, slot: 1);
+        client.AcceptFrame(SyntheticPokemon.Frame(2, starter, caught));
+        client.AcceptFrame(SyntheticPokemon.Frame(3, starter, caught));
+
+        var item = Assert.Single(client.Status().Run!.History, e => e.Kind == "caught");
+        Assert.Equal("caught", item.Kind);
+        Assert.Contains("Pikachu", item.Message);
+    }
+
+    [Fact]
     public void PlayerCopiesKeepExecutableBytesAndReplaceOnlyJoinDetails()
     {
         Directory.CreateDirectory(this.directory);
@@ -169,6 +186,7 @@ public sealed class PlayerClientTests : IDisposable
         {
             ["SettingsPath"] = Path.Combine(this.directory, demo ? "harness.json" : "player.json"),
             ["AllowSyntheticFrames"] = demo.ToString(),
+            ["EnableLocalRun"] = demo.ToString(),
         }).Build();
         return new ClientRuntime(configuration, clock);
     }

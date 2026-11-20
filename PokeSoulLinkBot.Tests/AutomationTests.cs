@@ -153,6 +153,90 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void ConfirmationKeepsBattleContextAndMarksAllPlayersInTheLinkDeadOnce()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test", DeathRule.ConfirmFaint);
+        var first = this.Join(run, "Anne");
+        var second = this.Join(run, "Max");
+        foreach (var client in new[] { first, second }) this.Send(client, 1, true, Snapshot(1, Mon(1)));
+        this.engine.ChangeRun("guild", run.Id, "start");
+        foreach (var client in new[] { first, second }) this.Send(client, 2, false, Snapshot(2, Mon(1), Mon(2)));
+        var trace = new BattleTrace(1, 25, 33, "Felizia");
+        var knockedOut = Snapshot(3, Mon(1), Mon(2) with { Hp = 0 });
+        this.Send(first, 3, false, knockedOut with { InBattle = true, Faints = [trace] });
+        this.Send(first, 4, false, knockedOut with { Frame = 4 });
+        this.Send(first, 5, false, knockedOut with { Frame = 5 });
+        var before = this.engine.View(first.Registration);
+        Assert.False(before.Encounters.Single().Dead);
+        var incident = Assert.Single(before.Players.Single(p => p.Id == first.Registration.PlayerId).Pokemon,
+            p => p.PendingDeath is not null).PendingDeath!;
+        Assert.Equal(trace, incident.Battle);
+        Assert.Throws<InvalidOperationException>(() => this.engine.ResolveFaint(second.Registration, incident.PokemonId, incident.IncidentId, true, ""));
+        this.engine.ResolveFaint(first.Registration, incident.PokemonId, Guid.NewGuid(), true, "Unpassender Vorfall");
+        Assert.False(this.engine.View(first.Registration).Encounters.Single().Dead);
+        this.engine.ResolveFaint(first.Registration, incident.PokemonId, incident.IncidentId, true, "Volltreffer");
+        this.engine.ResolveFaint(first.Registration, incident.PokemonId, incident.IncidentId, true, "Wiederholung");
+        var final = this.engine.View(first.Registration);
+        Assert.True(final.Encounters.Single().Dead);
+        Assert.All(final.Players, p => Assert.Single(p.Pokemon, m => m.Dead));
+        var reason = Assert.Single(final.History, item => item.Kind == "death").Message;
+        Assert.Contains("Volltreffer", reason);
+        Assert.Contains("Pikachu", reason);
+        Assert.Contains("Tackle", reason);
+    }
+
+    [Fact]
+    public void ArenaProgressIsPlayerScopedAndCanOverrideTheCurrentBadgeReading()
+    {
+        var (_, player) = this.Active();
+        this.Send(player, 2, false, Snapshot(2, Mon(1)) with { BadgeMask = 1 });
+        this.engine.ChangeArena(player.Registration, 1, false);
+        Assert.Equal(0, this.engine.View(player.Registration).Players.Single().ArenaProgress);
+        this.engine.ChangeArena(player.Registration, 1, true);
+        this.engine.ChangeArena(player.Registration, 2, true);
+        this.engine.ChangeArena(player.Registration, 2, true);
+        var state = this.engine.View(player.Registration);
+        Assert.Equal(3, state.Players.Single().ArenaProgress);
+        Assert.Equal(2, state.History.Count(item => item.Kind == "arena-completed"));
+        this.engine.ChangeArena(player.Registration, 2, false);
+        Assert.Equal(1, this.engine.View(player.Registration).Players.Single().ArenaProgress);
+    }
+
+    [Fact]
+    public void CatchCheckAcceptsGermanAndEnglishAndIncludesDefeatedEvolutionFamilies()
+    {
+        var (_, player) = this.Active(DeathRule.ZeroHpOutsideBattle);
+        this.Send(player, 2, false, Snapshot(2, Mon(1), Mon(2) with { Species = 25, MetArea = 7 }));
+        this.engine.SetDeath("guild", player.Registration.RunId, 7, true);
+        var english = this.engine.CheckCatch(player.Registration, "Raichu");
+        Assert.Equal("Pikachu", english.PreviouslyCaught);
+        Assert.Equal("Blütenburg City", english.Area);
+        Assert.Equal("Trasla", this.engine.CheckCatch(player.Registration, "Ralts").Pokemon);
+        Assert.Equal(this.engine.CheckCatch(player.Registration, "Ralts"), this.engine.CheckCatch(player.Registration, "Trasla"));
+        Assert.Null(this.engine.CheckCatch(player.Registration, "Glumanda").PreviouslyCaught);
+    }
+
+    [Fact]
+    public void CatchReplaySeparatesItsMetAreaFromTheLaterPlayerPosition()
+    {
+        var (_, player) = this.Active();
+        var point = new MapPosition(5, 7, 30, 20, true);
+        this.Send(player, 2, false, Snapshot(2, Mon(1), Mon(2) with { MetArea = 17 }) with { Position = point });
+        this.Send(player, 3, false, Snapshot(3, Mon(1), Mon(2) with { MetArea = 17 }, Mon(3, slot: 2)) with { Position = point with { X = 6 } });
+        using var db = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={Path.Combine(this.directory, "runs.sqlite")};Pooling=False");
+        db.Open();
+        using var query = db.CreateCommand();
+        query.CommandText = "SELECT count(*) FROM map_history";
+        Assert.Equal(2L, query.ExecuteScalar());
+        query.CommandText = "SELECT document FROM replay_events ORDER BY rowid";
+        using var rows = query.ExecuteReader();
+        Assert.True(rows.Read());
+        Assert.Null(Protocol.Deserialize<AutomationEvent>(rows.GetString(0)).Position);
+        Assert.True(rows.Read());
+        Assert.Equal(6, Protocol.Deserialize<AutomationEvent>(rows.GetString(0)).Position!.X);
+    }
+
+    [Fact]
     public void OwnershipAndRunLifecycleAreIsolated()
     {
         var (first, client) = this.Active();
@@ -238,7 +322,11 @@ public sealed class AutomationTests : IDisposable
 
     private static GameSnapshot Snapshot(long frame, params PokemonState[] pokemon) => new()
     {
-        LayoutId = "fixture", Epoch = "fixture", Frame = frame, PlaySeconds = frame, Area = 16,
+        LayoutId = "fixture",
+        Epoch = "fixture",
+        Frame = frame,
+        PlaySeconds = frame,
+        Area = 16,
         Pokemon = pokemon.ToList(),
     };
 

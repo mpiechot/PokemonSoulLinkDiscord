@@ -14,6 +14,23 @@ internal static class DashboardTheme
     public static readonly Color Danger = Color.FromArgb(250, 145, 159);
     public static readonly Color Gold = Color.FromArgb(255, 211, 114);
 
+    public static Button Button(string text)
+    {
+        var button = new Button
+        {
+            Text = text,
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Panel,
+            ForeColor = Text,
+            Margin = new Padding(2),
+            Padding = new Padding(7, 0, 7, 0),
+        };
+        button.FlatAppearance.BorderColor = Border;
+        button.FlatAppearance.MouseOverBackColor = Border;
+        return button;
+    }
+
     private static readonly Dictionary<string, (string Label, Color Color)> Types = new()
     {
         ["normal"] = ("Normal", Color.FromArgb(171, 182, 193)),

@@ -202,18 +202,19 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 }
                 else if (!import && tracked.State.Species != state.Species)
                 {
-                    this.Event(tx, run, "evolved", $"{run.Name}: {player.Name} — {tracked.State.DisplayName} → {state.DisplayName}.");
+                    this.Event(tx, run, "evolved", $"{player.Name}: {RubyNames.Pokemon(tracked.State.Species)} → {RubyNames.Pokemon(state.Species)}.");
                 }
 
                 tracked.State = state;
                 tracked.Present = true;
-                if (!import && run.DeathRule == DeathRule.ZeroHpOutsideBattle && !snapshot.InBattle && state.Hp == 0 && !state.IsEgg)
-                    tracked.ZeroHpSamples++;
-                else tracked.ZeroHpSamples = 0;
-                if (tracked.ZeroHpSamples >= 2 && !tracked.Dead) this.MarkDeath(tx, run, player, tracked);
+                if (state.Hp > 0) tracked.FaintDismissed = false;
+                this.ObserveFaint(tx, run, player, tracked, snapshot, previous, import);
             }
 
             player.LastSnapshot = snapshot;
+            if (run.Phase == RunPhase.Active && snapshot.Position is { Valid: true } position &&
+                (previous is null || previous.Position != position || previous.MapGroup != snapshot.MapGroup || previous.MapNumber != snapshot.MapNumber))
+                tx.RecordPosition(run.Id, player.Id, observation.Sequence, this.clock.GetUtcNow(), snapshot, position);
             if (!import && previous?.BadgeMask is byte oldBadges && snapshot.BadgeMask is byte newBadges)
             {
                 int acquired = System.Numerics.BitOperations.PopCount((uint)(newBadges & ~oldBadges));
@@ -244,6 +245,58 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         session.LastSeen = this.clock.GetUtcNow();
         if (bridgeAvailable.HasValue) session.BridgeAvailable = bridgeAvailable.Value;
         return session.Ready ? "Online" : "Synchronizing";
+    }
+
+    public CatchCheck CheckCatch(Registration registration, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 80) throw new InvalidDataException("Ungültiger Pokémon-Name.");
+        return CatchCheckRules.Check(this.View(registration), name);
+    }
+
+    public void ChangeArena(Registration registration, int number, bool complete)
+    {
+        if (number is < 1 or > 8) throw new InvalidDataException("Ungültige Arena.");
+        store.Execute(tx =>
+        {
+            var run = tx.Run(registration.RunId);
+            var player = run.Players.Single(p => p.Id == registration.PlayerId);
+            if (run.Phase != RunPhase.Active) throw new InvalidOperationException("Der Run muss aktiv sein.");
+            var gym = RubyDashboardCatalog.Gyms.Single(g => g.Number == number);
+            int flag = 1 << (number - 1);
+            byte progress = player.ArenaProgress;
+            if (((progress & flag) != 0) == complete) return false;
+            int? expected = complete ? RubyDashboardCatalog.NextGym(progress)?.Number
+                : RubyDashboardCatalog.Gyms.LastOrDefault(g => (progress & (1 << (g.Number - 1))) != 0)?.Number;
+            if (expected != number) throw new InvalidOperationException("Der Arena-Fortschritt hat sich geändert.");
+            player.ArenaConfirmed = (byte)(complete ? player.ArenaConfirmed | flag : player.ArenaConfirmed & ~flag);
+            player.ArenaReverted = (byte)(complete ? player.ArenaReverted & ~flag : player.ArenaReverted | flag);
+            this.Event(tx, run, complete ? "arena-completed" : "arena-reverted",
+                $"{player.Name}: Arena {gym.Number} · {gym.Name} {(complete ? "abgeschlossen" : "zurückgenommen")}.",
+                player: player, notify: false);
+            tx.Save(run);
+            return true;
+        });
+    }
+
+    public void ResolveFaint(Registration registration, Guid pokemonId, Guid incidentId, bool confirm, string? reason)
+    {
+        reason = reason?.Trim();
+        if (reason is { Length: > 250 } || reason?.Any(char.IsControl) == true)
+            throw new InvalidDataException("Der Grund darf bis zu 250 Zeichen enthalten.");
+        store.Execute(tx =>
+        {
+            var run = tx.Run(registration.RunId);
+            var player = run.Players.Single(p => p.Id == registration.PlayerId);
+            var pokemon = player.Pokemon.SingleOrDefault(p => p.Id == pokemonId);
+            if (run.Phase != RunPhase.Active || pokemon is null)
+                throw new InvalidOperationException("Der Todesfall ist in diesem Run nicht verfügbar.");
+            if (pokemon.PendingDeath is not { } pending || pending.IncidentId != incidentId) return false;
+            pokemon.PendingDeath = null;
+            if (confirm) this.MarkDeath(tx, run, player, pokemon, reason, pending.Battle);
+            else pokemon.FaintDismissed = true;
+            tx.Save(run);
+            return true;
+        });
     }
 
     public string Connection(AutomationPlayer player)
@@ -304,6 +357,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 var pokemon = run.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value);
                 pokemon.Dead = dead;
                 pokemon.ZeroHpSamples = 0;
+                pokemon.PendingDeath = null;
+                pokemon.FaintBattle = null;
+                pokemon.FaintDismissed = true;
             }
             this.Event(tx, run, dead ? "death-confirmed" : "death-undone",
                 $"{run.Name}: {encounter.Name} — link death {(dead ? "confirmed" : "undone")} by administrator. Game memory is unchanged.");
@@ -328,7 +384,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (snapshot.GameCode != "AXVD" || snapshot.Epoch.Length is < 1 or > 80 || snapshot.LayoutId.Length is < 1 or > 80 ||
             snapshot.Frame < 0 || snapshot.PlaySeconds < 0 || snapshot.Area is < 0 or > 255 ||
-            snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426)
+            snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426 ||
+            snapshot.Position is { Valid: false } || snapshot.Faints is { Length: > 6 } ||
+            snapshot.Faints?.Any(f => f is null || f.PartySlot is < 0 or > 5 || f.Move is < 1 or > 354 ||
+                f.OpponentSpecies.HasValue && !SpeciesCatalog.IsValid(f.OpponentSpecies.Value) ||
+                f.Trainer is { Length: > 12 } || f.Trainer?.Any(char.IsControl) == true) == true)
             throw new InvalidDataException("Invalid game snapshot.");
         if (snapshot.Pokemon.Select(p => p.Identity).Distinct().Count() != snapshot.Pokemon.Count ||
             snapshot.Pokemon.Where(p => p.Container == Placement.Party).Count() > 6 ||
@@ -359,38 +419,87 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         var encounter = run.Encounters.SingleOrDefault(e => e.Area == area);
         encounter ??= new Encounter { Area = area, MapGroup = snapshot.MapGroup, MapNumber = snapshot.MapNumber };
         if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
+        string place = RubyNames.Area(area);
+        string species = RubyNames.Pokemon(pokemon.State.Species);
         if (encounter.Failed || encounter.Dead || encounter.Members.ContainsKey(player.Id))
         {
-            this.Event(tx, run, "extra-catch", $"{run.Name}: {player.Name} — extra {pokemon.State.DisplayName} at {encounter.Name}; area already used, no new link.");
+            this.Event(tx, run, "extra-catch", $"{player.Name}: {species} in {place} gefangen. Das Gebiet war bereits vergeben.",
+                player: player, area: area, snapshot: snapshot);
             return;
         }
 
         encounter.Members[player.Id] = pokemon.Id;
-        this.Event(tx, run, "caught", $"{run.Name}: {player.Name} caught {pokemon.State.DisplayName} at {encounter.Name} ({encounter.Members.Count}/{run.Players.Count}).");
+        this.Event(tx, run, "caught", $"{player.Name}: {species} in {place} gefangen ({encounter.Members.Count}/{run.Players.Count}).",
+            player: player, area: area, snapshot: snapshot);
         if (encounter.Members.Count == run.Players.Count && encounter.GroupId is null)
         {
             encounter.GroupId = Guid.NewGuid();
-            string members = string.Join(" · ", run.Players.Select(p => $"{p.Name}: {p.Pokemon.Single(m => m.Id == encounter.Members[p.Id]).State.DisplayName}"));
-            this.Event(tx, run, "linked", $"{run.Name}: Soul-Link complete at {encounter.Name} — {members}.");
+            string members = string.Join(" · ", run.Players.Select(p => $"{p.Name}: {RubyNames.Pokemon(p.Pokemon.Single(m => m.Id == encounter.Members[p.Id]).State.Species)}"));
+            this.Event(tx, run, "linked", $"{place} · {members}.", area: area);
         }
     }
 
-    private void MarkDeath(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, TrackedPokemon pokemon)
+    private void ObserveFaint(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player,
+        TrackedPokemon tracked, GameSnapshot snapshot, GameSnapshot? previous, bool import)
+    {
+        var state = tracked.State;
+        if (import || run.DeathRule == DeathRule.Disabled || state.Hp != 0 || state.IsEgg || tracked.FaintDismissed)
+        {
+            tracked.ZeroHpSamples = 0;
+            tracked.FaintBattle = null;
+            return;
+        }
+        if (tracked.Dead || tracked.PendingDeath is not null) return;
+        if (run.DeathRule == DeathRule.ConfirmFaint &&
+            snapshot.Faints?.FirstOrDefault(f => f.PartySlot == state.Slot) is { } trace)
+            tracked.FaintBattle = trace;
+        if (snapshot.InBattle)
+        {
+            tracked.ZeroHpSamples = 0;
+            return;
+        }
+        if (run.DeathRule == DeathRule.ConfirmFaint)
+        {
+            bool previouslyHealthy = previous?.Pokemon.Any(p => p.Identity == state.Identity && p.Hp > 0) == true;
+            if (previouslyHealthy || previous?.InBattle == true || tracked.FaintBattle is not null || tracked.ZeroHpSamples > 0)
+            {
+                if (++tracked.ZeroHpSamples >= 2)
+                    tracked.PendingDeath = new PendingDeath(tracked.Id, state.Species, tracked.FaintBattle, Guid.NewGuid());
+            }
+            return;
+        }
+        if (++tracked.ZeroHpSamples >= 2) this.MarkDeath(tx, run, player, tracked);
+    }
+
+    private void MarkDeath(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player,
+        TrackedPokemon pokemon, string? reason = null, BattleTrace? battle = null)
     {
         pokemon.Dead = true;
         foreach (var encounter in run.Encounters.Where(e => e.Members.GetValueOrDefault(player.Id) == pokemon.Id))
         {
             encounter.Dead = true;
             foreach (var member in encounter.Members)
-                run.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value).Dead = true;
+            {
+                var linked = run.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value);
+                linked.Dead = true;
+                linked.PendingDeath = null;
+            }
         }
-        this.Event(tx, run, "death", $"{run.Name}: {player.Name}'s {pokemon.State.DisplayName} fainted; linked partners are marked dead. Game memory is unchanged.");
+        string detail = string.Join(" · ", new[] { reason, battle?.Trainer,
+            battle?.OpponentSpecies is int species ? RubyNames.Pokemon(species) : null, RubyNames.Move(battle?.Move) }
+            .Where(v => !string.IsNullOrEmpty(v)));
+        this.Event(tx, run, "death", $"{player.Name}: {RubyNames.Pokemon(pokemon.State.Species)} ist gestorben." +
+            (detail.Length > 0 ? " " + detail : ""), player: player);
     }
 
-    private void Event(AutomationStore.StoreTransaction tx, AutomationRun run, string kind, string message, bool notify = true)
+    private void Event(AutomationStore.StoreTransaction tx, AutomationRun run, string kind, string message, bool notify = true,
+        AutomationPlayer? player = null, int? area = null, GameSnapshot? snapshot = null)
     {
-        var item = new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), kind, message);
+        var where = snapshot?.Area == area ? snapshot : null;
+        var item = new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), kind, message, player?.Id, area,
+            where?.MapGroup, where?.MapNumber, where?.Position);
         run.History.Add(item);
+        if (kind is "caught" or "extra-catch" or "death") tx.RecordReplayEvent(run.Id, item);
         if (run.History.Count > 200) run.History.RemoveAt(0);
         if (notify) tx.Notify(run, item);
     }

@@ -1,6 +1,7 @@
 namespace SoulLink;
 
 public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null);
+public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex);
 
 public sealed record BridgeFrame
 {
@@ -16,8 +17,11 @@ public sealed record BridgeFrame
     public int MapNumber { get; init; }
     public int Area { get; init; } = 255;
     public bool InBattle { get; init; }
+    public MapPosition? Position { get; init; }
+    public RawBattleTrace[]? Faints { get; init; }
     public byte? BadgeMask { get; init; }
     public int[]? GymLevels { get; init; }
+    public int[]?[]? GymLineups { get; init; }
     public string? RubyTypesHex { get; init; }
     public bool CompleteInventory { get; init; }
     public List<RawPokemon> Pokemon { get; init; } = [];
@@ -55,10 +59,23 @@ public sealed record BridgeFrame
             MapGroup = this.MapGroup,
             MapNumber = this.MapNumber,
             Area = MapCatalog.Section(this.MapGroup, this.MapNumber),
+            Position = this.Position is { Valid: true } ? this.Position : null,
             InBattle = this.InBattle,
+            Faints = this.Faints is { Length: > 0 and <= 6 }
+                ? this.Faints.Where(f => f is not null && f.PartySlot is >= 0 and <= 5)
+                    .Select(f => new BattleTrace(f.PartySlot,
+                        f.OpponentSpecies is int foe && SpeciesCatalog.IsValid(foe) ? foe : null,
+                        f.Move is > 0 and < 355 ? f.Move : null,
+                        f.TrainerHex is { Length: 24 } hex && hex.All(Uri.IsHexDigit) ? Gen3Parser.DecodeName(Convert.FromHexString(hex)) : null))
+                    .DistinctBy(f => f.PartySlot).ToArray()
+                : null,
             BadgeMask = this.BadgeMask,
-            GymLevels = this.GymLevels is { Length: > 0 and <= 6 } && this.GymLevels.All(level => level is >= 1 and <= 100) ? this.GymLevels : null,
+            GymLevels = ValidateLevels(this.GymLevels),
+            GymLineups = this.GymLineups is { Length: 8 } ? this.GymLineups.Select(ValidateLevels).ToArray() : null,
             Pokemon = pokemon,
         };
     }
+
+    private static int[]? ValidateLevels(int[]? levels) =>
+        levels is { Length: > 0 and <= 6 } && levels.All(level => level is >= 1 and <= 100) ? levels : null;
 }

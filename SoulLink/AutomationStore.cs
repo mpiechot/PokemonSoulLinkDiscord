@@ -41,6 +41,8 @@ public sealed class AutomationStore
             CREATE TABLE IF NOT EXISTS registrations(hash TEXT PRIMARY KEY, run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, player TEXT NOT NULL, client TEXT NOT NULL UNIQUE);
             CREATE TABLE IF NOT EXISTS receipts(player TEXT NOT NULL, event TEXT NOT NULL, sequence INTEGER NOT NULL, PRIMARY KEY(player,event), UNIQUE(player,sequence));
             CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY, run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, channel TEXT NOT NULL, message TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS map_history(run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, player TEXT NOT NULL, sequence INTEGER NOT NULL, at TEXT NOT NULL, area INTEGER NOT NULL, map_group INTEGER NOT NULL, map_number INTEGER NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, outdoor INTEGER NOT NULL, PRIMARY KEY(run,player,sequence));
+            CREATE TABLE IF NOT EXISTS replay_events(run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE, id TEXT NOT NULL, at TEXT NOT NULL, document TEXT NOT NULL, PRIMARY KEY(run,id));
             PRAGMA user_version=1;
             """;
         command.ExecuteNonQuery();
@@ -94,6 +96,24 @@ public sealed class AutomationStore
         public void Delete(Guid id)
         {
             using var command = this.Command("DELETE FROM runs WHERE id=$id", ("$id", id.ToString()));
+            command.ExecuteNonQuery();
+        }
+
+        public void RecordPosition(Guid run, Guid player, long sequence, DateTimeOffset at, GameSnapshot snapshot, MapPosition position)
+        {
+            using var command = this.Command(
+                "INSERT INTO map_history VALUES($run,$player,$sequence,$at,$area,$group,$number,$x,$y,$width,$height,$outdoor)",
+                ("$run", run.ToString()), ("$player", player.ToString()), ("$sequence", sequence), ("$at", at.ToString("O")),
+                ("$area", snapshot.Area), ("$group", snapshot.MapGroup), ("$number", snapshot.MapNumber), ("$x", position.X), ("$y", position.Y),
+                ("$width", position.Width), ("$height", position.Height), ("$outdoor", position.Outdoor));
+            command.ExecuteNonQuery();
+        }
+
+        public void RecordReplayEvent(Guid run, AutomationEvent item)
+        {
+            using var command = this.Command("INSERT INTO replay_events VALUES($run,$id,$at,$document)",
+                ("$run", run.ToString()), ("$id", item.Id.ToString()), ("$at", item.At.ToString("O")),
+                ("$document", Protocol.Serialize(item)));
             command.ExecuteNonQuery();
         }
 

@@ -31,7 +31,7 @@ try
 {
     await WaitFor(server + "/health/soullink");
     await WaitFor(ui + "/api/status");
-    var run = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("demo", "Three-player Ruby demo", DeathRule: DeathRule.ZeroHpOutsideBattle));
+    var run = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("demo", "Three-player Ruby demo"));
     await Post<object>(http, ui + "/api/join", new { server, invitation = run.Invitation, name = "Marco (demo)", marker = "Star" });
     var sessions = new List<SessionInfo>();
     foreach (string name in new[] { "Alex (demo)", "Sam (demo)" })
@@ -97,6 +97,41 @@ try
             && state.GetProperty("history").EnumerateArray().Any(entry => entry.GetProperty("kind").GetString() == "badge");
     });
     Console.WriteLine("Verified: dashboard transmits player-selected markers, distinct map regions, stale positions, links and badge events.");
+    if (args.Contains("--verify"))
+    {
+        var hub = hubs[0];
+        var session = sessions[0];
+        var eligibility = await hub.InvokeAsync<CatchCheck>("CheckCatch", "Combusken", lifetime.Token);
+        if (eligibility.Pokemon != "Jungglut" || eligibility.PreviouslyCaught is null)
+            throw new InvalidDataException("German/English catch family lookup did not cross SignalR.");
+        await hub.InvokeAsync("ChangeArena", 1, true, lifetime.Token);
+        if (!(await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).History.Any(e => e.Kind == "arena-completed"))
+            throw new InvalidDataException("Arena completion did not reach the shared feed.");
+        await hub.InvokeAsync("ChangeArena", 1, false, lifetime.Token);
+        var trace = new BattleTrace(1, 25, 33, "MAX");
+        for (int sequence = 3; sequence <= 5; sequence++)
+        {
+            await Task.Delay(200, lifetime.Token);
+            var snapshot = SyntheticPokemon.Frame(sequence, SyntheticPokemon.Raw(101, 1), SyntheticPokemon.Raw(201, 280, 1, hp: 0)).Parse() with
+            {
+                InBattle = sequence == 3,
+                Faints = sequence == 3 ? [trace] : null,
+            };
+            var observed = await hub.InvokeAsync<ObservationResult>("Observe",
+                new Observation(Guid.NewGuid(), session.SessionId, sequence, false, snapshot), lifetime.Token);
+            if (!observed.Accepted) throw new InvalidDataException("The battle fixture was rejected.");
+        }
+        var pending = (await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+            .Single(p => p.Id == session.PlayerId).Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().Single();
+        var otherView = await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token);
+        if (pending.Battle != trace || otherView.Players.SelectMany(p => p.Pokemon).Any(m => m.PendingDeath is not null))
+            throw new InvalidDataException("Pending battle context was not scoped to the affected player.");
+        await hub.InvokeAsync("ResolveFaint", pending.PokemonId, pending.IncidentId, true, "Volltreffer", lifetime.Token);
+        var resolved = await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token);
+        if (!resolved.Encounters.Single().Dead || !resolved.History.Any(e => e.Kind == "death" && e.Message.Contains("Volltreffer")))
+            throw new InvalidDataException("The shared link death or reason was not saved.");
+        Console.WriteLine("Verified: bilingual catch check, player-scoped arena changes, and battle context and death confirmation cross SignalR.");
+    }
     var isolatedRun = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("isolated-guild", "Isolated run"));
     Guid isolatedClientId = Guid.NewGuid();
     string isolatedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));

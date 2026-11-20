@@ -18,6 +18,9 @@ The profile `ruby-axvd-reference-v2` recognizes the twelve-byte `POKEMON RUBY` t
 | SaveBlock1 | `0x02025734`, map group +4, number +5 | Ruby `include/global.h` |
 | SaveBlock2 | `0x02024EA4`, play hours +0x0E, minutes +0x10, seconds +0x11 | Ruby `include/global.h` |
 | Main | `0x03001770`, battle flag at +0x43D, bit 1 | Ruby common symbols and `include/main.h` |
+| Live tile | Player object index at `0x0202E858 + 5`, object array at `0x030048B0`, 36-byte records, current coordinates at +0x10/+0x12 | German symbols and `include/global.fieldmap.h` |
+| Map dimensions | Layout pointer at `0x0202E828`, dimensions at layout +0/+4 | German symbols and `include/global.fieldmap.h` |
+| Faint context | Battlers, party slots, last hit, last landed move and opponent trainer from German battle symbols | German symbols and `include/pokemon.h` |
 | Badges | SaveBlock1 flags +0x1220, bits 0x807–0x80E | Ruby `include/global.h` and `include/constants/flags.h` |
 | Base types | `0x0820BBE8`, 28-byte records, types +6/+7 | AXVD Randomizer profile and Ruby `include/pokemon.h` |
 | Trainers | `0x081FD478`, 40-byte records, gym leaders 265–272 | AXVD Randomizer profile and Ruby trainer definitions |
@@ -77,6 +80,8 @@ The dashboard displays the original PokéNav Hoenn map from the local AXVD ROM. 
 6. Repeat across three players on the same area; expect one completed group and accurate team conflict status.
 7. Disconnect/restart client/server without playing; expect a reconciled baseline. Play offline and reconnect; expect OutOfSync instead of replay.
 8. Load an older state/reset; confirm rollback detection. Script callbacks and frame/playtime/experience checks provide complementary evidence; same-state reloads cannot always be distinguished.
-9. With the optional death rule, observe HP 0 outside battle twice; confirm group death and explicit undo. Keep the default Disabled for rules requiring human confirmation.
+9. With the default `confirm-faint` rule for new runs, observe HP 0 outside battle twice, select a reason and confirm the linked death. The last landed opposing move is optional context and may differ from the reason for a knockout.
+
+The automation SQLite database keeps accepted changes in position in `map_history` and the catch/death markers in `replay_events`. Each position describes the local tile in its specific map. The client periodically samples the bridge and can skip tiles between samples. Original ROM graphics are loaded locally and are not included in these tables. The standalone playtest uses a temporary database for its current session.
 
 No actual ROM/save belongs in source control. Record only a minimal sanitized memory fixture and ROM header/version metadata when validating a layout.

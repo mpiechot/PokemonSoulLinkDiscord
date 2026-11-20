@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SoulLink;
 using SoulLink.Client;
 
 namespace SoulLink.Player;
@@ -13,21 +14,27 @@ internal sealed class CompanionForm : Form
     private readonly PlayerProfile? profile;
     private readonly Label status = new();
     private readonly Label gameStatus = new();
-    private readonly Panel surface = new();
+    private readonly EmulatorSurface surface = new();
     private readonly EmulatorDock dock;
     private readonly RunDashboard dashboard;
+    private readonly DashboardCards feed;
+    private readonly Button checkCatch;
+    private readonly Button pendingDeathButton;
     private readonly Button startGame;
     private readonly Button toggleDock;
-    private readonly Button focusGame;
     private readonly Button joinRun;
     private readonly System.Windows.Forms.Timer refresh = new() { Interval = 500 };
     private bool started;
     private bool launching;
     private bool dockingEnabled = true;
+    private bool startupScriptingClosed;
     private DateTimeOffset dockUntil;
     private Process? game;
     private string? gameError;
     private string? joinError;
+    private readonly HashSet<Guid> shownDeaths = [];
+    private bool deathDialogOpen;
+    private bool actionRunning;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
         string? requestedRom, PlayerProfile? profile, string sprites)
@@ -40,23 +47,26 @@ internal sealed class CompanionForm : Form
         this.profile = profile;
         this.dock = new EmulatorDock(this.surface);
         this.Text = "SoulLink";
-        this.ClientSize = new Size(1215, 745);
-        this.MinimumSize = new Size(870, 575);
+        this.ClientSize = new Size(1420, 790);
+        this.MinimumSize = new Size(1070, 620);
         this.StartPosition = FormStartPosition.CenterScreen;
         this.BackColor = DashboardTheme.Background;
         this.ForeColor = DashboardTheme.Text;
         this.Font = new Font("Segoe UI", 10);
         this.AutoScaleMode = AutoScaleMode.Dpi;
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2, Padding = new Padding(12) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 63));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 37));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 3, Padding = new Padding(12) };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 17));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 51));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 59));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 0, 0, 8) };
+        var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 6, RowCount = 1, Margin = new Padding(0, 0, 0, 8) };
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 138));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 112));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         var brand = new Label
@@ -72,27 +82,32 @@ internal sealed class CompanionForm : Form
         this.status.TextAlign = ContentAlignment.MiddleLeft;
         this.status.AutoEllipsis = true;
         this.joinRun = Button("Beitreten", async (_, _) => await this.OpenIdentityAsync());
+        this.checkCatch = Button("Catch-Check", (_, _) =>
+        {
+            using var dialog = new CatchCheckForm(this.runtime);
+            dialog.ShowDialog(this);
+        });
+        this.pendingDeathButton = Button("Todesfall prüfen", async (_, _) => await this.ReviewDeathAsync());
         bar.Controls.Add(brand, 0, 0);
         bar.Controls.Add(this.status, 1, 0);
-        bar.Controls.Add(this.joinRun, 2, 0);
-        bar.Controls.Add(Button("Einrichtung", this.OpenSetup), 3, 0);
+        bar.Controls.Add(this.pendingDeathButton, 2, 0);
+        bar.Controls.Add(this.checkCatch, 3, 0);
+        bar.Controls.Add(this.joinRun, 4, 0);
+        bar.Controls.Add(Button("Einrichtung", this.OpenSetup), 5, 0);
 
         var gamePane = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Margin = new Padding(0, 0, 9, 0) };
         gamePane.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         gamePane.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var gameBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
+        var gameBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
         gameBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         gameBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 122));
         gameBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 125));
-        gameBar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 133));
         var caption = new Label { Text = "SPIEL", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Muted };
         this.startGame = Button("Spiel starten", async (_, _) => await this.StartGameAsync());
         this.toggleDock = Button("mGBA lösen", (_, _) => this.ChangeDock());
-        this.focusGame = Button("Spiel fokussieren", (_, _) => this.dock.FocusGame());
         gameBar.Controls.Add(caption, 0, 0);
         gameBar.Controls.Add(this.startGame, 1, 0);
         gameBar.Controls.Add(this.toggleDock, 2, 0);
-        gameBar.Controls.Add(this.focusGame, 3, 0);
 
         this.surface.Dock = DockStyle.Fill;
         this.surface.BackColor = Color.FromArgb(8, 14, 21);
@@ -102,13 +117,37 @@ internal sealed class CompanionForm : Form
         this.gameStatus.Padding = new Padding(24);
         this.surface.Controls.Add(this.gameStatus);
         this.surface.SizeChanged += (_, _) => this.dock.Resize();
+        this.surface.GameClicked += () => this.dock.FocusGame();
         this.dashboard = new RunDashboard(sprites);
+        this.dashboard.ArenaChanged += async (number, complete) =>
+            await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(number, complete));
+        var news = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            RowCount = 2,
+            ColumnCount = 1,
+            BackColor = DashboardTheme.Surface,
+            Padding = new Padding(6),
+            Margin = new Padding(0, 0, 9, 0),
+        };
+        news.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        news.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        news.Controls.Add(new Label
+        {
+            Text = "Newsfeed",
+            Dock = DockStyle.Fill,
+            ForeColor = DashboardTheme.Text,
+            TextAlign = ContentAlignment.MiddleLeft,
+        }, 0, 0);
+        this.feed = new DashboardCards { Dock = DockStyle.Fill, ItemHeight = 100 };
+        news.Controls.Add(this.feed, 0, 1);
         gamePane.Controls.Add(gameBar, 0, 0);
         gamePane.Controls.Add(this.surface, 0, 1);
         layout.Controls.Add(bar, 0, 0);
-        layout.SetColumnSpan(bar, 2);
-        layout.Controls.Add(gamePane, 0, 1);
-        layout.Controls.Add(this.dashboard, 1, 1);
+        layout.SetColumnSpan(bar, 3);
+        layout.Controls.Add(news, 0, 1);
+        layout.Controls.Add(gamePane, 1, 1);
+        layout.Controls.Add(this.dashboard, 2, 1);
         this.Controls.Add(layout);
 
         this.refresh.Tick += (_, _) => this.RefreshGame();
@@ -196,10 +235,12 @@ internal sealed class CompanionForm : Form
             }
 
             this.rom.Save(path);
+            this.runtime.ResetLocalRun();
             string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort);
             this.game = await Task.Run(() => this.emulator.Start(path, bridge));
             this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), attempted: true);
             this.dockingEnabled = true;
+            this.startupScriptingClosed = false;
             this.dockUntil = DateTimeOffset.UtcNow.AddSeconds(12);
             this.RefreshGame();
         }
@@ -220,7 +261,16 @@ internal sealed class CompanionForm : Form
         {
             if (this.dock.TryAttach(this.game)) this.dock.FocusGame();
         }
+        if (!this.startupScriptingClosed && this.game is { HasExited: false } game && this.runtime.Status().Snapshot is not null)
+        {
+            this.startupScriptingClosed = true;
+            EmulatorDock.CloseStartupScriptingWindow(game);
+        }
         this.Render();
+        var pending = this.OwnDeaths();
+        if (!this.deathDialogOpen && !this.actionRunning && !this.OwnedForms.Any(form => form.Visible) &&
+            pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident && this.Visible)
+            this.BeginInvoke((Action)(async () => await this.ReviewDeathAsync(incident)));
     }
 
     private void ChangeDock()
@@ -242,7 +292,7 @@ internal sealed class CompanionForm : Form
     {
         var view = this.runtime.Status();
         bool running = this.game is { HasExited: false };
-        string registration = view.Run is not null ? view.Run.Name + "  ·  " + view.Player
+        string registration = view.Run is not null && !view.IsLocalRun ? view.Run.Name + "  ·  " + view.Player
             : view.Registered ? "Verbindung zum Run wird hergestellt"
             : view.Player.Length > 0 ? view.Player + "  ·  Anmeldung läuft"
             : "Lokaler Spieltest";
@@ -255,9 +305,58 @@ internal sealed class CompanionForm : Form
         this.startGame.Enabled = this.started && !running && !this.launching;
         this.toggleDock.Enabled = running;
         this.toggleDock.Text = this.dock.Attached ? "mGBA lösen" : "mGBA einbetten";
-        this.focusGame.Visible = this.dock.Attached;
         this.joinRun.Visible = this.profile is not null && !view.Registered;
+        this.checkCatch.Enabled = view.Run is not null;
+        this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
         this.dashboard.Render(view);
+        var events = view.Run?.History ?? [];
+        this.feed.Render(events.Length > 0
+            ? events.Reverse().Select(e => new DashboardEntry(RunDashboard.EventTitle(e.Kind), e.Message,
+                e.At.ToLocalTime().ToString("HH:mm"))).ToArray()
+            : [new DashboardEntry("Noch keine Ereignisse", view.Run is { Phase: RunPhase.Lobby }
+                ? "Der Feed startet mit dem Run." : "Fänge und Run-Ereignisse erscheinen hier.")]);
+    }
+
+    private static PendingDeath[] OwnDeaths(ClientView view) =>
+        view.Run?.Players.SingleOrDefault(player => player.Id == view.LocalPlayerId)?.PendingDeaths ?? [];
+
+    private PendingDeath[] OwnDeaths() => OwnDeaths(this.runtime.Status());
+
+    private async Task ReviewDeathAsync(PendingDeath? pending = null)
+    {
+        if (this.deathDialogOpen || this.actionRunning || this.IsDisposed) return;
+        pending ??= this.OwnDeaths().FirstOrDefault();
+        if (pending is null || !this.OwnDeaths().Any(d => d.PokemonId == pending.PokemonId)) return;
+        this.deathDialogOpen = true;
+        this.shownDeaths.Add(pending.IncidentId);
+        try
+        {
+            using var dialog = new DeathReasonForm(pending);
+            var choice = dialog.ShowDialog(this);
+            if (choice is DialogResult.Yes or DialogResult.No)
+                await this.RunActionAsync(() => this.runtime.ResolveFaintAsync(pending.PokemonId, pending.IncidentId, choice == DialogResult.Yes, dialog.Reason));
+        }
+        finally
+        {
+            this.deathDialogOpen = false;
+            if (this.dock.Attached) this.dock.FocusGame();
+        }
+    }
+
+    private async Task RunActionAsync(Func<Task> action)
+    {
+        if (this.actionRunning) return;
+        this.actionRunning = true;
+        try { await action(); }
+        catch (Exception error) when (RunDialogs.IsActionError(error))
+        {
+            MessageBox.Show(this, "Die Änderung konnte gerade nicht gespeichert werden.", "SoulLink");
+        }
+        finally
+        {
+            this.actionRunning = false;
+            if (!this.IsDisposed) this.Render();
+        }
     }
 
     private async Task OpenIdentityAsync()

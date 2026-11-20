@@ -1,5 +1,6 @@
 using SoulLink;
 using SoulLink.Client;
+using System.Runtime.InteropServices;
 
 namespace SoulLink.Player;
 
@@ -13,9 +14,12 @@ internal static class DockSmokeTest
             ShowInTaskbar = false,
             Text = "SoulLink – isolierter mGBA-Test",
         };
-        var surface = new Panel { Dock = DockStyle.Fill };
+        var surface = new EmulatorSurface { Dock = DockStyle.Fill };
+        var focusOutsideGame = new TextBox { Dock = DockStyle.Top };
         window.Controls.Add(surface);
+        window.Controls.Add(focusOutsideGame);
         using var dock = new EmulatorDock(surface);
+        surface.GameClicked += () => dock.FocusGame();
         window.Shown += async (_, _) =>
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -42,9 +46,18 @@ internal static class DockSmokeTest
 
                     window.ClientSize = new Size(690, 458);
                     dock.Resize();
-                    if (!dock.FocusGame()) throw new InvalidOperationException("The native mGBA window could not receive keyboard focus.");
+                    if (!EmulatorDock.CloseStartupScriptingWindow(process))
+                        throw new InvalidOperationException("Could not close the startup scripting view.");
+                    while (EmulatorDock.HasScriptingWindow(process)) await Task.Delay(50, timeout.Token);
+                    GameSnapshot? after;
+                    while ((after = runtime.Status().Snapshot) is null || after.Frame <= snapshot.Frame)
+                        await Task.Delay(50, timeout.Token);
+                    window.Activate();
+                    if (!focusOutsideGame.Focus()) throw new InvalidOperationException("Could not move focus to the test control.");
+                    SendMessage(surface.Handle, 0x0210, 0x0201, 0);
+                    if (!dock.IsFocused) throw new InvalidOperationException("Click notification did not focus the embedded game.");
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
-                    File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(snapshot));
+                    File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }
                 finally
                 {
@@ -70,4 +83,7 @@ internal static class DockSmokeTest
         };
         Application.Run(window);
     }
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
 }

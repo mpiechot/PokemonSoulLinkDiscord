@@ -4,7 +4,7 @@
 
 TCP JSON Lines on loopback only, default port 5091. The listener accumulates bytes across TCP reads, splits at LF, accepts CRLF, checks UTF-8 and rejects unterminated or oversized messages before unbounded allocation. Maximum frame: 160,000 bytes. Only one local bridge is processed at a time.
 
-A `BridgeFrame` contains `version`, `type: snapshot`, `gameCode: AXVD`, `layoutId`, `epoch`, `frame`, `playSeconds`, map group/number, battle state, `completeInventory: true` and raw occupied party/box slots. Optional fields carry the badge mask, next gym's levels and Ruby type table. Only the types for observed Pokémon flow into parsed inventory. Each slot specifies container, slot, optional box, and the exact 100-/80-byte hex record. Every snapshot scans all fourteen boxes. A partial or checksum-invalid snapshot is discarded as a whole.
+A `BridgeFrame` contains `version`, `type: snapshot`, `gameCode: AXVD`, `layoutId`, `epoch`, `frame`, `playSeconds`, map group/number, battle state, `completeInventory: true` and raw occupied party/box slots. Optional fields carry the live map tile, the player's last faint context, badge mask, gym levels and Ruby type table. Only the types for observed Pokémon flow into parsed inventory. Each slot specifies container, slot, optional box, and the exact 100-/80-byte hex record. Every snapshot scans all fourteen boxes. A partial or checksum-invalid snapshot is discarded as a whole.
 
 Players send their chosen name and marker when joining. Older join requests default to the circle marker. Run status includes each player's last observed area, while omitting raw snapshots. `HeartbeatWithBridge` distinguishes a connected client without fresh emulator data from a live location. The original map is decoded locally in the player without sending ROM graphics or ROM bytes to the server.
 
@@ -22,10 +22,13 @@ Allowlisted methods:
 | --- | --- |
 | `Hello(Hello)` | Checks client ID and version; returns new session ID and next persistent sequence. Supersedes any old session for that player. |
 | `Observe(Observation)` | Event ID, session ID, sequence, baseline marker and validated complete game snapshot. Returns accepted/state/message/next sequence. |
-| `Heartbeat(sessionId)` | Every two seconds from the client; liveness independent of meaningful state changes. |
+| `HeartbeatWithBridge(sessionId, available)` | Liveness and bridge freshness, independent of meaningful state changes. |
 | `Status()` | Only the authenticated registration's run. |
+| `CheckCatch(name)` | German or English species name, and the matching caught family in the caller's run if present. |
+| `ChangeArena(number, complete)` | Complete the next arena or revert the most recent completion for the caller. |
+| `ResolveFaint(pokemonId, incidentId, confirm, reason)` | Confirm or dismiss the caller's pending knockout. A confirmed death applies to every member of its link. |
 
-The authenticated registration, never a payload's player or run ID, determines ownership. Wrong versions, unsupported ROM, duplicate identities/slots, invalid ranges, unknown sessions and large payloads fail at the boundary. Observations are limited to at most one per 150 ms per transport connection; the normal client emits meaningful changes every two seconds. Registration and connection endpoints have a bounded request limiter.
+The authenticated registration, never a payload's player or run ID, determines ownership. Wrong versions, unsupported ROM, duplicate identities/slots, invalid ranges, unknown sessions and large payloads fail at the boundary. Observations are limited to at most one per 150 ms per transport connection. The client checks for changes once per second and records changed map tiles and catch markers in the run database. Registration and connection endpoints have a bounded request limiter.
 
 ## Sessions and recovery
 

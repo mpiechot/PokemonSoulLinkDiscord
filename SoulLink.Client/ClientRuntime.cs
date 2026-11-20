@@ -29,6 +29,7 @@ public sealed class ClientRuntime : BackgroundService
     private readonly SemaphoreSlim connectionGate = new(1);
     private ClientSettings settings;
     private readonly bool allowSyntheticFrames;
+    private readonly bool enableLocalRun;
     private readonly TimeProvider clock;
     private readonly JoinForm? autoJoin;
     private DateTimeOffset nextJoinAttempt;
@@ -44,6 +45,8 @@ public sealed class ClientRuntime : BackgroundService
     private string state = "Not registered";
     private DateTimeOffset? bridgeSeen;
     private ClientRunView? run;
+    private ClientRunView? localView;
+    private LocalRunTracker? localTracker;
     private bool bridgeReconnected;
     private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -52,6 +55,7 @@ public sealed class ClientRuntime : BackgroundService
         this.clock = clock ?? TimeProvider.System;
         this.autoJoin = autoJoin;
         this.allowSyntheticFrames = configuration.GetValue("AllowSyntheticFrames", false);
+        this.enableLocalRun = configuration.GetValue("EnableLocalRun", false);
         this.bridgePort = configuration.GetValue("BridgePort", 5091);
         this.settingsPath = Path.GetFullPath(configuration["SettingsPath"] ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "client.json"));
@@ -65,6 +69,7 @@ public sealed class ClientRuntime : BackgroundService
         {
             bool live = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(10);
             var pending = this.settings.PendingJoin ?? this.autoJoin;
+            bool local = this.settings.Registration is null && this.localView is not null;
             return new ClientView(
                 this.settings.Registration is null ? pending?.Name ?? this.settings.Name : this.settings.Name,
                 this.settings.Registration is null ? pending?.Server ?? this.settings.Server : this.settings.Server,
@@ -72,8 +77,9 @@ public sealed class ClientRuntime : BackgroundService
                 this.state, this.bridgeReady.Task.IsCompletedSuccessfully ? this.bridgeReady.Task.Result : this.bridgePort,
                 live ? "Online" : "Waiting for mGBA", this.bridgeSeen,
                 live ? this.latest : null,
-                this.run, this.log.ToArray(), this.allowSyntheticFrames,
-                LocalPlayerId: this.settings.Registration?.PlayerId, Marker: pending?.Marker ?? this.settings.Marker);
+                local ? this.localView : this.run, this.log.ToArray(), this.allowSyntheticFrames,
+                LocalPlayerId: local ? this.localTracker?.PlayerId : this.settings.Registration?.PlayerId,
+                Marker: pending?.Marker ?? this.settings.Marker, IsLocalRun: local);
         }
     }
 
@@ -86,8 +92,73 @@ public sealed class ClientRuntime : BackgroundService
         {
             this.latest = snapshot;
             this.bridgeSeen = this.clock.GetUtcNow();
+            if (this.enableLocalRun && this.settings.Registration is null && this.settings.PendingJoin is null)
+            {
+                this.localTracker ??= new LocalRunTracker(this.clock);
+                if (this.localTracker.Observe(snapshot)) this.localView = this.localTracker.View();
+            }
         }
     }
+
+    public void ResetLocalRun()
+    {
+        lock (this.stateGate)
+        {
+            this.localTracker?.Dispose();
+            this.localTracker = null;
+            this.localView = null;
+        }
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        this.ResetLocalRun();
+    }
+
+    public async Task<CatchCheck> CheckCatchAsync(string name)
+    {
+        lock (this.stateGate)
+        {
+            if (this.settings.Registration is null && this.localTracker is { } tracker)
+                return tracker.CheckCatch(name);
+        }
+        await this.connectionGate.WaitAsync();
+        try { return await this.RequireConnection().InvokeAsync<CatchCheck>("CheckCatch", name); }
+        finally { this.connectionGate.Release(); }
+    }
+
+    public Task ChangeArenaAsync(int number, bool complete) =>
+        this.RunActionAsync(t => t.ChangeArena(number, complete), c => c.InvokeAsync("ChangeArena", number, complete));
+
+    public Task ResolveFaintAsync(Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
+        this.RunActionAsync(t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
+            c => c.InvokeAsync("ResolveFaint", pokemonId, incidentId, confirm, reason));
+
+    private async Task RunActionAsync(Action<LocalRunTracker> localAction, Func<HubConnection, Task> remoteAction)
+    {
+        lock (this.stateGate)
+        {
+            if (this.settings.Registration is null && this.localTracker is { } tracker)
+            {
+                localAction(tracker);
+                this.localView = tracker.View();
+                return;
+            }
+        }
+        await this.connectionGate.WaitAsync();
+        try
+        {
+            var connected = this.RequireConnection();
+            await remoteAction(connected);
+            var dashboard = DashboardProjection.FromRun(await connected.InvokeAsync<AutomationRun>("Status"));
+            lock (this.stateGate) this.run = dashboard;
+        }
+        finally { this.connectionGate.Release(); }
+    }
+
+    private HubConnection RequireConnection() => this.connection is { State: HubConnectionState.Connected } connected
+        ? connected : throw new InvalidOperationException("Warte auf eine Verbindung zum Run.");
 
     public async Task JoinAsync(JoinForm form)
     {
@@ -174,7 +245,7 @@ public sealed class ClientRuntime : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var bridge = this.ReadBridgeAsync(stoppingToken);
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -250,7 +321,18 @@ public sealed class ClientRuntime : BackgroundService
         if (snapshot is not null && fresh && !this.blocked)
         {
             // Time/frame continue changing; only meaningful observations cross the network.
-            string fingerprint = Protocol.Serialize(new { snapshot.Pokemon, snapshot.MapGroup, snapshot.MapNumber, snapshot.Area, snapshot.InBattle, snapshot.Epoch, snapshot.BadgeMask });
+            string fingerprint = Protocol.Serialize(new
+            {
+                snapshot.Pokemon,
+                snapshot.MapGroup,
+                snapshot.MapNumber,
+                snapshot.Area,
+                snapshot.Position,
+                snapshot.InBattle,
+                snapshot.Faints,
+                snapshot.Epoch,
+                snapshot.BadgeMask
+            });
             bool pendingDeath = snapshot.Pokemon.Any(p => p.Hp == 0 && p.Container == Placement.Party);
             if (this.baseline || fingerprint != this.lastFingerprint || pendingDeath)
             {
