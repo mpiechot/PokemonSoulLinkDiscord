@@ -21,6 +21,7 @@ public static class Protocol
 public enum RunPhase { Lobby, Active, Paused, Finished }
 public enum DeathRule { Disabled, ZeroHpOutsideBattle }
 public enum Placement { Party, Box }
+public enum PlayerMarker { Circle, Diamond, Star, Triangle, Square, Heart, Moon, Sun }
 
 public sealed record PokemonState
 {
@@ -34,6 +35,8 @@ public sealed record PokemonState
     public uint Status { get; init; }
     public bool IsEgg { get; init; }
     public bool IsShiny { get; init; }
+    public byte? RubyType1 { get; init; }
+    public byte? RubyType2 { get; init; }
     public int MetArea { get; init; }
     public Placement Container { get; init; }
     public int Slot { get; init; }
@@ -53,10 +56,13 @@ public sealed record GameSnapshot
     public int Area { get; init; }
     public string AreaName => AreaCatalog.Name(this.Area);
     public bool InBattle { get; init; }
+    public byte? BadgeMask { get; init; }
+    public int[]? GymLevels { get; init; }
     public List<PokemonState> Pokemon { get; init; } = [];
 }
 
-public sealed record JoinRequest(string Invitation, string Name, Guid ClientId, string Token, string GameCode, int Version = Protocol.Version);
+public sealed record JoinRequest(string Invitation, string Name, Guid ClientId, string Token, string GameCode,
+    int Version = Protocol.Version, PlayerMarker Marker = PlayerMarker.Circle);
 public sealed record Registration(Guid RunId, Guid PlayerId, Guid ClientId);
 public sealed record Hello(Guid ClientId, int Version = Protocol.Version);
 public sealed record SessionInfo(Guid SessionId, Guid RunId, Guid PlayerId, long NextSequence);
@@ -87,10 +93,13 @@ public sealed class AutomationPlayer
     public Guid ClientId { get; set; }
     public string Name { get; set; } = "";
     public long Sequence { get; set; }
+    public PlayerMarker Marker { get; set; }
     public string Connection { get; set; } = "Offline";
     public string Diagnostic { get; set; } = "Waiting for the first snapshot.";
     public DateTimeOffset? LastSeen { get; set; }
     public GameSnapshot? LastSnapshot { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DisplayArea { get; set; }
     public bool RebaselineAllowed { get; set; }
     public List<TrackedPokemon> Pokemon { get; set; } = [];
 }

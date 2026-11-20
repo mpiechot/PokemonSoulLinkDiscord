@@ -4,7 +4,7 @@ The Windows player bundles a pinned portable mGBA development build with Lua sup
 
 The redistributed mGBA bundle retains its license and notices. [mGBA source for build 9187](https://github.com/mgba-emu/mgba/tree/e6c17152dec0caaebd8a4b949c96a24d56debf44) · [mGBA build list](https://mgba.io/builds/1/) · [Source for bundled dependencies](https://github.com/mgba-emu/dependencies).
 
-On an interactive Windows desktop, run `./scripts/Test-SoulLinkPlayer.ps1` in PowerShell 7 after publishing to verify actual mGBA startup and snapshots for both supported revisions. Hosted Windows CI runs the package and embedded-invitation checks with `-PackageOnly`; live emulator startup timed out on that runner.
+On an interactive Windows desktop, run `./scripts/Test-SoulLinkPlayer.ps1` in PowerShell 7 after publishing to verify actual mGBA startup, docking, undocking and snapshots for both supported revisions. Hosted Windows CI runs the package and embedded-invitation checks with `-PackageOnly`; live emulator startup timed out on that runner.
 
 ## Reference profile and validation boundary
 
@@ -18,6 +18,9 @@ The profile `ruby-axvd-reference-v2` recognizes the twelve-byte `POKEMON RUBY` t
 | SaveBlock1 | `0x02025734`, map group +4, number +5 | Ruby `include/global.h` |
 | SaveBlock2 | `0x02024EA4`, play hours +0x0E, minutes +0x10, seconds +0x11 | Ruby `include/global.h` |
 | Main | `0x03001770`, battle flag at +0x43D, bit 1 | Ruby common symbols and `include/main.h` |
+| Badges | SaveBlock1 flags +0x1220, bits 0x807–0x80E | Ruby `include/global.h` and `include/constants/flags.h` |
+| Base types | `0x0820BBE8`, 28-byte records, types +6/+7 | AXVD Randomizer profile and Ruby `include/pokemon.h` |
+| Trainers | `0x081FD478`, 40-byte records, gym leaders 265–272 | AXVD Randomizer profile and Ruby trainer definitions |
 | ROM title / code | `0x080000A0` / `0x080000AC` | GBA ROM header |
 
 Before accepting a frame, the bridge validates title/code, party count, current box and playtime ranges. The client decrypts every occupied Pokémon, verifies its checksum, species and party stat ranges, and rejects incomplete data. The server additionally checks identities, unique slots and field ranges. These structural checks help diagnose incorrect layouts; they are **not a substitute for comparing all party/box/map data against a real save**.
@@ -57,6 +60,12 @@ Sources:
 - [German Ruby revision 1 symbols](https://github.com/pret/pokeruby/blob/78b19905a760095bc45eab2e36906c6e8c208dce/pokeruby_de_rev1.sym)
 - [Ruby species constants](https://github.com/pret/pokeruby/blob/master/include/constants/species.h)
 - [Ruby region sections](https://github.com/pret/pokeruby/blob/master/src/data/region_map/region_map_sections.json)
+- [Ruby badge flags](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/include/constants/flags.h)
+- [Randomizer AXVD offsets](https://github.com/Ajarmar/universal-pokemon-randomizer-zx/blob/7f00eb866ed35c8fe3963f078b6a2e0979dc2b8c/src/com/dabomstew/pkrandom/config/gen3_offsets.ini)
+
+The dashboard displays the original PokéNav Hoenn map from the local AXVD ROM. The 28×15-tile crop matches the in-game cursor grid. Its palette and compressed tiles are decoded in memory, with no map image included in the package. [Region map source and cursor grid](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/src/region_map.c)
+
+`python scripts/update-ruby-dashboard.py` regenerates data for area positions, species numbers, standard types and standard gym levels. `python scripts/download-ruby-sprites.py` downloads the 386 standard and 386 shiny views from the pinned PokéAPI sprite source for local use under `artifacts/player-dashboard/sprites`. Keep downloaded graphics out of Git and published player packages. [PokéAPI sprite copyright notice](https://github.com/PokeAPI/sprites/blob/c0542f7c51215d9672439012838c99f520596cbd/LICENCE.txt)
 
 ## Manual acceptance with a disposable save copy
 

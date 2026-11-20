@@ -15,8 +15,8 @@ internal static class Program
         {
             try
             {
-                if (args.Length != 5) throw new InvalidDataException("Expected destination, server, invitation and name.");
-                PlayerBundle.Create(executable, args[1], new PlayerProfile(Guid.NewGuid(), args[2], args[3], args[4]));
+                if (args.Length != 4) throw new InvalidDataException("Expected destination, server and invitation.");
+                PlayerBundle.Create(executable, args[1], new PlayerProfile(Guid.NewGuid(), args[2], args[3]));
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException)
             {
@@ -40,7 +40,8 @@ internal static class Program
             MessageBox.Show("SoulLink läuft bereits. Öffne das vorhandene SoulLink-Fenster.", "SoulLink");
             return;
         }
-        string home = smokeTest || smokeGame || (args.Length == 2 && args[0] == "--data-directory") ? Path.GetFullPath(args[1]) :
+        bool customHome = args.Length is 2 or 3 && args[0] == "--data-directory";
+        string home = smokeTest || smokeGame || customHome ? Path.GetFullPath(args[1]) :
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
         Directory.CreateDirectory(home);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -49,7 +50,7 @@ internal static class Program
             ["AllowSyntheticFrames"] = "false",
             ["BridgePort"] = "0",
         }).Build();
-        using var runtime = new ClientRuntime(configuration, autoJoin: smokeGame || profile is null ? null : new JoinForm(profile.Server, profile.Invitation, profile.Name));
+        using var runtime = new ClientRuntime(configuration);
         var emulator = new PortableMgba(home);
         string profileKey = profile is null ? "local" : profile.Id.ToString("N");
         var rom = new RomSelection(Path.Combine(home, $"rom-{profileKey}.txt"));
@@ -69,49 +70,12 @@ internal static class Program
         }
         if (smokeGame)
         {
-            RunGameSmokeTestAsync(runtime, emulator, rom, home, args[2], args.Length == 4 ? Path.GetFullPath(args[3]) : null).GetAwaiter().GetResult();
+            DockSmokeTest.Run(runtime, emulator, rom, home, args[2], args.Length == 4 ? Path.GetFullPath(args[3]) : null);
             return;
         }
-        string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : null;
-        Application.Run(new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom));
+        string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
+        string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
+        Application.Run(new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites));
     }
 
-    private static async Task RunGameSmokeTestAsync(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, string? testState)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-        try
-        {
-            rom.Save(path);
-            await runtime.StartAsync(timeout.Token);
-            string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"), runtime.Status().BridgePort);
-            using var process = emulator.Start(rom.Read()!, bridge, testState, softwareDisplay: true);
-            try
-            {
-                GameSnapshot? snapshot;
-                while ((snapshot = runtime.Status().Snapshot) is null)
-                {
-                    if (process.HasExited) throw new InvalidOperationException($"mGBA exited with code {process.ExitCode}.");
-                    await Task.Delay(100, timeout.Token);
-                }
-                File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(snapshot));
-            }
-            finally
-            {
-                if (!process.HasExited)
-                {
-                    process.CloseMainWindow();
-                    if (!process.WaitForExit(3000)) process.Kill();
-                }
-            }
-        }
-        catch (Exception exception)
-        {
-            File.WriteAllText(Path.Combine(home, "game-error.txt"), exception + Environment.NewLine + string.Join(Environment.NewLine, runtime.Status().Log));
-            Environment.ExitCode = 1;
-        }
-        finally
-        {
-            await runtime.StopAsync(CancellationToken.None);
-        }
-    }
 }

@@ -8,7 +8,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record JoinForm(string Server, string Invitation, string Name);
+public sealed record JoinForm(string Server, string Invitation, string Name, PlayerMarker Marker = PlayerMarker.Circle);
 
 public sealed class ClientSettings
 {
@@ -17,6 +17,8 @@ public sealed class ClientSettings
     public Guid ClientId { get; set; } = Guid.NewGuid();
     public string Token { get; set; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     public Registration? Registration { get; set; }
+    public PlayerMarker Marker { get; set; }
+    public JoinForm? PendingJoin { get; set; }
 }
 
 /// <summary>One local bridge, one authenticated server session, and no offline event queue.</summary>
@@ -41,7 +43,7 @@ public sealed class ClientRuntime : BackgroundService
     private long sequence;
     private string state = "Not registered";
     private DateTimeOffset? bridgeSeen;
-    private AutomationRun? run;
+    private ClientRunView? run;
     private bool bridgeReconnected;
     private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -62,17 +64,16 @@ public sealed class ClientRuntime : BackgroundService
         lock (this.stateGate)
         {
             bool live = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(10);
+            var pending = this.settings.PendingJoin ?? this.autoJoin;
             return new ClientView(
-                this.settings.Registration is null ? this.autoJoin?.Name ?? this.settings.Name : this.settings.Name,
-                this.settings.Registration is null ? this.autoJoin?.Server ?? this.settings.Server : this.settings.Server,
+                this.settings.Registration is null ? pending?.Name ?? this.settings.Name : this.settings.Name,
+                this.settings.Registration is null ? pending?.Server ?? this.settings.Server : this.settings.Server,
                 this.settings.Registration is not null,
                 this.state, this.bridgeReady.Task.IsCompletedSuccessfully ? this.bridgeReady.Task.Result : this.bridgePort,
                 live ? "Online" : "Waiting for mGBA", this.bridgeSeen,
                 live ? this.latest : null,
-                this.run is null ? null : new ClientRunView(this.run.Name, this.run.Phase, this.run.Id,
-                    this.run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection)).ToArray(),
-                    StatusPresenter.Lines(this.run, p => p.Connection).ToArray(), this.run.History.TakeLast(12).ToArray()),
-                this.log.ToArray(), this.allowSyntheticFrames);
+                this.run, this.log.ToArray(), this.allowSyntheticFrames,
+                LocalPlayerId: this.settings.Registration?.PlayerId, Marker: pending?.Marker ?? this.settings.Marker);
         }
     }
 
@@ -90,27 +91,66 @@ public sealed class ClientRuntime : BackgroundService
 
     public async Task JoinAsync(JoinForm form)
     {
-        if (!Uri.TryCreate(form.Server, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)) ||
-            uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
-            throw new InvalidDataException("Use an HTTPS server URL; HTTP is allowed only on loopback.");
+        ValidateJoin(form);
         await this.connectionGate.WaitAsync();
         try
         {
             if (this.settings.Registration is not null) throw new InvalidOperationException("Already registered. Use a separate SettingsPath for another player or run.");
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var response = await http.PostAsJsonAsync(form.Server.TrimEnd('/') + "/api/soullink/join",
-                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD"), Protocol.Json);
+                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker), Protocol.Json);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Join rejected. Check invitation, player name, edition and lobby state.");
-            this.settings.Registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json)
+            var registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json)
                 ?? throw new InvalidDataException("Server returned an empty registration.");
-            this.settings.Server = form.Server.TrimEnd('/');
-            this.settings.Name = form.Name.Trim();
+            lock (this.stateGate)
+            {
+                this.settings.Registration = registration;
+                this.settings.Server = form.Server.TrimEnd('/');
+                this.settings.Name = form.Name.Trim();
+                this.settings.Marker = form.Marker;
+                this.settings.PendingJoin = null;
+            }
             this.SaveSettings();
             this.Note("Registration saved. Connecting to the server.");
         }
         finally { this.connectionGate.Release(); }
         await this.ReconnectAsync();
+    }
+
+    public async Task QueueJoinAsync(JoinForm form)
+    {
+        ValidateJoin(form);
+        await this.connectionGate.WaitAsync();
+        try
+        {
+            if (this.settings.Registration is not null) return;
+            lock (this.stateGate)
+            {
+                this.settings.PendingJoin = form with { Name = form.Name.Trim() };
+                this.nextJoinAttempt = DateTimeOffset.MinValue;
+            }
+            this.SaveSettings();
+        }
+        finally { this.connectionGate.Release(); }
+    }
+
+    private static void ValidateJoin(JoinForm form)
+    {
+        if (string.IsNullOrWhiteSpace(form.Name)) throw new InvalidDataException("Bitte gib deinen Spielernamen ein.");
+        PlayerBundle.Validate(new PlayerProfile(Guid.NewGuid(), form.Server, form.Invitation, form.Name.Trim()));
+        if (!Enum.IsDefined(form.Marker)) throw new InvalidDataException("Ungültiges Karten-Icon.");
+    }
+
+    private JoinForm? GetPendingJoin()
+    {
+        lock (this.stateGate)
+        {
+            var pending = this.settings.PendingJoin ?? this.autoJoin;
+            var now = this.clock.GetUtcNow();
+            if (this.settings.Registration is not null || pending is null || now < this.nextJoinAttempt) return null;
+            this.nextJoinAttempt = now.AddSeconds(10);
+            return pending;
+        }
     }
 
     public async Task ReconnectAsync()
@@ -139,11 +179,10 @@ public sealed class ClientRuntime : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 if (bridge.IsCompleted) await bridge;
-                if (this.settings.Registration is null && this.autoJoin is not null && this.clock.GetUtcNow() >= this.nextJoinAttempt)
+                if (this.GetPendingJoin() is { } pending)
                 {
-                    this.nextJoinAttempt = this.clock.GetUtcNow().AddSeconds(10);
-                    try { await this.JoinAsync(this.autoJoin); }
-                    catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException)
+                    try { await this.JoinAsync(pending); }
+                    catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or InvalidDataException)
                     {
                         this.SetState("Anmeldung noch nicht möglich — wird automatisch erneut versucht.");
                         this.Note("Prepared registration unavailable (" + exception.GetType().Name + ").");
@@ -199,7 +238,6 @@ public sealed class ClientRuntime : BackgroundService
             this.lastFingerprint = null;
             this.SetState("Synchronizing — waiting for mGBA");
         }
-        await this.connection.InvokeAsync<string>("Heartbeat", this.session!.SessionId, cancellationToken);
         GameSnapshot? snapshot;
         bool fresh;
         lock (this.stateGate)
@@ -207,10 +245,11 @@ public sealed class ClientRuntime : BackgroundService
             snapshot = this.latest;
             fresh = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(8);
         }
+        await this.connection.InvokeAsync<string>("HeartbeatWithBridge", this.session!.SessionId, fresh, cancellationToken);
         if (snapshot is not null && fresh && !this.blocked)
         {
             // Time/frame continue changing; only meaningful observations cross the network.
-            string fingerprint = Protocol.Serialize(new { snapshot.Pokemon, snapshot.MapGroup, snapshot.MapNumber, snapshot.Area, snapshot.InBattle, snapshot.Epoch });
+            string fingerprint = Protocol.Serialize(new { snapshot.Pokemon, snapshot.MapGroup, snapshot.MapNumber, snapshot.Area, snapshot.InBattle, snapshot.Epoch, snapshot.BadgeMask });
             bool pendingDeath = snapshot.Pokemon.Any(p => p.Hp == 0 && p.Container == Placement.Party);
             if (this.baseline || fingerprint != this.lastFingerprint || pendingDeath)
             {
@@ -227,7 +266,8 @@ public sealed class ClientRuntime : BackgroundService
             }
         }
         var status = await this.connection.InvokeAsync<AutomationRun>("Status", cancellationToken);
-        lock (this.stateGate) this.run = status;
+        var dashboard = DashboardProjection.FromRun(status);
+        lock (this.stateGate) this.run = dashboard;
     }
 
     private async Task ReadBridgeAsync(CancellationToken cancellationToken)

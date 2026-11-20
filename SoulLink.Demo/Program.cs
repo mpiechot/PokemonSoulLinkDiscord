@@ -32,13 +32,14 @@ try
     await WaitFor(server + "/health/soullink");
     await WaitFor(ui + "/api/status");
     var run = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("demo", "Three-player Ruby demo", DeathRule: DeathRule.ZeroHpOutsideBattle));
-    await Post<object>(http, ui + "/api/join", new { server, invitation = run.Invitation, name = "Marco (demo)" });
+    await Post<object>(http, ui + "/api/join", new { server, invitation = run.Invitation, name = "Marco (demo)", marker = "Star" });
     var sessions = new List<SessionInfo>();
     foreach (string name in new[] { "Alex (demo)", "Sam (demo)" })
     {
         Guid id = Guid.NewGuid();
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        await Post<Registration>(http, server + "/api/soullink/join", new JoinRequest(run.Invitation, name, id, token, "AXVD"));
+        await Post<Registration>(http, server + "/api/soullink/join", new JoinRequest(run.Invitation, name, id, token, "AXVD",
+            Marker: hubs.Count == 0 ? PlayerMarker.Moon : PlayerMarker.Diamond));
         var hub = new HubConnectionBuilder().WithUrl(server + "/soullink", options =>
         {
             options.AccessTokenProvider = () => Task.FromResult<string?>(token);
@@ -49,33 +50,53 @@ try
         await hub.StartAsync(lifetime.Token);
         var session = await hub.InvokeAsync<SessionInfo>("Hello", new Hello(id), lifetime.Token);
         sessions.Add(session);
-        var baseline = SyntheticPokemon.Frame(1, SyntheticPokemon.Raw((uint)(100 + hubs.Count), 1)).Parse();
+        var baseline = (SyntheticPokemon.Frame(1, SyntheticPokemon.Raw((uint)(100 + hubs.Count), 1)) with
+        {
+            MapNumber = 15 + hubs.Count,
+        }).Parse();
         await hub.InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), session.SessionId, 1, true, baseline), lifetime.Token);
     }
     using var bridge = new TcpClient();
     await bridge.ConnectAsync(IPAddress.Loopback, bridgePort, lifetime.Token);
     long frame = 1;
-    var current = SyntheticPokemon.Frame(frame, SyntheticPokemon.Raw(100, 1));
+    var current = SyntheticPokemon.Frame(frame, SyntheticPokemon.Raw(100, 1)) with { BadgeMask = 0 };
     await Send(current);
     await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].Players.All(p => p.LastSnapshot is not null));
     await Post<AutomationRun>(admin, $"/api/soullink/admin/runs/{run.Id}/start", new RunAction("demo"));
     Console.WriteLine("Baseline accepted for all three players. Run started.");
     for (int i = 0; i < 2; i++)
     {
-        var snapshot = SyntheticPokemon.Frame(2, SyntheticPokemon.Raw((uint)(101 + i), 1), SyntheticPokemon.Raw((uint)(201 + i), 280, 1, box: i == 1)).Parse();
+        var snapshot = (SyntheticPokemon.Frame(2, SyntheticPokemon.Raw((uint)(101 + i), 1),
+            SyntheticPokemon.Raw((uint)(201 + i), 280, 1, box: i == 1)) with
+        { MapNumber = 16 + i }).Parse();
         await hubs[i].InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), sessions[i].SessionId, 2, false, snapshot), lifetime.Token);
     }
-    current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 280, 1));
+    current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 280, 1)) with { BadgeMask = 0 };
     await Send(current);
     await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].Encounters.Any(e => e.GroupId is not null));
     Console.WriteLine("Verified: catch → client → authenticated SignalR → SQLite → three-player link (including direct-to-box catch).");
     Console.WriteLine("Client UI: " + ui);
     Console.WriteLine("Isolated demo data: " + data);
     if (!args.Contains("--headless") && !args.Contains("--verify")) Process.Start(new ProcessStartInfo(ui) { UseShellExecute = true });
-    current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 281, 1, experience: 126));
+    current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 281, 1, experience: 126)) with { BadgeMask = 0 };
     await Send(current);
     await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].History.Any(e => e.Kind == "evolved"));
     Console.WriteLine("Verified: evolution preserves identity and link membership.");
+    current = current with { Frame = ++frame, PlaySeconds = frame, BadgeMask = 1 };
+    await Send(current);
+    await hubs[1].InvokeAsync<string>("HeartbeatWithBridge", sessions[1].SessionId, false, lifetime.Token);
+    await WaitUntil(async () =>
+    {
+        using var dashboard = JsonDocument.Parse(await http.GetStringAsync(ui + "/api/status", lifetime.Token));
+        if (!dashboard.RootElement.TryGetProperty("run", out var state) || state.ValueKind != JsonValueKind.Object) return false;
+        var players = state.GetProperty("players").EnumerateArray().ToArray();
+        return players.Any(p => p.GetProperty("marker").GetString() == "Star" && p.GetProperty("area").GetInt32() == 16)
+            && players.Any(p => p.GetProperty("marker").GetString() == "Diamond" && p.GetProperty("area").GetInt32() == 17
+                && p.GetProperty("connection").GetString() == "Stale")
+            && state.GetProperty("links").GetArrayLength() == 1
+            && state.GetProperty("history").EnumerateArray().Any(entry => entry.GetProperty("kind").GetString() == "badge");
+    });
+    Console.WriteLine("Verified: dashboard transmits player-selected markers, distinct map regions, stale positions, links and badge events.");
     var isolatedRun = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("isolated-guild", "Isolated run"));
     Guid isolatedClientId = Guid.NewGuid();
     string isolatedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));

@@ -8,7 +8,8 @@ local profiles = {
         title = "POKEMON RUBY", revisions = {[0] = true, [1] = true},
         id = "ruby-axvd-reference-v2",
         party = 0x03004370, partyCount = 0x03004360,
-        storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770
+        storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770,
+        stats = 0x0820BBE8, trainers = 0x081FD478
     }
 }
 local port = SOULLINK_PORT or 5091
@@ -36,6 +37,10 @@ local function readRange(address, size)
     return readCore():readRange(address, size)
 end
 
+local function read32(address)
+    return readCore():read32(address)
+end
+
 local function stop()
     if peer then pcall(function() peer:close() end) end
     peer, pending, position = nil, nil, 1
@@ -47,6 +52,44 @@ end
 
 local function hex(address, size)
     return (readRange(address, size):gsub(".", function(c) return string.format("%02X", string.byte(c)) end))
+end
+
+local function readTypes(profile)
+    if not profile.stats then return "" end
+    local stats = readRange(profile.stats, 412 * 28)
+    if #stats ~= 412 * 28 or stats:sub(1, 28) ~= string.rep("\0", 28) then return "" end
+    local result = {}
+    for species = 0, 411 do
+        local one, two = stats:byte(species * 28 + 7, species * 28 + 8)
+        local hp = stats:byte(species * 28 + 1)
+        result[species + 1] = hp == 0 and "FFFF" or string.format("%02X%02X", one, two)
+    end
+    return table.concat(result)
+end
+
+local function readNextGym(profile, badges)
+    if not profile.trainers then return "null" end
+    for gym = 0, 7 do
+        if (badges & (1 << gym)) == 0 then
+            local trainer = profile.trainers + (265 + gym) * 40
+            local flags = read8(trainer)
+            local count = read8(trainer + 0x20)
+            local party = read32(trainer + 0x24)
+            local stride = (flags & 1) == 0 and 8 or 16
+            if flags > 3 or count < 1 or count > 6 or read8(trainer + 1) ~= 25 or
+                read8(trainer + 3) ~= 71 + gym or party < 0x08000000 or party + count * stride > 0x0A000000 then
+                return "null"
+            end
+            local levels = {}
+            for slot = 0, count - 1 do
+                local level = read16(party + slot * stride + 2)
+                if level < 1 or level > 100 then return "null" end
+                levels[slot + 1] = level
+            end
+            return "[" .. table.concat(levels, ",") .. "]"
+        end
+    end
+    return "null"
 end
 
 local function sendPending()
@@ -97,9 +140,14 @@ local function snapshot(frame)
         end
     end
     local battle = (read8(profile.main + 0x43D) & 2) ~= 0
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"inBattle":%s,"completeInventory":true,"pokemon":[%s]}\n',
+    -- Badges are eight consecutive flags starting at FLAG_BADGE01_GET (0x807).
+    local badges = (read16(profile.save1 + 0x1220 + 0x100) >> 7) & 0xFF
+    local gymOk, gym = pcall(readNextGym, profile, badges)
+    local typesOk, types = pcall(readTypes, profile)
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"inBattle":%s,"badgeMask":%d,"gymLevels":%s,"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds,
-        read8(profile.save1 + 4), read8(profile.save1 + 5), tostring(battle), table.concat(pokemon, ","))
+        read8(profile.save1 + 4), read8(profile.save1 + 5), tostring(battle), badges,
+        gymOk and gym or "null", typesOk and types or "", table.concat(pokemon, ","))
 end
 
 local function onFrame()

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SoulLink;
 using SoulLink.Client;
@@ -81,6 +82,7 @@ public sealed class PlayerClientTests : IDisposable
         Assert.Throws<InvalidDataException>(() => PlayerBundle.Validate(profile));
         Assert.Throws<InvalidDataException>(() => PlayerBundle.Validate(profile with { Server = "https://example.test", Name = "@everyone" }));
         PlayerBundle.Validate(profile with { Server = "http://127.0.0.1:5080" });
+        PlayerBundle.Validate(profile with { Server = "https://example.test", Name = null });
     }
 
     [Fact]
@@ -99,12 +101,15 @@ public sealed class PlayerClientTests : IDisposable
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
+        builder.Services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
         await using var app = builder.Build();
         int attempts = 0;
         app.MapPost("/api/soullink/join", (JoinRequest request) =>
         {
             if (Interlocked.Increment(ref attempts) == 1) return Results.StatusCode(503);
-            Assert.Equal("Prepared player", request.Name);
+            Assert.Equal("Self-selected name", request.Name);
+            Assert.Equal(PlayerMarker.Star, request.Marker);
             return Results.Json(new Registration(Guid.NewGuid(), Guid.NewGuid(), request.ClientId), Protocol.Json);
         });
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -120,7 +125,11 @@ public sealed class PlayerClientTests : IDisposable
             ["BridgePort"] = port.ToString(),
         }).Build();
         var clock = new TestClock();
-        using var client = new ClientRuntime(configuration, clock, new JoinForm(endpoint, "INVITE", "Prepared player"));
+        using (var firstStart = new ClientRuntime(configuration, clock))
+        {
+            await firstStart.QueueJoinAsync(new JoinForm(endpoint, "INVITE", "Self-selected name", PlayerMarker.Star));
+        }
+        using var client = new ClientRuntime(configuration, clock);
         await client.StartAsync(timeout.Token);
         try
         {
@@ -128,12 +137,25 @@ public sealed class PlayerClientTests : IDisposable
             clock.Now += TimeSpan.FromSeconds(11);
             while (!client.Status().Registered) await Task.Delay(25, timeout.Token);
             Assert.Equal(2, Volatile.Read(ref attempts));
-            Assert.Equal("Prepared player", client.Status().Player);
+            Assert.Equal("Self-selected name", client.Status().Player);
+            Assert.Equal(PlayerMarker.Star, client.Status().Marker);
             using var restarted = new ClientRuntime(configuration);
             Assert.True(restarted.Status().Registered);
+            Assert.Equal(PlayerMarker.Star, restarted.Status().Marker);
             Assert.Null(restarted.Status().Snapshot);
         }
         finally { await client.StopAsync(timeout.Token); }
+    }
+
+    [Fact]
+    public void DescribesRubyTypesAndGymOrderUsingGenerationThreeData()
+    {
+        Assert.Equal(new RubySpeciesAppearance(280, "psychic", "psychic"), RubyDashboardCatalog.Appearance(392));
+        Assert.Equal(386, Enumerable.Range(1, 411).Count(id => RubyDashboardCatalog.Appearance(id) is not null));
+        Assert.Equal("Norman", RubyDashboardCatalog.NextGym(0b00001111)!.Name);
+        Assert.Equal(new[] { 28, 30, 31 }, RubyDashboardCatalog.NextGym(0b00001111)!.Levels);
+        Assert.Null(RubyDashboardCatalog.NextGym(byte.MaxValue));
+        Assert.Contains(RubyDashboardCatalog.Areas, area => area.Area == MapCatalog.Section(19, 1));
     }
 
     public void Dispose()

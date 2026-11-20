@@ -4,7 +4,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string Name);
+public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null);
 
 /// <summary>A host may append join details to a copy of the published app; bearer tokens are never bundled.</summary>
 public static class PlayerBundle
@@ -54,13 +54,14 @@ public static class PlayerBundle
 
     public static void Validate(PlayerProfile profile)
     {
-        if (profile.Id == Guid.Empty || string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 64 ||
-            profile.Name.Any(c => char.IsControl(c) || c is '@' or '`' or '<' or '>') ||
+        if (profile.Id == Guid.Empty || (profile.Name is not null &&
+            (string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 64 ||
+             profile.Name.Any(c => char.IsControl(c) || c is '@' or '`' or '<' or '>'))) ||
             string.IsNullOrWhiteSpace(profile.Invitation) || profile.Invitation.Length > 128 ||
             !Uri.TryCreate(profile.Server, UriKind.Absolute, out var uri) ||
             (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)) ||
             uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
-            throw new InvalidDataException("Bitte gültige Serveradresse, Einladung und Spielernamen angeben. Entfernte Server benötigen HTTPS.");
+            throw new InvalidDataException("Bitte gültige Serveradresse und Einladung angeben. Entfernte Server benötigen HTTPS.");
     }
 
     private static (long Offset, int Length)? ReadFooter(Stream stream)

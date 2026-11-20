@@ -2,8 +2,7 @@
 param(
     [string]$OutputDirectory,
     [string]$Server,
-    [string]$Invitation,
-    [string]$PlayerName
+    [string]$Invitation
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -19,13 +18,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Windows player build failed.' }
     $source = Join-Path $publishPath 'SoulLink.Player.exe'
     $destination = Join-Path $outputPath 'SoulLink.exe'
-    if ($Server -or $Invitation -or $PlayerName) {
-        if (-not ($Server -and $Invitation -and $PlayerName)) { throw 'Provide Server, Invitation and PlayerName together.' }
+    if ($Server -or $Invitation) {
+        if (-not ($Server -and $Invitation)) { throw 'Provide Server and Invitation together.' }
         # The published app writes a copy with only public join details, never stored bearer tokens.
         $startInfo = [Diagnostics.ProcessStartInfo]::new($source)
         $startInfo.UseShellExecute = $false
         $startInfo.CreateNoWindow = $true
-        foreach ($argument in @('--prepare-player', $destination, $Server, $Invitation, $PlayerName)) { $startInfo.ArgumentList.Add($argument) }
+        foreach ($argument in @('--prepare-player', $destination, $Server, $Invitation)) { $startInfo.ArgumentList.Add($argument) }
         $process = [Diagnostics.Process]::Start($startInfo)
         $process.WaitForExit()
         if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $destination)) { throw 'Player file creation failed. Choose a fresh OutputDirectory.' }

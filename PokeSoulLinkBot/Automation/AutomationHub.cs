@@ -65,12 +65,17 @@ public sealed class AutomationHub : Hub
     /// <summary>Updates liveness independently of game changes.</summary>
     public string Heartbeat(Guid sessionId) => this.engine.Heartbeat(this.Registration(), sessionId);
 
+    /// <summary>Updates session liveness and reports whether the bridge has current game data.</summary>
+    public string HeartbeatWithBridge(Guid sessionId, bool available)
+        => this.engine.Heartbeat(this.Registration(), sessionId, available);
+
     /// <summary>Returns only the caller's run.</summary>
     public AutomationRun Status()
     {
         var run = this.engine.View(this.Registration());
         foreach (var player in run.Players)
         {
+            player.DisplayArea = player.LastSnapshot?.Area;
             player.LastSnapshot = null;
             player.Connection = this.engine.Connection(player);
         }

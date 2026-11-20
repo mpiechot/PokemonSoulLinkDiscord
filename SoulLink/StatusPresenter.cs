@@ -22,11 +22,20 @@ public static class StatusPresenter
                 var pokemon = player.Pokemon.Single(p => p.Id == member.Value);
                 return (Player: player, Pokemon: pokemon);
             }).ToList();
-            string state = encounter.Failed ? "FAILED" : encounter.Dead ? "DEAD" : encounter.GroupId is null ? "PARTIAL" :
-                members.All(m => m.Pokemon.Present && m.Pokemon.State.Container == Placement.Party) ? "ACTIVE" :
-                members.All(m => m.Pokemon.Present && m.Pokemon.State.Container == Placement.Box) ? "BOX" : "TEAM CONFLICT";
+            string state = LinkState(encounter, members.Select(m => m.Pokemon));
             yield return $"{encounter.Name}: {state} · {string.Join(" / ", members.Select(m => $"{m.Player.Name}: {m.Pokemon.State.DisplayName}"))}";
         }
+    }
+
+    public static string LinkState(Encounter encounter, IEnumerable<TrackedPokemon> members)
+    {
+        if (encounter.Failed) return "FAILED";
+        if (encounter.Dead) return "DEAD";
+        if (encounter.GroupId is null) return "PARTIAL";
+        var team = members.ToArray();
+        if (team.Length > 0 && team.All(p => p.Present && p.State.Container == Placement.Party)) return "ACTIVE";
+        if (team.Length > 0 && team.All(p => p.Present && p.State.Container == Placement.Box)) return "BOX";
+        return "TEAM CONFLICT";
     }
 
     public static IEnumerable<string> Pages(IEnumerable<string> lines, int limit = 1800)

@@ -32,7 +32,10 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
             var run = new AutomationRun
             {
-                GuildId = guild, ChannelId = channel, Name = name, DeathRule = deathRule,
+                GuildId = guild,
+                ChannelId = channel,
+                Name = name,
+                DeathRule = deathRule,
                 Invitation = Convert.ToHexString(RandomNumberGenerator.GetBytes(12)),
             };
             tx.Save(run);
@@ -94,6 +97,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (request.Version != Protocol.Version) throw new InvalidDataException("Protocol version unsupported; update the client.");
         ValidateName(request.Name);
+        if (!Enum.IsDefined(request.Marker)) throw new InvalidDataException("Unknown player marker.");
         if (request.ClientId == Guid.Empty || request.Token.Length != 64 || !HexToken().IsMatch(request.Token))
             throw new InvalidDataException("Invalid client registration.");
         if (request.GameCode != "AXVD") throw new InvalidDataException("Only the German Ruby AXVD read-only adapter is currently enabled.");
@@ -111,7 +115,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 ?? throw new UnauthorizedAccessException("Invitation invalid, expired, or lobby already started.");
             if (run.Players.Count >= 12 || run.Players.Any(p => string.Equals(p.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Player name already used or lobby full.");
-            var player = new AutomationPlayer { ClientId = request.ClientId, Name = request.Name };
+            var player = new AutomationPlayer { ClientId = request.ClientId, Name = request.Name, Marker = request.Marker };
             run.Players.Add(player);
             var registration = new Registration(run.Id, player.Id, request.ClientId);
             tx.Save(run);
@@ -210,6 +214,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             }
 
             player.LastSnapshot = snapshot;
+            if (!import && previous?.BadgeMask is byte oldBadges && snapshot.BadgeMask is byte newBadges)
+            {
+                int acquired = System.Numerics.BitOperations.PopCount((uint)(newBadges & ~oldBadges));
+                if (acquired > 0) this.Event(tx, run, "badge", $"{player.Name}: +{acquired} Orden.", notify: false);
+            }
             player.Sequence = observation.Sequence;
             player.Connection = "Ready";
             player.Diagnostic = import ? "Baseline accepted; existing Pokémon imported without catch events." : "Observation accepted.";
@@ -223,7 +232,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         });
     }
 
-    public string Heartbeat(Registration registration, Guid sessionId)
+    public string Heartbeat(Registration registration, Guid sessionId, bool? bridgeAvailable = null)
     {
         if (!this.sessions.TryGetValue(registration.PlayerId, out var session) || session.Id != sessionId)
             throw new UnauthorizedAccessException("Session expired.");
@@ -233,6 +242,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             throw new UnauthorizedAccessException("Session went offline; reconnect with a baseline.");
         }
         session.LastSeen = this.clock.GetUtcNow();
+        if (bridgeAvailable.HasValue) session.BridgeAvailable = bridgeAvailable.Value;
         return session.Ready ? "Online" : "Synchronizing";
     }
 
@@ -242,6 +252,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         var age = this.clock.GetUtcNow() - session.LastSeen;
         if (age > TimeSpan.FromSeconds(45)) return "Offline";
         if (age > TimeSpan.FromSeconds(15)) return "Stale";
+        if (session.BridgeAvailable == false && player.Connection == "Ready") return "Stale";
         return player.Connection;
     }
 
@@ -376,12 +387,12 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         this.Event(tx, run, "death", $"{run.Name}: {player.Name}'s {pokemon.State.DisplayName} fainted; linked partners are marked dead. Game memory is unchanged.");
     }
 
-    private void Event(AutomationStore.StoreTransaction tx, AutomationRun run, string kind, string message)
+    private void Event(AutomationStore.StoreTransaction tx, AutomationRun run, string kind, string message, bool notify = true)
     {
         var item = new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), kind, message);
         run.History.Add(item);
         if (run.History.Count > 200) run.History.RemoveAt(0);
-        tx.Notify(run, item);
+        if (notify) tx.Notify(run, item);
     }
 
     [GeneratedRegex("^[0-9A-Fa-f]{64}$")]
@@ -394,6 +405,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         public Guid Id { get; } = id;
         public bool Ready { get; set; }
+        public bool? BridgeAvailable { get; set; }
         public DateTimeOffset LastSeen { get; set; } = lastSeen;
     }
 }
