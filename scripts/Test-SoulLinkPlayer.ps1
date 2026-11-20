@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Executable)
+param([string]$Executable, [switch]$PackageOnly)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if (-not $Executable) { $Executable = Join-Path $root 'artifacts\player\SoulLink.exe' }
@@ -56,6 +56,10 @@ $preparedHome = Join-Path $testRoot 'prepared-startup'
 Run-Player $prepared @('--smoke-test', $preparedHome)
 $result = Get-Content (Join-Path $preparedHome 'smoke-result.json') -Raw | ConvertFrom-Json
 if (-not $result.profileLoaded -or $result.profileName -ne 'Packaging check' -or $result.client.snapshot -or $result.client.isDemo) { throw 'Embedded player profile failed.' }
+if ($PackageOnly) {
+    Write-Host 'Single-file player verified: clean startup and embedded mGBA, bridge and invitation.'
+    return
+}
 for ($revision = 0; $revision -le 1; $revision++) {
     $romPath = Join-Path $testRoot "Ruby probe $revision.gba"
     $species = 25 + $revision

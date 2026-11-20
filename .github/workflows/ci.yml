@@ -69,8 +69,9 @@ jobs:
           dotnet-version: 9.0.x
       - name: Build single-file player
         run: ./scripts/Publish-SoulLinkPlayer.ps1
-      - name: Verify packaged startup, run profiles and mGBA reads
-        run: ./scripts/Test-SoulLinkPlayer.ps1
+      - name: Verify packaged startup and embedded invitation
+        # The live mGBA checks require an interactive Windows desktop.
+        run: ./scripts/Test-SoulLinkPlayer.ps1 -PackageOnly
       - uses: actions/upload-artifact@v4
         with:
           name: SoulLink-Windows

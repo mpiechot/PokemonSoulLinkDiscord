@@ -2,7 +2,9 @@
 
 The Windows player bundles a pinned portable mGBA development build with Lua support. Its settings live in the player's app directory and its bridge uses a dedicated loopback port. The existing stand-alone mGBA installation is independent. For developer use, the web client still accepts a manual load of `integration/mgba/soullink.lua` in Tools → Scripting on port 5091.
 
-The redistributed mGBA bundle retains its license and notices. [mGBA source for build 9187](https://github.com/mgba-emu/mgba/tree/e6c17152dec0caaebd8a4b949c96a24d56debf44) · [mGBA build list](https://mgba.io/builds/1/) · [Source for bundled dependencies](https://github.com/mgba-emu/medusa-deps).
+The redistributed mGBA bundle retains its license and notices. [mGBA source for build 9187](https://github.com/mgba-emu/mgba/tree/e6c17152dec0caaebd8a4b949c96a24d56debf44) · [mGBA build list](https://mgba.io/builds/1/) · [Source for bundled dependencies](https://github.com/mgba-emu/dependencies).
+
+On an interactive Windows desktop, run `./scripts/Test-SoulLinkPlayer.ps1` in PowerShell 7 after publishing to verify actual mGBA startup and snapshots for both supported revisions. Hosted Windows CI runs the package and embedded-invitation checks with `-PackageOnly`; live emulator startup timed out on that runner.
 
 ## Reference profile and validation boundary
 
