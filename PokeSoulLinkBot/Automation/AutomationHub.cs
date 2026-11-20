@@ -10,12 +10,14 @@ public sealed class AutomationHub : Hub
 {
     private readonly AutomationEngine engine;
     private readonly IOptions<SoulLinkOptions> options;
+    private readonly RunChangeBroadcast updates;
 
     /// <summary>Initializes the run-bound transport adapter.</summary>
-    public AutomationHub(AutomationEngine engine, IOptions<SoulLinkOptions> options)
+    public AutomationHub(AutomationEngine engine, IOptions<SoulLinkOptions> options, RunChangeBroadcast updates)
     {
         this.engine = engine;
         this.options = options;
+        this.updates = updates;
     }
 
     /// <inheritdoc />
@@ -47,6 +49,8 @@ public sealed class AutomationHub : Hub
             this.Context.Items.TryGetValue("sessionId", out object? session) && session is Guid sessionId)
         {
             this.engine.Disconnect(player, sessionId);
+            this.updates.Unregister(player.PlayerId, this.Context.ConnectionId);
+            this.updates.Notify(player.RunId);
         }
 
         return base.OnDisconnectedAsync(exception);
@@ -55,8 +59,10 @@ public sealed class AutomationHub : Hub
     /// <summary>Starts a session requiring a fresh inventory baseline.</summary>
     public SessionInfo Hello(Hello hello)
     {
-        var session = this.engine.Connect(this.Registration(), hello);
+        var player = this.Registration();
+        var session = this.engine.Connect(player, hello);
         this.Context.Items["sessionId"] = session.SessionId;
+        this.updates.Register(player.PlayerId, this.Context.ConnectionId);
         return session;
     }
 
@@ -84,10 +90,46 @@ public sealed class AutomationHub : Hub
 
     /// <summary>Updates session liveness and reports whether the bridge has current game data.</summary>
     public string HeartbeatWithBridge(Guid sessionId, bool available)
-        => this.engine.Heartbeat(this.Registration(), sessionId, available);
+    {
+        var player = this.Registration();
+        string result = this.engine.Heartbeat(player, sessionId, available);
+        if (!this.Context.Items.TryGetValue("bridgeAvailable", out object? previous) || !Equals(previous, available))
+        {
+            this.Context.Items["bridgeAvailable"] = available;
+            this.updates.Notify(player.RunId);
+        }
+
+        return result;
+    }
 
     /// <summary>Checks the catch family against the caller's run.</summary>
     public CatchCheck CheckCatch(string name) => this.engine.CheckCatch(this.Registration(), name);
+
+    /// <summary>Requests ROM details from a participant for one of their known Pokémon.</summary>
+    public async Task<PokemonRomDetails?> PokemonDetails(Guid playerId, int species)
+    {
+        var requester = this.Registration();
+        if (requester.PlayerId == playerId || !SpeciesCatalog.IsValid(species) ||
+            !this.engine.View(requester).Players.Any(player => player.Id == playerId && this.engine.Connection(player) == "Ready" &&
+                (player.Pokemon.Any(mon => !mon.State.IsEgg && mon.State.Species == species) ||
+                    player.LastSnapshot?.Battle?.Combatants.Any(mon => mon.Species == species) == true)) ||
+            this.updates.Peer(playerId) is not { } connection)
+        {
+            return null;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(this.Context.ConnectionAborted);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        try
+        {
+            var details = await this.Clients.Client(connection).InvokeAsync<PokemonRomDetails?>("ReadPokemonDetails", species, timeout.Token);
+            return details?.IsValid() == true ? details : null;
+        }
+        catch (Exception error) when (error is HubException or OperationCanceledException or IOException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>Adds a shared rule to the caller's run.</summary>
     public void AddRule(string text)
@@ -118,15 +160,24 @@ public sealed class AutomationHub : Hub
     }
 
     /// <summary>Returns only the caller's run.</summary>
+    public async Task<AutomationRun> Subscribe()
+    {
+        await this.Groups.AddToGroupAsync(this.Context.ConnectionId, RunChangeBroadcast.Group(this.Registration().RunId), this.Context.ConnectionAborted);
+        return this.Status();
+    }
+
+    /// <summary>Returns only the caller's run.</summary>
     public AutomationRun Status()
     {
         var registration = this.Registration();
         var run = this.engine.View(registration);
         foreach (var player in run.Players)
         {
+            player.Connection = this.engine.Connection(player);
             player.DisplayArea = player.LastSnapshot?.Area;
             player.DisplayPosition = player.LastSnapshot?.Position;
             player.DisplayBadges = player.LastSnapshot?.BadgeMask;
+            player.DisplayBattle = run.Phase == RunPhase.Active && player.Connection == "Ready" ? player.LastSnapshot?.Battle : null;
             if (player.Id != registration.PlayerId)
             {
                 foreach (var pokemon in player.Pokemon)
@@ -137,7 +188,6 @@ public sealed class AutomationHub : Hub
             }
 
             player.LastSnapshot = null;
-            player.Connection = this.engine.Connection(player);
         }
 
         return run;

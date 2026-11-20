@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using SoulLink;
 
@@ -41,8 +42,17 @@ public sealed class ClientRuntime : BackgroundService
     private HubConnection? connection;
     private SessionInfo? session;
     private GameSnapshot? latest;
+    private GameSnapshot? evaluated;
     private string? lastFingerprint;
     private bool baseline = true;
+    private bool pushUpdates;
+    private bool? reportedBridge;
+    private int runDirty;
+    private int reconnectFailures;
+    private DateTimeOffset nextReconnect;
+    private DateTimeOffset nextObservation;
+    private DateTimeOffset nextHeartbeat;
+    private DateTimeOffset nextRepair;
     private long sequence;
     private string state = "Not registered";
     private DateTimeOffset? bridgeSeen;
@@ -50,6 +60,7 @@ public sealed class ClientRuntime : BackgroundService
     private ClientRunView? localView;
     private LocalRunTracker? localTracker;
     private string? localRomHash;
+    private string? romPath;
     private uint? localTrainerId;
     private bool bridgeReconnected;
     private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -123,6 +134,7 @@ public sealed class ClientRuntime : BackgroundService
         lock (this.stateGate)
         {
             this.ClearLocalRun();
+            this.romPath = romPath;
             this.localRomHash = romHash;
             this.localTrainerId = null;
         }
@@ -133,6 +145,7 @@ public sealed class ClientRuntime : BackgroundService
         lock (this.stateGate)
         {
             this.ClearLocalRun();
+            this.romPath = null;
             this.localRomHash = null;
             this.localTrainerId = null;
         }
@@ -161,6 +174,34 @@ public sealed class ClientRuntime : BackgroundService
         await this.connectionGate.WaitAsync();
         try { return await this.RequireConnection(runId).InvokeAsync<CatchCheck>("CheckCatch", name); }
         finally { this.connectionGate.Release(); }
+    }
+
+    public async Task<PokemonRomDetails?> PartnerPokemonDetailsAsync(Guid runId, Guid player, int species, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await this.RequireConnection(runId).InvokeAsync<PokemonRomDetails?>("PokemonDetails", player, species, cancellationToken);
+        }
+        catch (Exception error) when (error is InvalidOperationException or HubException or IOException)
+        {
+            return null;
+        }
+    }
+
+    private PokemonRomDetails? ReadPokemonDetails(int species)
+    {
+        string? path;
+        lock (this.stateGate) path = this.romPath;
+        if (path is null) return null;
+        try
+        {
+            using var rom = File.OpenRead(path);
+            return RubyRomDetails.Read(rom, species);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     public Task ChangeArenaAsync(Guid runId, int number, bool complete) =>
@@ -284,6 +325,8 @@ public sealed class ClientRuntime : BackgroundService
         await this.connectionGate.WaitAsync(cancellationToken);
         try
         {
+            this.nextReconnect = DateTimeOffset.MinValue;
+            this.reconnectFailures = 0;
             await this.CloseConnectionAsync();
         }
         finally { this.connectionGate.Release(); }
@@ -301,7 +344,7 @@ public sealed class ClientRuntime : BackgroundService
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         var bridge = this.ReadBridgeAsync(stoppingToken);
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(250));
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -321,8 +364,10 @@ public sealed class ClientRuntime : BackgroundService
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     this.SetState("Offline — tracking paused");
-                    this.Note("Server unavailable or message rejected (" + exception.GetType().Name + "). Reconnecting without replay.");
+                    this.Note("Run-Verbindung unterbrochen (" + exception.GetType().Name + "). Neuer Versuch folgt automatisch.");
                     await this.CloseConnectionAsync();
+                    this.reconnectFailures = Math.Min(this.reconnectFailures + 1, 5);
+                    this.nextReconnect = this.clock.GetUtcNow().AddMilliseconds(300 * (1 << this.reconnectFailures) + Random.Shared.Next(250));
                 }
                 finally { this.connectionGate.Release(); }
             }
@@ -338,15 +383,20 @@ public sealed class ClientRuntime : BackgroundService
     private async Task TickAsync(CancellationToken cancellationToken)
     {
         if (this.settings.Registration is null) return;
-        bool reconnect;
+        bool bridgeRestarted;
         lock (this.stateGate)
         {
-            reconnect = this.bridgeReconnected;
+            bridgeRestarted = this.bridgeReconnected;
             this.bridgeReconnected = false;
         }
-        if (reconnect) await this.CloseConnectionAsync();
+        if (bridgeRestarted)
+        {
+            this.baseline = true;
+            this.evaluated = null;
+        }
         if (this.connection is null)
         {
+            if (this.clock.GetUtcNow() < this.nextReconnect) return;
             this.connection = new HubConnectionBuilder().WithUrl(this.settings.Server + "/soullink", options =>
             {
                 options.AccessTokenProvider = () => Task.FromResult<string?>(this.settings.Token);
@@ -359,12 +409,25 @@ public sealed class ClientRuntime : BackgroundService
             {
                 options.PayloadSerializerOptions = Protocol.Json;
             }).Build();
+            this.connection.On("RunChanged", () => Interlocked.Exchange(ref this.runDirty, 1));
+            this.connection.On<int, PokemonRomDetails?>("ReadPokemonDetails", this.ReadPokemonDetails);
             await this.connection.StartAsync(cancellationToken);
             this.session = await this.connection.InvokeAsync<SessionInfo>("Hello", new Hello(this.settings.ClientId), cancellationToken);
             this.sequence = this.session.NextSequence;
-            this.baseline = true;
-            this.lastFingerprint = null;
             this.SetState("Synchronizing — waiting for mGBA");
+            try
+            {
+                this.UpdateRun(await this.connection.InvokeAsync<AutomationRun>("Subscribe", cancellationToken));
+                this.pushUpdates = true;
+                this.nextRepair = this.clock.GetUtcNow().AddSeconds(8);
+            }
+            catch (HubException)
+            {
+                // Servers predating subscriptions still provide the same authoritative status.
+                this.pushUpdates = false;
+            }
+
+            this.reconnectFailures = 0;
         }
         GameSnapshot? snapshot;
         bool fresh;
@@ -373,9 +436,16 @@ public sealed class ClientRuntime : BackgroundService
             snapshot = this.latest;
             fresh = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(8);
         }
-        await this.connection.InvokeAsync<string>("HeartbeatWithBridge", this.session!.SessionId, fresh, cancellationToken);
-        if (snapshot is not null && fresh)
+        var now = this.clock.GetUtcNow();
+        if (this.reportedBridge != fresh || now >= this.nextHeartbeat)
         {
+            await this.connection.InvokeAsync<string>("HeartbeatWithBridge", this.session!.SessionId, fresh, cancellationToken);
+            this.reportedBridge = fresh;
+            this.nextHeartbeat = now.AddSeconds(3);
+        }
+        if (snapshot is not null && fresh && now >= this.nextObservation && !ReferenceEquals(this.evaluated, snapshot))
+        {
+            this.evaluated = snapshot;
             // Time/frame continue changing; only meaningful observations cross the network.
             string fingerprint = Protocol.Serialize(new
             {
@@ -385,6 +455,7 @@ public sealed class ClientRuntime : BackgroundService
                 snapshot.Area,
                 snapshot.Position,
                 snapshot.InBattle,
+                snapshot.Battle,
                 snapshot.Faints,
                 snapshot.WildBattles,
                 snapshot.Epoch,
@@ -395,7 +466,8 @@ public sealed class ClientRuntime : BackgroundService
             bool pendingDeath = snapshot.Pokemon.Any(p => p.Hp == 0 && p.Container == Placement.Party);
             if (this.baseline || fingerprint != this.lastFingerprint || pendingDeath)
             {
-                var observation = new Observation(Guid.NewGuid(), this.session.SessionId, this.sequence, this.baseline, snapshot);
+                this.nextObservation = this.clock.GetUtcNow().AddMilliseconds(200);
+                var observation = new Observation(Guid.NewGuid(), this.session!.SessionId, this.sequence, this.baseline, snapshot);
                 var result = await this.connection.InvokeAsync<ObservationResult>("Observe", observation, cancellationToken);
                 this.SetState(result.State + " — " + result.Message);
                 if (result.Accepted)
@@ -415,7 +487,15 @@ public sealed class ClientRuntime : BackgroundService
                 }
             }
         }
-        var status = await this.connection.InvokeAsync<AutomationRun>("Status", cancellationToken);
+        if (Interlocked.Exchange(ref this.runDirty, 0) == 1 || now >= this.nextRepair)
+        {
+            this.UpdateRun(await this.connection.InvokeAsync<AutomationRun>("Status", cancellationToken));
+            this.nextRepair = now.AddSeconds(this.pushUpdates ? 8 : 1);
+        }
+    }
+
+    private void UpdateRun(AutomationRun status)
+    {
         var dashboard = DashboardProjection.FromRun(status);
         lock (this.stateGate) this.run = dashboard;
     }
@@ -499,6 +579,10 @@ public sealed class ClientRuntime : BackgroundService
         this.connection = null;
         this.session = null;
         this.baseline = true;
+        this.evaluated = null;
+        this.lastFingerprint = null;
+        this.reportedBridge = null;
+        this.nextRepair = DateTimeOffset.MinValue;
         lock (this.stateGate) this.run = null;
     }
 

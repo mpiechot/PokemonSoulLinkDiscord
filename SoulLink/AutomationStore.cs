@@ -9,6 +9,8 @@ public sealed class AutomationStore
     private readonly string connectionString;
     private readonly object gate = new();
 
+    public event Action<Guid>? RunChanged;
+
     public AutomationStore(string path)
     {
         string fullPath = Path.GetFullPath(path);
@@ -108,6 +110,7 @@ public sealed class AutomationStore
             var context = new StoreTransaction(connection, transaction);
             T result = action(context);
             transaction.Commit();
+            foreach (Guid id in context.ChangedRuns) this.RunChanged?.Invoke(id);
             return result;
         }
     }
@@ -121,6 +124,8 @@ public sealed class AutomationStore
 
     public sealed class StoreTransaction(SqliteConnection connection, SqliteTransaction transaction)
     {
+        internal HashSet<Guid> ChangedRuns { get; } = [];
+
         public RunGroup[] Groups()
         {
             using var command = this.Command("SELECT id,name FROM run_groups ORDER BY name");
@@ -163,12 +168,14 @@ public sealed class AutomationStore
             using var command = this.Command("INSERT INTO runs VALUES($id,$guild,$selected,$document) ON CONFLICT(id) DO UPDATE SET selected=$selected,document=$document",
                 ("$id", run.Id.ToString()), ("$guild", run.GuildId), ("$selected", run.Selected ? 1 : 0), ("$document", Protocol.Serialize(run)));
             command.ExecuteNonQuery();
+            this.ChangedRuns.Add(run.Id);
         }
 
         public void Delete(Guid id)
         {
             using var command = this.Command("DELETE FROM runs WHERE id=$id", ("$id", id.ToString()));
             command.ExecuteNonQuery();
+            this.ChangedRuns.Add(id);
         }
 
         public void RecordPosition(Guid run, Guid player, long sequence, DateTimeOffset at, GameSnapshot snapshot, MapPosition position)

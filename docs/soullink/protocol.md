@@ -43,6 +43,10 @@ The optional `wildBattles` list carries up to sixteen completed wild battles fro
 
 Normal snapshots include fresh time/frame for rollback detection, but their wire transmission is triggered by meaningful inventory/map/battle changes. HP-zero observations are repeated to support the two-observation configurable death rule.
 
+After `Hello`, the client calls `Subscribe` to receive `RunChanged` signals scoped to its authenticated run. Committed changes are coalesced before notification. Each notification requests the caller's current view. A periodic status refresh repairs missed signals and supports older servers. The native bridge reports active battle Pokémon and HP where the profile supports them. These transient details disappear when the runner is stale or leaves the fight.
+
+`PokemonDetails` requests a small cartridge-derived learnset, base stats and evolution list from a ready participant in the same run for an observed species. The server relays the request to the owning player and applies a short timeout. The ROM file and save data stay local.
+
 ## Optional administration API
 
 Disabled unless `SoulLink:AdminKey` contains at least 32 characters. Send it only in `X-SoulLink-Admin`. It permits guild-scoped run creation, lifecycle operations and explicit player rebaseline. Intended for isolated demos/operations; normal administration uses permission-checked Discord commands. Do not expose it publicly without TLS and an operator-controlled key.

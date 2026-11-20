@@ -259,6 +259,37 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void LiveDamageOnlyComparesTheSameCombatantInTheSameBattle()
+    {
+        var initial = new BattleStatus("epoch:10", "Felizia",
+            [new(0, 25, 22, 22, 101), new(1, 74, 28, 28, 201), new(3, 74, 21, 21, 203)]);
+        var changed = initial with
+        {
+            Combatants = [new(0, 25, 12, 22, 101), new(1, 74, 11, 28, 202), new(3, 74, 0, 21, 203)],
+        };
+        Assert.True(changed.IsValid());
+        Assert.Equal([(0, 10), (3, 21)], changed.DamageSince(initial));
+        Assert.Empty((changed with { Key = "epoch-next:10" }).DamageSince(initial));
+        Assert.Empty(initial.DamageSince(changed));
+        Assert.False((changed with { Combatants = [changed.Combatants[0], changed.Combatants[0]] }).IsValid());
+    }
+
+    [Fact]
+    public void BattleProjectionParsesValidBridgeDataAndIgnoresItOffTheFieldOfBattle()
+    {
+        var frame = SyntheticPokemon.Frame(24, SyntheticPokemon.Raw(101, 25)) with
+        {
+            InBattle = true,
+            Battle = new RawBattleStatus(12, null, [new(1, 74, 28, 28, 9)]),
+        };
+        var battle = Assert.IsType<BattleStatus>(frame.Parse().Battle);
+        Assert.Equal($"{frame.Epoch}:12", battle.Key);
+        Assert.Equal(74, Assert.Single(battle.Combatants).Species);
+        Assert.Null((frame with { InBattle = false }).Parse().Battle);
+        Assert.Null((frame with { Battle = frame.Battle with { Started = 25 } }).Parse().Battle);
+    }
+
+    [Fact]
     public void SequenceGapResynchronizesFromTheServerOnReconnect()
     {
         var (_, client) = this.Active();

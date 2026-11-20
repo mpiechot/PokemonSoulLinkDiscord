@@ -29,8 +29,36 @@ public sealed record MapPosition(int X, int Y, int Width, int Height, bool Outdo
 }
 
 public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer, bool FinishingBlow = false);
+public sealed record BattleCombatant(int Position, int Species, int Hp, int MaxHp, uint Personality)
+{
+    public bool IsValid() => this.Position is >= 0 and <= 3 && SpeciesCatalog.IsValid(this.Species) &&
+        this.MaxHp is > 0 and <= 999 && this.Hp >= 0 && this.Hp <= this.MaxHp;
+}
+
+public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[] Combatants)
+{
+    public bool IsValid() => this.Key is { Length: > 0 and <= 100 } &&
+        (this.Trainer is null || this.Trainer.Length <= 12 && !this.Trainer.Any(char.IsControl)) &&
+        this.Combatants is { Length: > 0 and <= 4 } &&
+        this.Combatants.All(mon => mon is not null && mon.IsValid()) &&
+        this.Combatants.DistinctBy(mon => mon.Position).Count() == this.Combatants.Length;
+
+    public IEnumerable<(int Position, int Damage)> DamageSince(BattleStatus? previous)
+    {
+        if (previous is null || previous.Key != this.Key) yield break;
+        foreach (var mon in this.Combatants)
+        {
+            var before = previous.Combatants.FirstOrDefault(old => old.Position == mon.Position);
+            if (before is not null && before.Personality == mon.Personality && before.Species == mon.Species &&
+                before.MaxHp == mon.MaxHp && before.Hp > mon.Hp)
+                yield return (mon.Position, before.Hp - mon.Hp);
+        }
+    }
+}
+
 public sealed record WildBattleResult(int Area, long Started, long Ended, int Outcome);
 public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default, DateTimeOffset? At = null);
+public sealed record PokemonStats(int Hp, int Attack, int Defense, int Speed, int SpecialAttack, int SpecialDefense);
 
 public sealed record PokemonState
 {
@@ -41,6 +69,7 @@ public sealed record PokemonState
     public int? Level { get; init; }
     public int? Hp { get; init; }
     public int? MaxHp { get; init; }
+    public PokemonStats? Stats { get; init; }
     public uint Status { get; init; }
     public bool IsEgg { get; init; }
     public bool IsShiny { get; init; }
@@ -67,6 +96,7 @@ public sealed record GameSnapshot
     public MapPosition? Position { get; init; }
     public string AreaName => AreaCatalog.Name(this.Area);
     public bool InBattle { get; init; }
+    public BattleStatus? Battle { get; init; }
     public BattleTrace[]? Faints { get; init; }
     public WildBattleResult[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
@@ -119,6 +149,8 @@ public sealed class AutomationPlayer
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? DisplayArea { get; set; }
     public MapPosition? DisplayPosition { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public BattleStatus? DisplayBattle { get; set; }
     public byte ArenaConfirmed { get; set; }
     public byte ArenaReverted { get; set; }
     public byte ArenaProgress => (byte)(((this.LastSnapshot?.BadgeMask ?? this.DisplayBadges ?? 0) | this.ArenaConfirmed) & ~this.ArenaReverted);

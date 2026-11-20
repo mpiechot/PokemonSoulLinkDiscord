@@ -16,6 +16,10 @@ Team und Karte zeigen im gemeinsamen Run die zuletzt vom Server angenommenen Dat
 
 Sobald du in Rubin die Pokébälle von Professor Birchs Labor erhalten hast, zählt der erste bestätigte Wildkampf pro Fangort. Flucht oder ein besiegtes wildes Pokémon ohne Fang sperrt den Ort für die ganze Gruppe. Bereits zugehörige Pokémon zählen als tot. Im Newsfeed steht, wer den Erstfang verpasst hat und welche Pokémon betroffen sind.
 
+Unter der Karte erscheinen die **Live-Kämpfe** deiner Mitspieler. Dort siehst du die aktiven Pokémon und ihre KP. Bei einem beobachteten Treffer blitzt die Karte des betroffenen Pokémon kurz auf und zeigt den KP-Verlust.
+
+Klicke im Team, in der Box, unter **Tot**, **Shinies** oder im Live-Kampf auf ein Pokémon, um seine Werte, Level-Attacken und Entwicklungsmöglichkeiten zu sehen. SoulLink liest diese Tabellen aus der gewählten Rubin-ROM und berücksichtigt dadurch Änderungen des Randomizers. Bei einem Mitspieler fragt SoulLink dessen Spielversion an. Wenn sie gerade unerreichbar ist, kennzeichnet die App deine lokale ROM als Referenz.
+
 Die nächste Arena richtet sich nach dem gemeinsamen Fortschritt. **Abschließen** und **Zurücknehmen** gelten für alle Spieler im Run. Für erkannte Arenateams zeigt SoulLink die Level aus der jeweils geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 
 **Cheats** zeigt Sonderbonbons, Pokébälle, Superbälle, Hyperbälle und Meisterbälle. Kehre im Spiel aufs Spielfeld zurück. Ein Klick auf **+99** legt 99 Stück der ausgewählten Sorte ins Item-Lager deines PCs. Der Dialog meldet den neuen Bestand. Hole die Items am PC ab und speichere wie gewohnt im Spiel.

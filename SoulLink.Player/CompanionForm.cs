@@ -20,6 +20,8 @@ internal sealed class CompanionForm : Form
     private readonly EmulatorDock dock;
     private readonly RunDashboard dashboard;
     private readonly RunFeed feed;
+    private readonly BattlePanel battles;
+    private readonly RowStyle battleRow = new(SizeType.Absolute, 0);
     private readonly RosterGrid team;
     private readonly RubySprites spriteCache;
     private readonly DiscordIcons discordIcons = new();
@@ -33,7 +35,7 @@ internal sealed class CompanionForm : Form
     private readonly ToolStripMenuItem toggleDock;
     private readonly ToolStripMenuItem joinRun;
     private readonly ContextMenuStrip programMenu = new();
-    private readonly System.Windows.Forms.Timer refresh = new() { Interval = 500 };
+    private readonly System.Windows.Forms.Timer refresh = new() { Interval = 200 };
     private bool started;
     private bool launching;
     private Task? gameLaunch;
@@ -180,14 +182,19 @@ internal sealed class CompanionForm : Form
         this.dashboard.ArenaChanged += async (runId, number, complete) =>
             await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
         this.feed = new RunFeed(this.discordIcons, this.spriteCache) { Dock = DockStyle.Fill, BackColor = DashboardTheme.Surface };
+        this.battles = new BattlePanel(this.spriteCache) { Dock = DockStyle.Fill };
+        this.battles.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
         this.team = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
+        this.team.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
         var news = Section("Newsfeed", this.feed);
         var teamPanel = Section("Aktuelles Team", this.team);
-        var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0) };
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        sidebar.RowStyles.Add(this.battleRow);
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
         sidebar.Controls.Add(this.dashboard, 0, 0);
-        sidebar.Controls.Add(teamPanel, 0, 1);
+        sidebar.Controls.Add(Section("Live-Kämpfe", this.battles), 0, 1);
+        sidebar.Controls.Add(teamPanel, 0, 2);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(7, 4, 0, 0) };
         footer.Controls.AddRange([this.runConnection, this.gameConnection]);
@@ -332,12 +339,24 @@ internal sealed class CompanionForm : Form
         using var dialog = new Form();
         RunDialogs.Configure(dialog, title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 560));
         var roster = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
+        roster.PokemonOpened += (player, pokemon) => this.ShowPokemon(dialog, player, pokemon);
         dialog.Controls.Add(roster);
         this.openRoster = roster;
         this.openRosterFilter = filter;
         roster.Render(this.runtime.Status(), filter);
         try { dialog.ShowDialog(this); }
         finally { this.openRoster = null; }
+    }
+
+    private void ShowPokemon(Form owner, Guid player, PokemonState pokemon)
+    {
+        if (this.closing) return;
+        var view = this.runtime.Status();
+        bool partner = player != Guid.Empty && player != view.LocalPlayerId;
+        using var dialog = new PokemonDetailsForm(pokemon, this.rom.Read(), partner && view.Run is { } run
+            ? token => this.runtime.PartnerPokemonDetailsAsync(run.Id, player, pokemon.Species, token) : null);
+        dialog.ShowDialog(owner);
+        if (owner == this) this.dock.FocusGame();
     }
 
     private void ShowPlaces()
@@ -572,6 +591,9 @@ internal sealed class CompanionForm : Form
         this.checkCatch.Enabled = view.Run is not null;
         this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
         this.dashboard.Render(view);
+        int battleHeight = this.battles.Render(view);
+        float rowHeight = battleHeight == 0 ? 0 : Math.Min(160, battleHeight + 33);
+        if (this.battleRow.Height != rowHeight) this.battleRow.Height = rowHeight;
         this.team.Render(view, RosterView.Team);
         this.openRoster?.Render(view, this.openRosterFilter);
         this.feed.Render(view.Run?.History ?? [], view.Run is { Phase: RunPhase.Lobby }

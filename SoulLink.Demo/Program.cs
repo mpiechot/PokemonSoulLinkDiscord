@@ -158,23 +158,33 @@ try
         await Send(current with { Pokemon = [current.Pokemon[0] with { Hex = Convert.ToHexString(invalid) }, current.Pokemon[1]] });
         await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
             .Log.Any(message => message.Contains("Teamplatz 1: Ungültige Pokémon-Prüfsumme", StringComparison.Ordinal)));
-        foreach (int hp in new[] { 7, 13 })
+        var change = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = hubs[0].On("RunChanged", () => change.TrySetResult());
+        await hubs[0].InvokeAsync<AutomationRun>("Subscribe", lifetime.Token);
+        long combatStart = frame;
+        foreach (int hp in new[] { 13, 7 })
         {
             current = current with
             {
                 Frame = ++frame,
                 PlaySeconds = frame,
                 InBattle = true,
+                Battle = new RawBattleStatus(combatStart, null, [new(0, 1, hp, 20, 100), new(1, 280, 18, 22, 300)]),
                 Pokemon = [current.Pokemon[0] with { LiveHp = hp }, current.Pokemon[1]],
             };
             await Send(current);
-            await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
-                .Single(p => p.Id == rosterView.LocalPlayerId).Pokemon.Single(p => p.State.Slot == 0).State.Hp == hp);
+            await WaitUntil(async () =>
+            {
+                var peer = (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Single(p => p.Id == rosterView.LocalPlayerId);
+                return peer.Pokemon.Single(p => p.State.Slot == 0).State.Hp == hp &&
+                    peer.DisplayBattle?.Combatants is [var ally, var foe] && ally.Hp == hp && foe.Species == 280;
+            });
         }
+        await change.Task.WaitAsync(TimeSpan.FromSeconds(5), lifetime.Token);
         if (!(await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
             .Log.Any(message => message.Contains("wieder gültige Spieldaten", StringComparison.Ordinal)))
             throw new InvalidDataException("The bridge did not confirm recovery after a rejected frame.");
-        Console.WriteLine("Verified: a rejected Pokémon frame does not break the socket, and other players receive subsequent HP-only updates.");
+        Console.WriteLine("Verified: after an invalid frame, another player receives a push notification and sees live HP and opponent changes.");
 
         Guid localPlayer = rosterView.LocalPlayerId ?? throw new InvalidDataException("The local player registration is missing.");
         var fullInventory = current.Pokemon;
@@ -193,6 +203,15 @@ try
                 shared.History.Count(entry => entry.Kind == "caught") == 3;
         });
         Console.WriteLine("Verified: peers see the restored inventory without host action or duplicate catches.");
+
+        var pokemonDetails = new PokemonRomDetails(new PokemonStats(45, 60, 40, 45, 70, 50),
+            [new RubyLevelMove(24, 53)], [new RubyEvolution(281, "Ab Level 16")]);
+        using var detailsReply = hubs[0].On<int, PokemonRomDetails?>("ReadPokemonDetails",
+            species => species == 280 ? pokemonDetails : null);
+        var readDetails = await hubs[1].InvokeAsync<PokemonRomDetails?>("PokemonDetails", sessions[0].PlayerId, 280, lifetime.Token);
+        if (readDetails?.Moves.SingleOrDefault() != pokemonDetails.Moves[0] || readDetails.BaseStats != pokemonDetails.BaseStats)
+            throw new InvalidDataException("The partner's ROM details could not be requested.");
+        Console.WriteLine("Verified: a registered peer can request another player's actual ROM details for a known species.");
 
         long started = ++frame;
         current = current with { Frame = ++frame, PlaySeconds = frame, InBattle = false, WildBattles = [new RawWildBattle(0, 17, started, frame, 4)] };
@@ -270,6 +289,8 @@ try
             SyntheticPokemon.Frame(1, fullInventory.ToArray()).Parse()), lifetime.Token);
         if (!fullResult.Accepted || (await isolatedHub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Single().Pokemon.Count != 426)
             throw new InvalidDataException("Full-inventory transport failed.");
+        if (await isolatedHub.InvokeAsync<PokemonRomDetails?>("PokemonDetails", sessions[0].PlayerId, 280, lifetime.Token) is not null)
+            throw new InvalidDataException("A Pokémon detail request crossed the run boundary.");
         await Task.Delay(200, lifetime.Token);
         try
         {

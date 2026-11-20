@@ -35,6 +35,8 @@ public static class AutomationHosting
             limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
         }));
         services.AddHostedService<AutomationNotifications>();
+        services.AddSingleton<RunChangeBroadcast>();
+        services.AddHostedService(services => services.GetRequiredService<RunChangeBroadcast>());
     }
 
     /// <summary>Maps minimal administration and authenticated client endpoints.</summary>

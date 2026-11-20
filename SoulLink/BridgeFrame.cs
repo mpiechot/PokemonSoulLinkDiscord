@@ -2,6 +2,7 @@ namespace SoulLink;
 
 public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null, int? LiveHp = null);
 public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex, bool FinishingBlow = false);
+public sealed record RawBattleStatus(long Started, string? TrainerHex, BattleCombatant[] Combatants);
 public sealed record RawWildBattle(int MapGroup, int MapNumber, long Started, long Ended, int Outcome);
 
 public sealed record BridgeFrame
@@ -25,6 +26,7 @@ public sealed record BridgeFrame
     public bool InBattle { get; init; }
     public MapPosition? Position { get; init; }
     public RawBattleTrace[]? Faints { get; init; }
+    public RawBattleStatus? Battle { get; init; }
     public RawWildBattle[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
     public bool RubyStarterWindow { get; init; }
@@ -82,6 +84,7 @@ public sealed record BridgeFrame
             Area = MapCatalog.Section(this.MapGroup, this.MapNumber),
             Position = this.Position is { Valid: true } ? this.Position : null,
             InBattle = this.InBattle,
+            Battle = this.ParseBattle(),
             Faints = this.Faints is { Length: > 0 and <= 6 }
                 ? this.Faints.Where(f => f is not null && f.PartySlot is >= 0 and <= 5)
                     .Select(ParseTrace)
@@ -104,11 +107,19 @@ public sealed record BridgeFrame
     {
         int? opponent = trace.OpponentSpecies is int foe && SpeciesCatalog.IsValid(foe) ? foe : null;
         int? move = trace.Move is > 0 and < 355 ? trace.Move : null;
-        string? trainer = trace.TrainerHex is { Length: 24 } hex && hex.All(Uri.IsHexDigit)
-            ? Gen3Parser.DecodeName(Convert.FromHexString(hex)) : null;
-        return new BattleTrace(trace.PartySlot, opponent, move, trainer,
+        return new BattleTrace(trace.PartySlot, opponent, move, DecodeTrainer(trace.TrainerHex),
             trace.FinishingBlow && opponent.HasValue && move.HasValue);
     }
+
+    private BattleStatus? ParseBattle()
+    {
+        if (!this.InBattle || this.Battle is not { Started: >= 0 } battle || battle.Started > this.Frame) return null;
+        var status = new BattleStatus($"{this.Epoch}:{battle.Started}", DecodeTrainer(battle.TrainerHex), battle.Combatants);
+        return status.IsValid() ? status : null;
+    }
+
+    private static string? DecodeTrainer(string? encoded) =>
+        encoded is { Length: 24 } hex && hex.All(Uri.IsHexDigit) ? Gen3Parser.DecodeName(Convert.FromHexString(hex)) : null;
 
     private static int[]? ValidateLevels(int[]? levels) =>
         levels is { Length: > 0 and <= 6 } && levels.All(level => level is >= 1 and <= 100) ? levels : null;

@@ -447,7 +447,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             throw new UnauthorizedAccessException("Session expired.");
         if (this.clock.GetUtcNow() - session.LastSeen > TimeSpan.FromSeconds(45))
         {
-            this.sessions.TryRemove(registration.PlayerId, out _);
+            this.sessions.TryRemove(new KeyValuePair<Guid, LiveSession>(registration.PlayerId, session));
             throw new UnauthorizedAccessException("Session went offline; reconnect with a baseline.");
         }
         session.LastSeen = this.clock.GetUtcNow();
@@ -596,6 +596,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             snapshot.WildBattles is { Length: > 16 } || snapshot.WildBattles?.Any(battle =>
                 battle is null || battle.Area is < 0 or >= 255 || battle.Started < 0 || battle.Ended <= battle.Started ||
                 battle.Ended > snapshot.Frame || battle.Outcome is < 1 or > 10) == true ||
+            snapshot.Battle is { } combat && (!snapshot.InBattle || !combat.IsValid()) ||
             snapshot.Position is { Valid: false } || snapshot.Faints is { Length: > 6 } ||
             snapshot.Faints?.Any(f => f is null || f.PartySlot is < 0 or > 5 || f.Move is < 1 or > 354 ||
                 f.OpponentSpecies.HasValue && !SpeciesCatalog.IsValid(f.OpponentSpecies.Value) ||

@@ -31,6 +31,7 @@ local activeProfile
 local battleFaints, lastPosition = {}, "null"
 local faintDirty = false
 local canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
+local battleStarted, liveBattle, battleDirty = nil, "null", false
 local nextHit
 local gymLineups, rubyTypes
 
@@ -197,6 +198,14 @@ local function pendingDirectHit(a, count, frame)
         hp = hp, pid = read32(mon + 0x48), ot = read32(mon + 0x54)}
 end
 
+local function battleTrainer(profile)
+    if profile.trainers and (read32(profile.battle.flags) & 8) ~= 0 then
+        local id = read16(profile.battle.trainer)
+        if id > 0 and id < 694 then return '"' .. hex(profile.trainers + id * 40 + 4, 12) .. '"' end
+    end
+    return "null"
+end
+
 local function captureBattle(profile, frame)
     local addresses = profile.battle
     local prior = nextHit
@@ -205,11 +214,7 @@ local function captureBattle(profile, frame)
     local count = read8(addresses.count)
     if count < 2 or count > 4 then return end
     nextHit = pendingDirectHit(addresses, count, frame)
-    local trainer = "null"
-    if profile.trainers and (read32(addresses.flags) & 8) ~= 0 then
-        local id = read16(addresses.trainer)
-        if id > 0 and id < 694 then trainer = '"' .. hex(profile.trainers + id * 40 + 4, 12) .. '"' end
-    end
+    local trainer = battleTrainer(profile)
     for battler = 0, count - 1 do
         local partySlot = read16(addresses.slots + battler * 2)
         if (read8(addresses.sides + battler) & 1) == 0 and partySlot < 6 then
@@ -239,6 +244,37 @@ local function captureBattle(profile, frame)
             end
         end
     end
+end
+
+local function observeLiveBattle(profile, frame)
+    if profile ~= profiles.AXVD then return end
+    local addresses = profile.battle
+    local scene = "null"
+    if (read8(profile.main + 0x43D) & 2) ~= 0 then
+        if not battleStarted and read8(addresses.outcome) ~= 0 then return end
+        local count = read8(addresses.count)
+        battleStarted = battleStarted or frame
+        if count == 2 or count == 4 then
+            local combatants, seen = {}, {}
+            for index = 0, count - 1 do
+                local position = read8(addresses.sides + index)
+                local mon = addresses.mons + index * 88
+                local species, hp, maxHp = read16(mon), read16(mon + 0x28), read16(mon + 0x2C)
+                if position < 4 and not seen[position] and species > 0 and species < 412 and maxHp > 0 and maxHp <= 999 and hp <= maxHp then
+                    seen[position] = true
+                    combatants[#combatants + 1] = string.format('{"position":%d,"species":%d,"hp":%d,"maxHp":%d,"personality":%d}',
+                        position, species, hp, maxHp, read32(mon + 0x48))
+                end
+            end
+            if #combatants > 0 then
+                scene = string.format('{"started":%d,"trainerHex":%s,"combatants":[%s]}',
+                    battleStarted, battleTrainer(profile), table.concat(combatants, ","))
+            end
+        end
+    else
+        battleStarted = nil
+    end
+    if liveBattle ~= scene then liveBattle, battleDirty = scene, true end
 end
 
 local function observeWildBattle(profile, frame)
@@ -378,9 +414,9 @@ local function snapshot(frame)
         rubyTypes = typesOk and types or ""
     end
     local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"battle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId, itemCapability,
-        group, number, lastPosition, tostring(battle), table.concat(faints, ","), table.concat(wildResults, ","), badges,
+        group, number, lastPosition, tostring(battle), liveBattle, table.concat(faints, ","), table.concat(wildResults, ","), badges,
         tostring(starterWindow), gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
 
@@ -390,6 +426,7 @@ local function reset()
     activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
     faintDirty, nextHit, lastFrame = false, nil, -1
     canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
+    battleStarted, liveBattle, battleDirty = nil, "null", false
     stop()
 end
 
@@ -401,6 +438,7 @@ local function onFrame()
     if activeProfile then
         pcall(captureBattle, activeProfile, frame)
         pcall(observeWildBattle, activeProfile, frame)
+        if tick % 5 == 0 then pcall(observeLiveBattle, activeProfile, frame) end
     end
     sendPending()
     receivePcItem()
@@ -408,7 +446,7 @@ local function onFrame()
         pending, position, itemReply = itemReply, 1, nil
         sendPending()
     end
-    if (tick % 30 ~= 0 and not faintDirty and not wildDirty) or pending then return end
+    if (tick % 30 ~= 0 and not faintDirty and not wildDirty and not battleDirty) or pending then return end
     if not peer then
         local valid, profileOrError = pcall(readProfile)
         if not valid then report(tostring(profileOrError)); return end
@@ -424,7 +462,7 @@ local function onFrame()
     local ok, result = pcall(snapshot, frame)
     if not ok then report(tostring(result)); return end
     pending, position = result, 1
-    faintDirty, wildDirty = false, false
+    faintDirty, wildDirty, battleDirty = false, false, false
     sendPending()
     report("Streaming read-only reference profile. Check party and box contents in the client before starting the run.")
 end

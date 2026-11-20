@@ -18,6 +18,8 @@ internal sealed class RosterGrid : DashboardScrollView
     private int cellWidth;
     private string? hoveredLabel;
 
+    public event Action<Guid, PokemonState>? PokemonOpened;
+
     public RosterGrid(RubySprites sprites)
     {
         this.sprites = sprites;
@@ -161,11 +163,32 @@ internal sealed class RosterGrid : DashboardScrollView
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
+        this.Cursor = this.CardAt(e.Location)?.Pokemon.State.IsEgg == false ? Cursors.Hand : Cursors.Default;
         string? label = this.hints.Find(hint => hint.Bounds.Contains(e.Location)).Label;
         if (this.hoveredLabel == label) return;
         this.hoveredLabel = label;
         this.cellHint.Hide(this);
         this.cellHint.SetToolTip(this, label);
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        if (e.Button == MouseButtons.Left && this.CardAt(e.Location) is { Pokemon.State.IsEgg: false } card)
+            this.PokemonOpened?.Invoke(card.Player, card.Pokemon.State);
+    }
+
+    private (Guid Player, DashboardPokemon Pokemon)? CardAt(Point point)
+    {
+        if (!this.Viewport.Contains(point) || this.cellWidth == 0) return null;
+        int x = point.X + this.ScrollPosition.X;
+        int y = point.Y + this.ScrollPosition.Y - Header;
+        if (y < 0 || y % RowHeight >= RowHeight - 7 || x % (this.cellWidth + Gap) >= this.cellWidth) return null;
+        int row = y / RowHeight;
+        int column = x / (this.cellWidth + Gap);
+        if (row >= this.data.Rows.Length || column >= this.data.Columns.Length ||
+            this.data.Rows[row].Slots[column] is not { } pokemon) return null;
+        return (this.data.Columns[column].Id, pokemon);
     }
 
     private void DrawTag(Graphics canvas, Rectangle bounds, string text, Color color)
