@@ -12,6 +12,8 @@ Links stehen Fänge, vollständige Links und Todesfälle im scrollbaren Newsfeed
 
 Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird deine Position aus der aktuellen Spielfeldkachel auf die Weltkarte übertragen. In Gebäuden erscheint der Marker am zugehörigen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position.
 
+Team und Karte zeigen im gemeinsamen Run die zuletzt vom Server angenommenen Daten. **Abgleich nötig** markiert einen erkannten Spielstandwechsel oder eine unerwartete Inventaränderung. Ist der aktuelle Spielstand korrekt, kann der Gastgeber ihn unter **Spieler und Spielstände → Spielstand neu abgleichen** freigeben. Der Client verbindet sich daraufhin selbst neu.
+
 Die nächste Arena richtet sich nach dem gemeinsamen Fortschritt. **Abschließen** und **Zurücknehmen** gelten für alle Spieler im Run. Für erkannte Arenateams zeigt SoulLink die Level aus der jeweils geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 
 **Cheats** zeigt Sonderbonbons, Pokébälle, Superbälle, Hyperbälle und Meisterbälle. Kehre im Spiel aufs Spielfeld zurück. Ein Klick auf **+99** legt 99 Stück der ausgewählten Sorte ins Item-Lager deines PCs. Der Dialog meldet den neuen Bestand. Hole die Items am PC ab und speichere wie gewohnt im Spiel.

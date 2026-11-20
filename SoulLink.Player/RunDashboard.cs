@@ -53,10 +53,18 @@ internal sealed class RunDashboard : TableLayoutPanel
         var positions = peers.Select(p =>
         {
             bool local = p.Id == view.LocalPlayerId;
-            return new MapPlayer(p.Name, local && view.IsLocalRun ? view.Marker : p.Marker,
-                local ? view.Snapshot?.Area ?? p.Area : p.Area,
-                local ? view.Snapshot is not null : p.Connection == "Ready", local,
-                local ? view.Snapshot?.Position ?? p.Position : p.Position);
+            bool localData = local && view.IsLocalRun;
+            return new MapPlayer(p.Name, localData ? view.Marker : p.Marker,
+                localData ? view.Snapshot?.Area ?? p.Area : p.Area,
+                localData ? view.Snapshot is not null : p.Connection == "Ready", local,
+                localData ? view.Snapshot?.Position ?? p.Position : p.Position, localData ? null : p.Connection switch
+                {
+                    "OutOfSync" => "Abgleich nötig",
+                    "Synchronizing" => "Wartet auf Spieldaten",
+                    "Stale" => "Spieldaten pausiert",
+                    "Offline" => "Offline",
+                    _ => null,
+                });
         }).ToList();
         if (!positions.Any(p => p.Local) && view.Snapshot is { } snapshot)
             positions.Insert(0, new MapPlayer(view.Player.Length > 0 ? view.Player : "Du", view.Marker,
@@ -65,7 +73,8 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.map.UpdatePlayers(positions.ToArray());
         string legend = positions.Count == 0 ? "Warte auf Spielerpositionen."
             : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name}: " +
-                (p.Area is int area && area != 255 ? RubyNames.Area(area) + (p.Live ? "" : " (zuletzt)") : "Warte auf Position")));
+                (p.Area is int area && area != 255 ? RubyNames.Area(area) : "Warte auf Position") +
+                (p.SyncStatus is { } status ? $" ({status})" : p.Live ? "" : " (zuletzt)")));
         if (this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
         {
             this.locations.Text = legend;

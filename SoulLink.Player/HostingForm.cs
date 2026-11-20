@@ -283,7 +283,7 @@ internal sealed class HostingForm : Form
         dialog.Controls.Add(reset);
         if (dialog.ShowDialog(this) != DialogResult.OK || list.SelectedItem is not PlayerRow selected) return;
         await client.RebaselineAsync(group.Id, run.Id, selected.Player.Id);
-        MessageBox.Show(this, "Der Spieler kann im SoulLink-Menü „Run-Server neu verbinden“ wählen.", "Neuer Abgleich");
+        MessageBox.Show(this, "Der Spielstand ist freigegeben. Die aktuelle SoulLink-Version gleicht ihn automatisch neu ab.", "Neuer Abgleich");
     }
 
     private void SaveInvitation(bool copy)

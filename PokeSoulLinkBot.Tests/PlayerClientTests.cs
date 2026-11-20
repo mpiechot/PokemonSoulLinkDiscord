@@ -157,6 +157,21 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public void SharedGridUsesTheSameServerInventoryForLocalAndRemotePlayers()
+    {
+        Guid player = Guid.NewGuid();
+        var accepted = new PokemonState { Identity = "A", Species = 25, Hp = 19 };
+        var ownGrid = new ClientPlayerView("Anne", player, "", "OutOfSync", Pokemon: [new(accepted, false, true)]);
+        var run = new ClientRunView("Test", RunPhase.Active, Guid.NewGuid(), [ownGrid], [], []);
+        var raw = new GameSnapshot { Pokemon = [accepted with { Hp = 5 }, new PokemonState { Identity = "B", Slot = 1, Species = 1 }] };
+        var view = new ClientView("Anne", "", true, "", 0, "", null, raw, run, [], false, LocalPlayerId: player);
+
+        var row = Assert.Single(RosterGridData.From(view, RosterView.Team).Rows);
+        Assert.Equal(19, row.Slots[0]?.State.Hp);
+        Assert.Equal(2, RosterGridData.From(view with { IsLocalRun = true }, RosterView.Team).Rows.Length);
+    }
+
+    [Fact]
     public async Task SavedRegistrationWithUnavailableRunServerStillShowsLocalCatches()
     {
         var builder = WebApplication.CreateBuilder();

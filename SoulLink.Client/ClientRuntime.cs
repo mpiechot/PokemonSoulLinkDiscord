@@ -365,6 +365,8 @@ public sealed class ClientRuntime : BackgroundService
             this.session = await this.connection.InvokeAsync<SessionInfo>("Hello", new Hello(this.settings.ClientId), cancellationToken);
             this.sequence = this.session.NextSequence;
             this.baseline = true;
+            // The server retains the OutOfSync guard until a host authorizes reconciliation.
+            this.blocked = false;
             this.lastFingerprint = null;
             this.SetState("Synchronizing — waiting for mGBA");
         }

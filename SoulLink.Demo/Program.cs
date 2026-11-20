@@ -160,6 +160,27 @@ try
             throw new InvalidDataException("The bridge did not confirm recovery after a rejected frame.");
         Console.WriteLine("Verified: a rejected Pokémon frame does not break the socket, and other players receive subsequent HP-only updates.");
 
+        Guid localPlayer = rosterView.LocalPlayerId ?? throw new InvalidDataException("The local player registration is missing.");
+        current = current with { Frame = ++frame, PlaySeconds = frame, Epoch = "new-emulator-state" };
+        await Send(current);
+        await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+            .Single(player => player.Id == localPlayer).Connection == "OutOfSync");
+        await WaitUntil(async () => await SharedLocalConnection() == "OutOfSync");
+        await Post<object>(admin, $"/api/soullink/admin/runs/{run.Id}/players/{localPlayer}/rebaseline", new RunAction("demo"));
+        current = current with { Frame = ++frame, PlaySeconds = frame };
+        await Send(current);
+        await WaitUntil(async () => await SharedLocalConnection() == "Ready");
+        if ((await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Single(player => player.Id == localPlayer).Connection != "Ready")
+            throw new InvalidDataException("The resynchronized player still appears inactive to peers.");
+        Console.WriteLine("Verified: all clients see the same OutOfSync state, and an authorized rebaseline resumes without a manual reconnect.");
+
+        async Task<string?> SharedLocalConnection()
+        {
+            var view = await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token);
+            return view?.Run is { } shared && shared.Id == run.Id
+                ? shared.Players.SingleOrDefault(player => player.Id == localPlayer)?.Connection : null;
+        }
+
         const string rule = "Keine Heilitems im Arenakampf.";
         await hubs[0].InvokeAsync("AddRule", rule, lifetime.Token);
         var rulesForPartner = (await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules;

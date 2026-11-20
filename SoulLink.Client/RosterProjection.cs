@@ -17,7 +17,7 @@ public sealed record RosterGridData(RosterColumn[] Columns, RosterRow[] Rows)
         var eligible = players.Select(p =>
         {
             var pokemon = p.Pokemon ?? [];
-            if ((p.Id == view.LocalPlayerId || p.Id == Guid.Empty) && view.Snapshot is { } snapshot)
+            if ((p.Id == Guid.Empty || (view.IsLocalRun && p.Id == view.LocalPlayerId)) && view.Snapshot is { } snapshot)
             {
                 var byIdentity = pokemon.ToDictionary(m => m.State.Identity);
                 var current = snapshot.Pokemon.Select(m => new DashboardPokemon(m, byIdentity.GetValueOrDefault(m.Identity)?.Dead == true, true));

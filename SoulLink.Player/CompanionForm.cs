@@ -550,9 +550,16 @@ internal sealed class CompanionForm : Form
         this.status.Text = this.shutdownError ?? this.joinError ?? registration;
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
             view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
-        this.SetConnection(this.gameConnection, view.Snapshot is not null, this.runtime.OwnedBridgeReady
-            ? "mGBA verbunden. Neues Spiel beginnen oder Spielstand laden."
-            : "Offline. Spiel in mGBA öffnen.");
+        var sharedPlayer = view.IsLocalRun ? null : view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId);
+        bool synchronized = view.Snapshot is not null && (sharedPlayer is null || sharedPlayer.Connection == "Ready");
+        string gameHint = sharedPlayer?.Connection switch
+        {
+            "OutOfSync" => "Abgleich nötig. Bitte den Gastgeber fragen.",
+            "Synchronizing" => "Warte auf gültige Spieldaten für den Run.",
+            "Stale" => "Keine aktuellen Daten aus mGBA.",
+            _ => this.runtime.OwnedBridgeReady ? "mGBA verbunden. Neues Spiel beginnen oder Spielstand laden." : "Spiel in mGBA öffnen.",
+        };
+        this.SetConnection(this.gameConnection, synchronized, gameHint);
         this.gameStatus.Visible = !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
             : running ? "mGBA läuft separat. Im SoulLink-Menü einbetten."
