@@ -7,17 +7,21 @@ namespace SoulLink.Player;
 internal sealed class RosterGrid : ScrollableControl
 {
     private const int Header = 35;
-    private const int RowHeight = 157;
-    private const int Gap = 24;
+    private const int RowHeight = 122;
+    private const int Gap = 18;
     private readonly RubySprites sprites;
     private readonly Font heading = new("Segoe UI Semibold", 10);
     private readonly Font small = new("Segoe UI", 8.5f);
+    private readonly ToolTip typeHint = new();
+    private readonly List<(Rectangle Bounds, string Label)> typeIcons = [];
     private RosterGridData data = new([], []);
     private int cellWidth;
+    private string? hoveredType;
 
     public RosterGrid(RubySprites sprites)
     {
         this.sprites = sprites;
+        this.sprites.Changed += this.Invalidate;
         this.DoubleBuffered = true;
         this.AutoScroll = true;
         this.TabStop = true;
@@ -41,8 +45,13 @@ internal sealed class RosterGrid : ScrollableControl
     private void ResizeContent()
     {
         int count = this.data.Columns.Length;
-        if (count == 0) return;
-        this.cellWidth = Math.Max(145, (this.ClientSize.Width - 16 - (count - 1) * Gap) / count);
+        if (count == 0 || this.data.Rows.Length == 0)
+        {
+            this.AutoScrollMinSize = Size.Empty;
+            return;
+        }
+        int scrollbar = this.VerticalScroll.Visible ? 0 : SystemInformation.VerticalScrollBarWidth;
+        this.cellWidth = Math.Max(152, (this.ClientSize.Width - scrollbar - (count - 1) * Gap) / count);
         this.AutoScrollMinSize = new Size((this.cellWidth + Gap) * count - Gap, Header + this.data.Rows.Length * RowHeight + 3);
     }
 
@@ -51,6 +60,7 @@ internal sealed class RosterGrid : ScrollableControl
         base.OnPaint(e);
         var canvas = e.Graphics;
         var scroll = this.AutoScrollPosition;
+        this.typeIcons.Clear();
         var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
         if (this.data.Rows.Length == 0)
         {
@@ -66,7 +76,7 @@ internal sealed class RosterGrid : ScrollableControl
         for (int row = 0; row < this.data.Rows.Length; row++)
         {
             int y = scroll.Y + Header + row * RowHeight;
-            if (y + RowHeight < e.ClipRectangle.Top || y > e.ClipRectangle.Bottom) continue;
+            if (y + RowHeight < this.ClientRectangle.Top || y > this.ClientRectangle.Bottom) continue;
             var group = this.data.Rows[row];
             int first = Array.FindIndex(group.Slots, p => p is not null);
             int last = Array.FindLastIndex(group.Slots, p => p is not null);
@@ -92,10 +102,15 @@ internal sealed class RosterGrid : ScrollableControl
         var appearance = state.IsEgg ? null : RubyDashboardCatalog.Appearance(state.Species);
         DashboardTheme.Fill(canvas, box, DashboardTheme.Panel);
         var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
+        int width = Math.Min(box.Width - 10, 270);
+        int left = box.X + (box.Width - width) / 2;
+        int rightWidth = Math.Clamp(width / 3, 64, 90);
+        int leftWidth = width - rightWidth - 7;
+        int right = left + leftWidth + 7;
         string name = state.IsEgg ? "Ei" : (state.IsShiny ? "★ " : "") + RubyNames.Pokemon(state.Species);
-        TextRenderer.DrawText(canvas, name, this.heading, new Rectangle(box.X + 3, box.Y + 3, box.Width - 6, 23),
+        TextRenderer.DrawText(canvas, name, this.heading, new Rectangle(left, box.Y + 4, leftWidth, 21),
             state.IsShiny ? DashboardTheme.Gold : DashboardTheme.Text, flags);
-        var portrait = new Rectangle(box.X + (box.Width - 61) / 2, box.Y + 26, 61, 60);
+        var portrait = new Rectangle(left + (leftWidth - 58) / 2, box.Y + 25, 58, 58);
         if (appearance is not null && this.sprites.Find(appearance, state.IsShiny) is { } sprite)
         {
             canvas.InterpolationMode = InterpolationMode.NearestNeighbor;
@@ -109,30 +124,44 @@ internal sealed class RosterGrid : ScrollableControl
         if (!state.IsEgg && state.MetArea != 255)
         {
             string area = RubyNames.Area(state.MetArea);
-            int width = Math.Min(box.Width - 12, TextRenderer.MeasureText(area, this.small).Width + 15);
-            this.DrawTag(canvas, new Rectangle(box.X + (box.Width - width) / 2, box.Y + 88, width, 19), area, DashboardTheme.Accent);
+            int tagWidth = Math.Min(leftWidth, TextRenderer.MeasureText(area, this.small).Width + 15);
+            this.DrawTag(canvas, new Rectangle(left + (leftWidth - tagWidth) / 2, box.Y + 87, tagWidth, 19), area, DashboardTheme.Accent);
         }
-        string metrics = state.Container == Placement.Party
-            ? $"Lv. {state.Level} · KP {state.Hp}/{state.MaxHp}"
-            : $"Box {(state.Box ?? 0) + 1} · Platz {state.Slot + 1}";
-        TextRenderer.DrawText(canvas, metrics, this.small, new Rectangle(box.X + 4, box.Y + 109, box.Width - 8, 18), DashboardTheme.Muted, flags);
+        var details = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+        bool inTeam = state.Container == Placement.Party;
+        TextRenderer.DrawText(canvas, inTeam ? $"Level: {state.Level}" : $"Box: {(state.Box ?? 0) + 1}", this.small,
+            new Rectangle(right, box.Y + 12, rightWidth, 19), DashboardTheme.Text, details);
+        TextRenderer.DrawText(canvas, inTeam ? $"KP: {state.Hp}/{state.MaxHp}" : $"Platz: {state.Slot + 1}", this.small,
+            new Rectangle(right, box.Y + 31, rightWidth, 19), DashboardTheme.Muted, details);
         if (appearance is null) return;
         var types = new[] { DashboardTheme.RubyType(state.RubyType1) ?? appearance.Type1, DashboardTheme.RubyType(state.RubyType2) ?? appearance.Type2 }.Distinct().ToArray();
-        const int size = 64;
-        int left = box.X + (box.Width - (size * types.Length + (types.Length - 1) * 4)) / 2;
+        int iconLeft = right + 2;
+        const int size = 26;
         foreach (string type in types)
         {
-            var badge = new Rectangle(left, box.Y + 128, size, 17);
-            var (label, color) = DashboardTheme.Type(type);
-            this.DrawTag(canvas, badge, label, color);
-            if (this.sprites.TypeBadge(type) is { } icon)
+            var (icon, label) = this.sprites.TypeIcon(type);
+            if (icon is not null)
             {
-                DashboardTheme.Fill(canvas, badge, DashboardTheme.Surface, 7);
-                canvas.InterpolationMode = InterpolationMode.NearestNeighbor;
-                canvas.DrawImage(icon, new Rectangle(badge.X + (size - 42) / 2, badge.Y + 2, 42, 13));
+                var slot = new Rectangle(iconLeft, box.Y + 56, size, size);
+                double scale = Math.Min((double)size / icon.Width, (double)size / icon.Height);
+                int badgeWidth = (int)Math.Round(icon.Width * scale);
+                int badgeHeight = (int)Math.Round(icon.Height * scale);
+                canvas.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                canvas.DrawImage(icon, new Rectangle(slot.X + (size - badgeWidth) / 2, slot.Y + (size - badgeHeight) / 2, badgeWidth, badgeHeight));
+                this.typeIcons.Add((slot, label));
             }
-            left += size + 4;
+            iconLeft += size + 5;
         }
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        string? label = this.typeIcons.Find(icon => icon.Bounds.Contains(e.Location)).Label;
+        if (this.hoveredType == label) return;
+        this.hoveredType = label;
+        this.typeHint.Hide(this);
+        this.typeHint.SetToolTip(this, label);
     }
 
     private void DrawTag(Graphics canvas, Rectangle bounds, string text, Color color)
@@ -157,7 +186,13 @@ internal sealed class RosterGrid : ScrollableControl
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { this.heading.Dispose(); this.small.Dispose(); }
+        if (disposing)
+        {
+            this.sprites.Changed -= this.Invalidate;
+            this.typeHint.Dispose();
+            this.heading.Dispose();
+            this.small.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

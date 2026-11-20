@@ -77,9 +77,10 @@ internal sealed class DeathReasonForm : Form
     {
         var trace = pending.Battle;
         string opponent = trace?.OpponentSpecies is int foe ? RubyNames.Pokemon(foe) : "unbekannt";
+        var (label, move) = RunDialogs.BattleMove(trace);
         this.details.Text = $"{RubyNames.Pokemon(pending.Species)} ist kampfunfähig.\n" +
-            $"Gegner · {opponent}{(string.IsNullOrEmpty(trace?.Trainer) ? "" : $" · Trainer {trace.Trainer}")}\n" +
-            $"{(trace?.FinishingBlow == true ? "K.-o.-Attacke" : "Letzte erfasste Attacke")} · {RubyNames.Move(trace?.Move) ?? "unbekannt"}";
+            $"Gegner: {opponent}{(string.IsNullOrEmpty(trace?.Trainer) ? "" : $" (Trainer: {trace.Trainer})")}\n" +
+            $"{label}: {move}";
     }
 
     protected override void WndProc(ref Message message)
@@ -106,6 +107,12 @@ internal sealed class DeathReasonForm : Form
 
 internal static class RunDialogs
 {
+    internal static (string Label, string Name) BattleMove(BattleTrace? battle)
+    {
+        if (RubyNames.Move(battle?.Move) is not { } name) return ("Attacke", "Unbekannt");
+        return (battle!.FinishingBlow ? "K.-o.-Attacke" : "Letzte erfasste Attacke", name);
+    }
+
     public static void Configure(Form form, string title, Size size)
     {
         form.Text = title;

@@ -53,7 +53,7 @@ internal sealed class CompanionForm : Form
     private Guid? displayedRunId;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
-        string? requestedRom, PlayerProfile? profile, string sprites)
+        string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -64,22 +64,22 @@ internal sealed class CompanionForm : Form
         this.dock = new EmulatorDock(this.surface);
         this.Text = "SoulLink";
         this.FormBorderStyle = FormBorderStyle.None;
-        this.ClientSize = new Size(1640, 930);
+        var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        this.ClientSize = new Size(Math.Min(1720, workArea.Width), Math.Min(930, workArea.Height));
         this.MinimumSize = new Size(1060, 630);
         this.StartPosition = FormStartPosition.CenterScreen;
         this.BackColor = DashboardTheme.Background;
         this.ForeColor = DashboardTheme.Text;
         this.Font = new Font("Segoe UI", 10);
         this.AutoScaleMode = AutoScaleMode.Dpi;
-        this.spriteCache = new RubySprites(sprites);
+        this.spriteCache = new RubySprites(sprites, artworkCache);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 3, Padding = new Padding(8) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 3, Padding = new Padding(8) };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 19));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 49));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 47));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 33));
 
         var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 0, 0, 5) };
@@ -87,8 +87,10 @@ internal sealed class CompanionForm : Form
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var brand = Button("SoulLink ▾", (_, _) => { });
+        bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var brand = DashboardTheme.Button("SoulLink");
         brand.Name = "ProgramMenu";
+        brand.AutoSize = false;
         brand.ForeColor = DashboardTheme.Accent;
         brand.Font = new Font("Segoe UI Semibold", 12);
         brand.Dock = DockStyle.Fill;
@@ -148,18 +150,20 @@ internal sealed class CompanionForm : Form
         this.team = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
         var news = Section("Newsfeed", this.feed);
         var teamPanel = Section("Aktuelles Team", this.team);
+        var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+        sidebar.Controls.Add(this.dashboard, 0, 0);
+        sidebar.Controls.Add(teamPanel, 0, 1);
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(7, 4, 0, 0) };
         footer.Controls.AddRange([this.runConnection, this.gameConnection]);
         layout.Controls.Add(bar, 0, 0);
         layout.SetColumnSpan(bar, 3);
         layout.Controls.Add(news, 0, 1);
-        layout.SetRowSpan(news, 2);
         layout.Controls.Add(this.surface, 1, 1);
-        layout.Controls.Add(this.dashboard, 2, 1);
-        layout.Controls.Add(teamPanel, 1, 2);
-        layout.SetColumnSpan(teamPanel, 2);
-        layout.Controls.Add(footer, 0, 3);
+        layout.Controls.Add(sidebar, 2, 1);
+        layout.Controls.Add(footer, 0, 2);
         layout.SetColumnSpan(footer, 3);
         this.Controls.Add(layout);
 
@@ -477,13 +481,13 @@ internal sealed class CompanionForm : Form
         this.displayedRunId = view.Run?.Id;
         bool running = this.game is { HasExited: false };
         string registration = view.IsLocalRun ? "Lokaler Spieltest"
-            : view.Run is { } run ? run.Name + "  ·  " + view.Player + "  ·  " + (run.Phase switch
+            : view.Run is { } run ? run.Name + ": " + view.Player + " (" + (run.Phase switch
             {
                 RunPhase.Lobby => "Lobby",
                 RunPhase.Active => "Aktiv",
                 RunPhase.Paused => "Pausiert",
                 _ => "Abgeschlossen",
-            })
+            }) + ")"
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
         this.status.Text = this.shutdownError ?? this.joinError ?? registration;
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,

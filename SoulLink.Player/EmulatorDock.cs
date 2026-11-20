@@ -14,12 +14,24 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
     private const uint NoActivate = 0x0010;
     private const uint NoZOrder = 0x0004;
     private const uint FrameChanged = 0x0020;
+    private const uint DiscardOldPixels = 0x0100;
+    private const uint InvalidateDescendants = 0x0081;
     private const uint CloseWindow = 0x0010;
     private nint window;
     private int originalStyle;
     private Rectangle originalBounds;
 
     public bool Attached => this.window != 0 && IsWindow(this.window) && GetParent(this.window) == surface.Handle;
+
+    internal Rectangle? ClientBounds
+    {
+        get
+        {
+            var origin = Point.Empty;
+            return this.Attached && GetClientRect(this.window, out var bounds) && ClientToScreen(this.window, ref origin)
+                ? new Rectangle(origin, new Size(bounds.Right, bounds.Bottom)) : null;
+        }
+    }
 
     public bool IsFocused
     {
@@ -50,14 +62,17 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
         this.window = candidate;
         this.originalStyle = style;
         this.originalBounds = Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
-        this.Resize();
+        this.Resize(FrameChanged);
         return true;
     }
 
-    public void Resize()
+    public void Resize() => this.Resize(0);
+
+    private void Resize(uint flags)
     {
-        if (!this.Attached) return;
-        SetWindowPos(this.window, 0, 0, 0, surface.ClientSize.Width, surface.ClientSize.Height, NoActivate | NoZOrder | FrameChanged);
+        if (!this.Attached || surface.ClientSize is not { Width: > 0, Height: > 0 } size) return;
+        if (SetWindowPos(this.window, 0, 0, 0, size.Width, size.Height, NoActivate | NoZOrder | DiscardOldPixels | flags))
+            RedrawWindow(this.window, 0, 0, InvalidateDescendants);
     }
 
     public bool FocusGame()
@@ -173,6 +188,18 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint window, out NativeRect bounds);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(nint window, out NativeRect bounds);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(nint window, ref Point origin);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool RedrawWindow(nint window, nint bounds, nint region, uint flags);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
     private static extern int GetWindowLong(nint window, int index);
 
@@ -209,8 +236,20 @@ internal sealed class EmulatorSurface : Panel
     private const int MouseActivate = 0x0021;
     private const int ParentNotify = 0x0210;
     private const int LeftButtonDown = 0x0201;
+    private const int ClipChildren = 0x02000000;
 
     public event Action? GameClicked;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            // Keep WinForms background paints out of the native Qt child during a resize.
+            parameters.Style |= ClipChildren;
+            return parameters;
+        }
+    }
 
     protected override void WndProc(ref Message message)
     {

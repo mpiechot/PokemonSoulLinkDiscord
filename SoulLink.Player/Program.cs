@@ -82,7 +82,8 @@ internal static class Program
         }
         string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
-        Application.Run(new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites));
+        Application.Run(new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
+            Path.Combine(home, "Artwork")));
     }
 
 }

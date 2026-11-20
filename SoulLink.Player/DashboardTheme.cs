@@ -73,32 +73,10 @@ internal static class DashboardTheme
                 e.Graphics.DrawPath(pen, path);
             }
             TextRenderer.DrawText(e.Graphics, this.Text, this.Font, bounds, this.Enabled ? this.ForeColor : Muted,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
+                TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsClipping);
         }
     }
-
-    private static readonly Dictionary<string, (string Label, Color Color)> Types = new()
-    {
-        ["normal"] = ("Normal", Color.FromArgb(171, 182, 193)),
-        ["fire"] = ("Feuer", Color.FromArgb(255, 139, 114)),
-        ["water"] = ("Wasser", Color.FromArgb(119, 188, 255)),
-        ["electric"] = ("Elektro", Color.FromArgb(255, 219, 109)),
-        ["grass"] = ("Pflanze", Color.FromArgb(152, 223, 123)),
-        ["ice"] = ("Eis", Color.FromArgb(171, 230, 243)),
-        ["fighting"] = ("Kampf", Color.FromArgb(244, 161, 122)),
-        ["poison"] = ("Gift", Color.FromArgb(216, 159, 251)),
-        ["ground"] = ("Boden", Color.FromArgb(220, 184, 125)),
-        ["flying"] = ("Flug", Color.FromArgb(178, 189, 255)),
-        ["psychic"] = ("Psycho", Color.FromArgb(255, 159, 211)),
-        ["bug"] = ("Käfer", Color.FromArgb(188, 224, 109)),
-        ["rock"] = ("Gestein", Color.FromArgb(221, 200, 148)),
-        ["ghost"] = ("Geist", Color.FromArgb(186, 175, 245)),
-        ["dragon"] = ("Drache", Color.FromArgb(166, 163, 255)),
-        ["dark"] = ("Unlicht", Color.FromArgb(195, 182, 178)),
-        ["steel"] = ("Stahl", Color.FromArgb(174, 205, 219)),
-    };
-
-    public static (string Label, Color Color) Type(string type) => Types.GetValueOrDefault(type, (type, Muted));
 
     public static string? RubyType(byte? id) => id switch
     {
@@ -121,43 +99,6 @@ internal static class DashboardTheme
         17 => "dark",
         _ => null,
     };
-}
-
-internal sealed class RubySprites(string directory) : IDisposable
-{
-    private readonly Dictionary<string, Bitmap?> loaded = new();
-
-    public Image? Find(RubySpeciesAppearance appearance, bool shiny)
-    {
-        string suffix = shiny ? "-shiny" : "";
-        return this.Load($"{appearance.NationalDex}{suffix}.png");
-    }
-
-    public Image? TypeBadge(string type) => this.Load(Path.Combine("types", type + ".png"));
-
-    private Image? Load(string key)
-    {
-        if (this.loaded.TryGetValue(key, out var result)) return result;
-        try
-        {
-            string path = Path.Combine(directory, key);
-            if (File.Exists(path) && new FileInfo(path).Length <= 256 * 1024)
-            {
-                using var file = File.OpenRead(path);
-                using var sprite = Image.FromStream(file, useEmbeddedColorManagement: false, validateImageData: true);
-                if (sprite.Width <= 256 && sprite.Height <= 256) result = new Bitmap(sprite);
-            }
-        }
-        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException or OutOfMemoryException) { }
-        this.loaded[key] = result;
-        return result;
-    }
-
-    public void Dispose()
-    {
-        foreach (var sprite in this.loaded.Values) sprite?.Dispose();
-        this.loaded.Clear();
-    }
 }
 
 internal sealed class DiscordIcons : IDisposable

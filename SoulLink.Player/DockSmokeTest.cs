@@ -35,6 +35,7 @@ internal static class DockSmokeTest
                 }
                 port = runtime.Status().BridgePort;
                 File.WriteAllText(progress, $"The emulator is docked with bridge port {port}.");
+                VerifySidebar(form);
                 if (detached)
                 {
                     form.ChangeDock();
@@ -77,6 +78,35 @@ internal static class DockSmokeTest
             game?.Dispose();
         }
     }
+
+    private static void VerifySidebar(CompanionForm form)
+    {
+        var layout = form.Controls.OfType<TableLayoutPanel>().Single();
+        var game = Descendants(layout).OfType<EmulatorSurface>().Single();
+        var map = Descendants(layout).OfType<RunDashboard>().Single();
+        var roster = Descendants(layout).OfType<RosterGrid>().Single();
+        var gameBounds = game.RectangleToScreen(game.ClientRectangle);
+        var mapBounds = map.RectangleToScreen(map.ClientRectangle);
+        var rosterBounds = roster.RectangleToScreen(roster.ClientRectangle);
+        if (gameBounds.Right > rosterBounds.Left || gameBounds.Right > mapBounds.Left ||
+            gameBounds.Bottom < rosterBounds.Bottom || mapBounds.Bottom > rosterBounds.Top)
+            throw new InvalidOperationException($"The team must stay beside the full-height game. Game: {gameBounds}, map: {mapBounds}, team: {rosterBounds}.");
+        var menu = form.Controls.Find("ProgramMenu", true).Single();
+        if (menu.Text != "SoulLink") throw new InvalidOperationException("The system menu must display the SoulLink label.");
+        using var label = new Bitmap(menu.Width, menu.Height);
+        menu.DrawToBitmap(label, menu.ClientRectangle);
+        bool drewLabel = false;
+        for (int y = 0; y < label.Height && !drewLabel; y++)
+            for (int x = 0; x < label.Width && !drewLabel; x++)
+            {
+                var pixel = label.GetPixel(x, y);
+                drewLabel = pixel.G > 150 && pixel.G > pixel.R + 35;
+            }
+        if (!drewLabel) throw new InvalidOperationException("The SoulLink label was blank when painted.");
+    }
+
+    private static IEnumerable<Control> Descendants(Control parent) =>
+        parent.Controls.Cast<Control>().SelectMany(child => new[] { child }.Concat(Descendants(child)));
 
     private static Process? FindFixtureEmulator(PortableMgba emulator)
     {
@@ -129,8 +159,14 @@ internal static class DockSmokeTest
                     }
                     while (!dock.Attached || snapshot is null);
 
-                    window.ClientSize = new Size(690, 458);
-                    dock.Resize();
+                    VerifyDockBounds(dock, surface);
+                    foreach (var size in new[] { new Size(690, 620), new Size(560, 400) })
+                    {
+                        window.ClientSize = size;
+                        dock.Resize();
+                        await Task.Yield();
+                        VerifyDockBounds(dock, surface);
+                    }
                     if (!EmulatorDock.CloseStartupScriptingWindow(process))
                         throw new InvalidOperationException("Could not close the startup scripting view.");
                     while (EmulatorDock.HasScriptingWindow(process)) await Task.Delay(50, timeout.Token);
@@ -150,6 +186,7 @@ internal static class DockSmokeTest
                         if (!dock.IsFocused) throw new InvalidOperationException("Dismissing a passive death notice moved keyboard focus.");
                     }
                     VerifyFeed(home);
+                    await VerifyArtworkAsync(home, timeout.Token);
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }
@@ -199,6 +236,51 @@ internal static class DockSmokeTest
         feed.DrawToBitmap(drawing, feed.ClientRectangle);
         if (feed.AutoScrollMinSize.Height <= feed.ClientSize.Height)
             throw new InvalidOperationException("The feed did not make the additional event cards scrollable.");
+
+        if (RunDialogs.BattleMove(new BattleTrace(0, 1, 33, null, true)) != ("K.-o.-Attacke", "Tackle") ||
+            RunDialogs.BattleMove(new BattleTrace(0, 1, 33, null)) != ("Letzte erfasste Attacke", "Tackle") ||
+            RunDialogs.BattleMove(null) != ("Attacke", "Unbekannt"))
+            throw new InvalidOperationException("The feed did not distinguish a knockout move from an unconfirmed or unknown move.");
+    }
+
+    private static void VerifyDockBounds(EmulatorDock dock, EmulatorSurface surface)
+    {
+        var expected = surface.RectangleToScreen(surface.ClientRectangle);
+        if (dock.ClientBounds != expected)
+            throw new InvalidOperationException($"The embedded mGBA client was {dock.ClientBounds} instead of {expected}.");
+    }
+
+    private static async Task VerifyArtworkAsync(string home, CancellationToken cancellationToken)
+    {
+        using var image = new Bitmap(24, 24);
+        using var png = new MemoryStream();
+        image.Save(png, System.Drawing.Imaging.ImageFormat.Png);
+        using var handler = new ArtworkResponse(png.ToArray());
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("https://artwork.test/") };
+        string cache = Path.Combine(home, "Artwork");
+        using var sprites = new RubySprites(home, cache, client);
+        var pikachu = RubyDashboardCatalog.Appearance(25)!;
+        sprites.TypeIcon("electric");
+        sprites.Find(pikachu, false);
+
+        using var offline = new RubySprites(cache);
+        while (new FileInfo(Path.Combine(cache, "type-icons", "electric.png")) is not { Exists: true, Length: > 0 } ||
+            new FileInfo(Path.Combine(cache, "25.png")) is not { Exists: true, Length: > 0 })
+            await Task.Delay(20, cancellationToken);
+
+        if (offline.TypeIcon("electric") is not { Image.Width: 24, Label: "Elektro" } || offline.Find(pikachu, false)?.Width != 24)
+            throw new InvalidOperationException("A downloaded type symbol or Pokémon sprite could not be reused offline.");
+    }
+
+    private sealed class ArtworkResponse(byte[] png) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath is not ("/types/generation-viii/legends-arceus/small/13.png" or
+                "/pokemon/versions/generation-iii/ruby-sapphire/25.png"))
+                throw new InvalidOperationException($"Unexpected artwork request: {request.RequestUri}.");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(png) });
+        }
     }
 
     [DllImport("user32.dll")]

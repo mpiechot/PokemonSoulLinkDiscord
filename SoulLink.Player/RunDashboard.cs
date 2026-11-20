@@ -62,7 +62,7 @@ internal sealed class RunDashboard : TableLayoutPanel
 
         this.map.UpdatePlayers(positions.ToArray());
         string legend = positions.Count == 0 ? "Warte auf Spielerpositionen."
-            : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name} · " +
+            : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name}: " +
                 (p.Area is int area && area != 255 ? RubyNames.Area(area) + (p.Live ? "" : " (zuletzt)") : "Warte auf Position")));
         if (this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
         {

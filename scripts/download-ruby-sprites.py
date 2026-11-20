@@ -12,13 +12,14 @@ BASE = SOURCE + "sprites/pokemon/versions/generation-iii/ruby-sapphire/"
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--directory", type=pathlib.Path, default=ROOT / "artifacts/player/sprites")
+parser.add_argument("--type-icons-only", action="store_true", help="Download only the type symbols.")
 arguments = parser.parse_args()
 directory = arguments.directory.resolve()
 artifact_root = (ROOT / "artifacts").resolve()
 if artifact_root not in directory.parents:
     parser.error("Use a folder below artifacts so sprite files stay out of Git.")
 directory.mkdir(parents=True, exist_ok=True)
-type_directory = directory / "types"
+type_directory = directory / "type-icons"
 type_directory.mkdir(exist_ok=True)
 
 
@@ -49,11 +50,13 @@ def download(item):
     return None
 
 
-items = [(directory / f"{number}{'-shiny' if shiny else ''}.png", BASE + ("shiny/" if shiny else "") + f"{number}.png")
-         for number in range(1, 387) for shiny in (False, True)]
+items = [] if arguments.type_icons_only else [
+    (directory / f"{number}{'-shiny' if shiny else ''}.png", BASE + ("shiny/" if shiny else "") + f"{number}.png")
+    for number in range(1, 387) for shiny in (False, True)
+]
 types = ("normal", "fighting", "flying", "poison", "ground", "rock", "bug", "ghost", "steel",
          "fire", "water", "grass", "electric", "psychic", "ice", "dragon", "dark")
-items.extend((type_directory / f"{kind}.png", SOURCE + f"sprites/types/generation-iii/ruby-sapphire/{index}.png")
+items.extend((type_directory / f"{kind}.png", SOURCE + f"sprites/types/generation-viii/legends-arceus/small/{index}.png")
              for index, kind in enumerate(types, 1))
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
     failures = [error for error in pool.map(download, items) if error]
