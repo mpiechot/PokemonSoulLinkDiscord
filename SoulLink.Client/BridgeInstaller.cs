@@ -1,9 +1,9 @@
 namespace SoulLink.Client;
 
-/// <summary>Exports the embedded read-only bridge to a stable per-user location for mGBA autorun.</summary>
+/// <summary>Exports the embedded bridge to a stable per-user location for mGBA autorun.</summary>
 public static class BridgeInstaller
 {
-    public static string Install(string directory, int? port = null)
+    public static string Install(string directory, int? port = null, string? itemSession = null)
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "soullink.lua");
@@ -15,6 +15,12 @@ public static class BridgeInstaller
         {
             if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
             content = FormattableString.Invariant($"SOULLINK_PORT = {port}\n") + content;
+        }
+        if (itemSession is not null)
+        {
+            if (itemSession.Length != 32 || !itemSession.All(Uri.IsHexDigit))
+                throw new ArgumentException("Invalid local item session.", nameof(itemSession));
+            content = $"SOULLINK_ITEM_SESSION = \"{itemSession}\"\n" + content;
         }
         if (!File.Exists(path) || File.ReadAllText(path) != content)
         {

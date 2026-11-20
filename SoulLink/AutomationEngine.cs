@@ -146,6 +146,26 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public AutomationRun View(Registration registration) => store.Execute(tx => tx.Run(registration.RunId));
 
+    public void AddRule(Registration registration, string text)
+    {
+        string rule = text?.Trim() ?? "";
+        if (rule.Length is < 1 or > 240 || rule.Any(char.IsControl))
+            throw new InvalidDataException("Eine Regel braucht 1 bis 240 Zeichen in einer Zeile.");
+        store.Execute(tx =>
+        {
+            var run = tx.Run(registration.RunId);
+            if (!run.Players.Any(p => p.Id == registration.PlayerId && p.ClientId == registration.ClientId))
+                throw new UnauthorizedAccessException("Der Spieler gehört nicht zu diesem Run.");
+            if (run.Phase == RunPhase.Finished)
+                throw new InvalidOperationException("Der Run ist abgeschlossen.");
+            if (run.AdditionalRules.Contains(rule, StringComparer.OrdinalIgnoreCase)) return false;
+            if (run.AdditionalRules.Count >= 24) throw new InvalidOperationException("Dieser Run hat bereits 24 Zusatzregeln.");
+            run.AdditionalRules.Add(rule);
+            tx.Save(run);
+            return true;
+        });
+    }
+
     public void Disconnect(Registration registration, Guid sessionId)
     {
         if (this.sessions.TryGetValue(registration.PlayerId, out var session) && session.Id == sessionId)

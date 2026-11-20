@@ -74,6 +74,8 @@ internal sealed class LocalRunTracker : IDisposable
 
     public CatchCheck CheckCatch(string name) => this.engine.CheckCatch(this.registration, name);
 
+    public void AddRule(string text) => this.engine.AddRule(this.registration, text);
+
     public void ChangeArena(int number, bool complete) => this.engine.ChangeArena(this.registration, number, complete);
 
     public void ResolveFaint(Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>

@@ -1,6 +1,6 @@
 # SoulLink Automation testen
 
-Dieser Branch ergänzt den Discord-Bot um eine **schreibgeschützte Erfassung** für Pokémon Rubin (deutsche AXVD-ROM). Ein lokaler C#-Client liest mGBA-Lua-Daten, verbindet sich mit dem integrierten SignalR-Server und zeigt Party, Boxbestand, Links und Diagnose an. Im Spiel wird nichts verändert.
+Dieser Branch ergänzt den Discord-Bot um eine **schreibgeschützte Erfassung** für Pokémon Rubin (deutsche AXVD-ROM). Ein lokaler C#-Client liest mGBA-Lua-Daten, verbindet sich mit dem integrierten SignalR-Server und zeigt Party, Boxbestand, Links und Diagnose an. Die Windows-Spielerdatei bietet zusätzlich manuelle Item-Zugaben ins lokale PC-Lager.
 
 **Für Mitspieler:** Starte die vorbereitete Spieler-EXE. Wähle beim ersten Start Namen, Karten-Icon und ROM. Danach startet SoulLink mGBA mit der Lesebrücke und zeigt den Run neben dem Spielfenster. [Spieleranleitung](player.md)
 
@@ -65,7 +65,7 @@ Bestehende JSON-Runs bleiben als Archiv lesbar. Die alten manuellen Schreibbefeh
 
 ## Bekannte Grenzen des ersten echten Spieltests
 
-- Keine RAM-Schreibzugriffe und keine automatische Team-Anpassung. Gemischte Party-/Boxbelegung erscheint als **TEAM CONFLICT**.
+- Das Cheat-Menü erlaubt per lokalem Klick fünf feste PC-Item-Zugaben. Die Erfassung und die Run-Server-Verbindung lesen Spieldaten. Gemischte Party-/Boxbelegung erscheint als **TEAM CONFLICT**.
 - Ein Erstbestand wird importiert; Starter werden nicht automatisch nachträglich miteinander verlinkt.
 - Neue Identität bedeutet „neu beobachtet“. Geschenke, Trades und Fänge lassen sich daraus nicht immer sicher unterscheiden. Die erste gültige Identität je Spieler/Gebiet belegt den Encounter; weitere werden als Extra-Fang diagnostiziert. Shiny-Sonderregeln des separaten manuellen Features werden hier nicht automatisch angewendet.
 - Releases, Daycare und Save-State-Rücksprünge können die erwartete Inventarmenge ändern und führen zu **OutOfSync**. Nichts wird automatisch gelöscht oder durch Offline-Ereignisse nachgetragen.

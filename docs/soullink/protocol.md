@@ -1,4 +1,4 @@
-# Read-only protocol v1
+# SoulLink protocol v1
 
 ## Lua → local client
 
@@ -8,7 +8,9 @@ A `BridgeFrame` contains `version`, `type: snapshot`, `gameCode: AXVD`, `layoutI
 
 Players send their chosen name and marker when joining. Older join requests default to the circle marker. Run status includes each player's last observed area, while omitting raw snapshots. `HeartbeatWithBridge` distinguishes a connected client without fresh emulator data from a live location. The original map is decoded locally in the player without sending ROM graphics or ROM bytes to the server.
 
-There is no incoming Lua command, code-evaluation facility, game write, save manipulation or input simulation.
+### PC item grants on the local bridge
+
+The desktop player enables this optional channel on its own emulator launch. A local click sends one fixed PC item ID, an expiring request ID, and the current bridge session, trainer and epoch. Lua confirms these values and the loaded Ruby profile before adding 99 items. It returns the new PC total or a rejection. The server has no route to this channel.
 
 ## Client → server
 
@@ -25,6 +27,7 @@ Allowlisted methods:
 | `HeartbeatWithBridge(sessionId, available)` | Liveness and bridge freshness, independent of meaningful state changes. |
 | `Status()` | Only the authenticated registration's run. |
 | `CheckCatch(name)` | German or English species name, and the matching caught family in the caller's run if present. |
+| `AddRule(text)` | Adds one trimmed line of up to 240 characters to the authenticated caller's run. Status shares the rules with participants. |
 | `ChangeArena(number, complete)` | Complete the next arena or revert the most recent completion for the caller. |
 | `ResolveFaint(pokemonId, incidentId, confirm, reason)` | Confirm or dismiss the caller's pending knockout. A confirmed death applies to every member of its link. |
 

@@ -14,6 +14,10 @@ Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird d
 
 Die nächste Arena richtet sich nach deinen Orden. **Abschließen** verbucht sie für deinen Spieler. **Zurücknehmen** nimmt den zuletzt verbuchten Arena-Fortschritt zurück. Für erkannte Arenateams zeigt SoulLink die Level aus der geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 
+**Cheats** zeigt Sonderbonbons, Pokébälle, Superbälle, Hyperbälle und Meisterbälle. Kehre im Spiel aufs Spielfeld zurück. Ein Klick auf **+99** legt 99 Stück der ausgewählten Sorte ins Item-Lager deines PCs. Der Dialog meldet den neuen Bestand. Hole die Items am PC ab und speichere wie gewohnt im Spiel.
+
+**Regeln** zeigt die SoulLink-Grundregeln und eure Zusatzregeln. Alle angemeldeten Teilnehmer können dem gemeinsamen Run eine Zusatzregel hinzufügen. Im lokalen Spieltest speichert SoulLink Zusatzregeln mit dem lokalen Verlauf.
+
 Nach den ersten gültigen Spieldaten schließt SoulLink das bei der automatischen Skripteinrichtung geöffnete Fenster. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Die allgemeine Spielerdatei zeigt den lokalen Feed auch bei einer gespeicherten Anmeldung, solange der Run-Server nicht verbunden ist. Die lokale Erfassung gilt nur für diese Sitzung. Sobald der Server wieder erreichbar ist, wechselt die Anzeige zum gemeinsamen Run. Dort erscheinen Fänge, sobald der Gastgeber den Run gestartet hat.
 
 Neue Runs zeigen einen erkannten K. o. bereits im Kampf an. Das Popup öffnet sich ohne Tastaturfokus. Darin kannst du den Tod bestätigen und einen Grund angeben. SoulLink zeigt den Gegner und die K.-o.-Attacke, wenn die Lesebrücke den direkten Treffer zuordnen konnte. In anderen Fällen zeigt es die zuletzt erfasste Attacke, sofern bekannt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
@@ -33,6 +37,15 @@ Im Client unter **Einrichtung → Für Gastgeber** Serveradresse und Einladung a
 Die Kopie enthält die Einladungsdaten und einen Profilbezeichner pro Run. Die Einladung gilt für eine noch offene Lobby. Erstelle für jeden neuen Run eine eigene Datei.
 
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
+
+### Zu zweit testen
+
+1. Starte den Testserver aus diesem Branch und erstelle im Test-Discord mit `/run-init name:Test edition:ruby` eine Lobby.
+2. Erstelle unter **SoulLink → Einrichtung → Für Gastgeber** mit der Serveradresse und dem Einladungscode genau eine Spielerdatei. Verwende für die Rechner deiner Mitspieler eine erreichbare HTTPS-Adresse.
+3. Startet dieselbe Spielerdatei auf zwei Rechnern. Jeder wählt beim ersten Start seinen Namen, sein Karten-Icon und seine lokale Rubin-ROM. Sobald beide **Run-Server** und **Spieldaten** grün sehen, startet der Gastgeber in Discord mit `/run-start`.
+4. Fangt beide ein Pokémon im gleichen Fanggebiet. Der Link erscheint auf beiden Rechnern. Fügt unter **Regeln** eine Testregel hinzu und prüft, ob sie beim anderen Spieler erscheint.
+
+Für einen automatischen Test der Mehrspieler-Verbindung auf einem Rechner gibt es `./scripts/Start-SoulLinkDemo.ps1 -Verify`.
 
 Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink lädt Pokémon-Sprites von PokéAPI und transparente Energiesymbole des Sammelkartenspiels über Poképédia. Die Bilder werden lokal gespeichert und sind danach auch offline verfügbar. Boden, Gestein und Kampf verwenden die orange Faust. Der Tooltip nennt den jeweiligen Spieltyp. Die Icons des Discord-Bots sind in der EXE enthalten.
 

@@ -17,6 +17,25 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void AdditionalRulesBelongToTheRegisteredRunAndSurviveAReopen()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test");
+        var first = this.Join(run, "Player one").Registration;
+        var partner = this.Join(run, "Player two").Registration;
+        var otherRun = this.engine.Initialize("other guild", 0, "Other run");
+        var outsider = this.Join(otherRun, "Player three").Registration;
+
+        this.engine.AddRule(first, "  Kein Meisterball im Kampf.  ");
+        this.engine.AddRule(partner, "KEIN MEISTERBALL IM KAMPF.");
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.AddRule(outsider with { RunId = run.Id }, "Andere Regel"));
+        Assert.Throws<InvalidDataException>(() => this.engine.AddRule(first, "Zeile eins\nZeile zwei"));
+
+        var reopened = new AutomationEngine(new AutomationStore(Path.Combine(this.directory, "runs.sqlite")));
+        Assert.Equal("Kein Meisterball im Kampf.", Assert.Single(reopened.View(partner).AdditionalRules));
+        Assert.Empty(reopened.View(outsider).AdditionalRules);
+    }
+
+    [Fact]
     public void ThreePlayersCreateExactlyOneDurableGroupIncludingDirectBoxCatch()
     {
         var run = this.engine.Initialize("guild", 123, "Test");

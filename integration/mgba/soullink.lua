@@ -1,4 +1,4 @@
--- Read-only Ruby reference bridge. No emu:write*, save, input or remote command path exists.
+-- Ruby observation bridge. The desktop player can opt into local PC item grants.
 -- Sources and AXVD validation limits: docs/soullink/mgba.md.
 -- The Windows player loads this script automatically. For manual use, start the local client first.
 -- Override only with a layout verified for your ROM before loading this file:
@@ -18,7 +18,11 @@ local profiles = {
     }
 }
 local port = SOULLINK_PORT or 5091
+local itemSession = SOULLINK_ITEM_SESSION
+SOULLINK_ITEM_SESSION = nil
 local peer, pending, position = nil, nil, 1
+local itemInput, itemReply, lastItemRequest = "", nil, nil
+local itemIds = {[1] = true, [2] = true, [3] = true, [4] = true, [68] = true}
 local epoch = tostring({}):gsub("[^%w]", "")
 local tick, lastFrame = 0, -1
 local lastError = ""
@@ -54,6 +58,7 @@ end
 local function stop()
     if peer then pcall(function() peer:close() end) end
     peer, pending, position = nil, nil, 1
+    itemInput, itemReply = "", nil
 end
 
 local function report(message)
@@ -108,6 +113,69 @@ local function readPosition(profile, group)
     local width, height = read32(layout), read32(layout + 4)
     if width < 1 or width > 1024 or height < 1 or height > 1024 or x < 0 or x >= width or y < 0 or y >= height then return "null" end
     return string.format('{"x":%d,"y":%d,"width":%d,"height":%d,"outdoor":%s}', x, y, width, height, tostring(group == 0))
+end
+
+local function readTrainerId(profile)
+    return read16(profile.save2 + 0x0A) | (read16(profile.save2 + 0x0C) << 16)
+end
+
+local function grantPcItem(expectedEpoch, trainer, item, expires)
+    local profile = activeProfile
+    if profile ~= profiles.AXVD or epoch ~= expectedEpoch or readTrainerId(profile) ~= trainer or expires < os.time() then
+        return "changed"
+    end
+    local count = read8(profile.partyCount)
+    if (read8(profile.main + 0x43D) & 2) ~= 0 or count < 1 or count > 6 or
+        read8(profile.avatar + 6) ~= 0 or readPosition(profile, read8(profile.save1 + 4)) == "null" then
+        return "location"
+    end
+
+    -- Ruby's SaveBlock1 has 50 unencrypted {u16 id, u16 count} PC slots. Prepare the full grant before writing.
+    local remaining, free, changes, total = 99, nil, {}, 0
+    for slot = 0, 49 do
+        local address = profile.save1 + 0x498 + 4 * slot
+        local id, quantity = read16(address), read16(address + 2)
+        if id > 348 or (id == 0 and quantity ~= 0) or (id ~= 0 and (quantity == 0 or quantity > 999)) then
+            return "storage"
+        end
+        if id == 0 and not free then free = address end
+        if id == item then total = total + quantity end
+        if id == item and remaining > 0 and quantity < 999 then
+            local added = math.min(remaining, 999 - quantity)
+            changes[#changes + 1] = {address, item | ((quantity + added) << 16)}
+            remaining = remaining - added
+        end
+    end
+    if remaining > 0 then
+        if not free then return "full" end
+        changes[#changes + 1] = {free, item | (remaining << 16)}
+    end
+    for _, change in ipairs(changes) do readCore():write32(change[1], change[2]) end
+    for _, change in ipairs(changes) do
+        if read32(change[1]) ~= change[2] then return "changed" end
+    end
+    return "ok", total + 99
+end
+
+local function receivePcItem()
+    if not itemSession or not peer or itemReply then return end
+    if peer:hasdata() then
+        local chunk = peer:receive(256)
+        if chunk then itemInput = itemInput .. chunk end
+    end
+    if #itemInput > 256 then stop(); return end
+    local ending = itemInput:find("\n", 1, true)
+    if not ending then return end
+    local line = itemInput:sub(1, ending - 1)
+    itemInput = itemInput:sub(ending + 1)
+    local token, expectedEpoch, trainer, request, kind, expires =
+        line:match("^PC (%x+) (%w+) (%d+) ([%x%-]+) (%d+) (%d+)$")
+    local item = tonumber(kind)
+    if token ~= itemSession or not request or #request ~= 36 or not itemIds[item] or request == lastItemRequest then return end
+    lastItemRequest = request
+    local ok, outcome, quantity = pcall(grantPcItem, expectedEpoch, tonumber(trainer), item, tonumber(expires))
+    itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","itemQuantity":%s}\n',
+        itemSession, request, ok and outcome or "changed", quantity or "null")
 end
 
 local function pendingDirectHit(a, count, frame)
@@ -198,7 +266,7 @@ local function snapshot(frame)
     local hours = read16(profile.save2 + 0x0E)
     local minutes = read8(profile.save2 + 0x10)
     local seconds = read8(profile.save2 + 0x11)
-    local trainerId = read16(profile.save2 + 0x0A) | (read16(profile.save2 + 0x0C) << 16)
+    local trainerId = readTrainerId(profile)
     if count > 6 or currentBox > 13 or hours > 999 or minutes > 59 or seconds > 59 then
         error(string.format("Invalid %s memory layout: party=%d, box=%d, play time=%d:%02d:%02d.",
             code, count, currentBox, hours, minutes, seconds), 0)
@@ -254,8 +322,9 @@ local function snapshot(frame)
         local typesOk, types = pcall(readTypes, profile)
         rubyTypes = typesOk and types or ""
     end
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
-        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId,
+    local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId, itemCapability,
         group, number, lastPosition, tostring(battle), table.concat(faints, ","), badges,
         gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
@@ -274,6 +343,11 @@ local function onFrame()
     lastFrame = frame
     if activeProfile then pcall(captureBattle, activeProfile, frame) end
     sendPending()
+    receivePcItem()
+    if itemReply and not pending then
+        pending, position, itemReply = itemReply, 1, nil
+        sendPending()
+    end
     if (tick % 30 ~= 0 and not faintDirty) or pending then return end
     if not peer then
         peer = socket.tcp()
@@ -299,4 +373,4 @@ SOULLINK_STOP = function()
     callbacks:remove(loadCallback)
     stop()
 end
-console:log("SoulLink read-only bridge loaded. Reference profile requires live validation; no game memory is modified.")
+console:log(itemSession and "SoulLink bridge with local PC item menu loaded." or "SoulLink read-only bridge loaded.")

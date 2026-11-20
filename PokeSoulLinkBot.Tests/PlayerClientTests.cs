@@ -321,7 +321,10 @@ public sealed class PlayerClientTests : IDisposable
         string path = BridgeInstaller.Install(Path.Combine(this.directory, "Bridge"));
         string text = File.ReadAllText(path);
         Assert.Contains("local function snapshot", text);
-        Assert.DoesNotContain("emu:write8(", text);
+        Assert.DoesNotContain("SOULLINK_ITEM_SESSION = \"", text);
+        string token = new string('A', 32);
+        string itemBridge = BridgeInstaller.Install(Path.GetDirectoryName(path)!, itemSession: token);
+        Assert.StartsWith($"SOULLINK_ITEM_SESSION = \"{token}\"", File.ReadAllText(itemBridge));
         Assert.Equal(path, BridgeInstaller.Install(Path.GetDirectoryName(path)!));
     }
 

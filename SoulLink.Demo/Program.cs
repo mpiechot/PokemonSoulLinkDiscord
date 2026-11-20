@@ -102,6 +102,11 @@ try
     Console.WriteLine("Verified: dashboard transmits player-selected markers, distinct map regions, stale positions, links and badge events.");
     if (verifyOnly)
     {
+        const string rule = "Keine Heilitems im Arenakampf.";
+        await hubs[0].InvokeAsync("AddRule", rule, lifetime.Token);
+        var rulesForPartner = (await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules;
+        if (!rulesForPartner.SequenceEqual(new[] { rule }))
+            throw new InvalidOperationException("The second player did not receive the shared rule.");
         var hub = hubs[0];
         var session = sessions[0];
         var eligibility = await hub.InvokeAsync<CatchCheck>("CheckCatch", "Combusken", lifetime.Token);

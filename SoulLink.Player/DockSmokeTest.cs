@@ -121,7 +121,7 @@ internal static class DockSmokeTest
         return owned;
     }
 
-    public static void Run(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, string? testState)
+    public static void Run(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, string? testState, bool testItems)
     {
         using var window = new Form
         {
@@ -140,12 +140,23 @@ internal static class DockSmokeTest
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             try
             {
+                if (testItems)
+                {
+                    using var fixture = File.OpenRead(path);
+                    fixture.Position = 0x700;
+                    ReadOnlySpan<byte> expected = "SoulLinkPCFixture"u8;
+                    Span<byte> marker = stackalloc byte[expected.Length];
+                    fixture.ReadExactly(marker);
+                    if (!marker.SequenceEqual(expected))
+                        throw new InvalidDataException("PC item tests require the synthetic test ROM.");
+                }
                 rom.Save(path);
                 using var originalMap = RubyMapArtwork.Read(path);
                 if (originalMap is not null)
                     File.WriteAllText(Path.Combine(home, "rubymap-result.txt"), $"{originalMap.Width}×{originalMap.Height}");
                 await runtime.StartAsync(timeout.Token);
-                string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"), runtime.Status().BridgePort);
+                string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"), runtime.Status().BridgePort,
+                    testItems ? runtime.BeginLocalItemSession() : null);
                 using var process = emulator.Start(rom.Read()!, bridge, testState, softwareDisplay: true);
                 try
                 {
@@ -186,6 +197,28 @@ internal static class DockSmokeTest
                         if (!dock.IsFocused) throw new InvalidOperationException("Dismissing a passive death notice moved keyboard focus.");
                     }
                     VerifyFeed(home);
+                    if (testItems)
+                    {
+                        if (after.InBattle)
+                        {
+                            if (runtime.CanAddPcItems) throw new InvalidOperationException("The item menu was available during battle.");
+                            try
+                            {
+                                await runtime.AddPcItemsAsync(PcItem.MasterBall, timeout.Token);
+                                throw new InvalidDataException("The fixture accepted a PC item grant during battle.");
+                            }
+                            catch (InvalidOperationException) { }
+                        }
+                        else
+                        {
+                            while (!runtime.CanAddPcItems) await Task.Delay(25, timeout.Token);
+                            if (await runtime.AddPcItemsAsync(PcItem.RareCandy, timeout.Token) != 1049)
+                                throw new InvalidOperationException("The existing 950 candies did not receive exactly 99 more.");
+                            foreach (var ball in new[] { PcItem.PokeBall, PcItem.GreatBall, PcItem.UltraBall, PcItem.MasterBall })
+                                if (await runtime.AddPcItemsAsync(ball, timeout.Token) != 99)
+                                    throw new InvalidOperationException($"The fixture did not receive 99 {ball}.");
+                        }
+                    }
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }

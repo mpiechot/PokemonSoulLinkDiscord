@@ -8,7 +8,7 @@ public sealed record ClientView(
     bool ReadOnly = true, Guid? LocalPlayerId = null, PlayerMarker Marker = PlayerMarker.Circle, bool IsLocalRun = false);
 
 public sealed record ClientRunView(string Name, RunPhase Phase, Guid Id, ClientPlayerView[] Players,
-    string[] Lines, AutomationEvent[] History, DashboardLink[]? Links = null, int[]? CaughtAreas = null);
+    string[] Lines, AutomationEvent[] History, DashboardLink[]? Links = null, int[]? CaughtAreas = null, string[]? AdditionalRules = null);
 
 public sealed record ClientPlayerView(string Name, Guid Id, string Diagnostic, string Connection,
     PlayerMarker Marker = PlayerMarker.Circle, int? Area = null, DashboardPokemon[]? Pokemon = null,

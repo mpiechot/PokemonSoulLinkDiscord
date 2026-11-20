@@ -26,6 +26,7 @@ internal sealed class CompanionForm : Form
     private readonly Label runConnection = ConnectionLabel("Run-Server");
     private readonly Label gameConnection = ConnectionLabel("Spieldaten");
     private readonly Button checkCatch;
+    private readonly Button cheats;
     private readonly Button pendingDeathButton;
     private readonly ToolStripMenuItem startGame;
     private readonly ToolStripMenuItem toggleDock;
@@ -117,11 +118,24 @@ internal sealed class CompanionForm : Form
             dialog.ShowDialog(this);
         });
         this.pendingDeathButton = Button("Todesfall prüfen", (_, _) => this.ReviewDeath());
+        this.cheats = Button("Cheats", (_, _) =>
+        {
+            if (this.closing || this.game is not { HasExited: false } || !this.runtime.CanAddPcItems) return;
+            using var dialog = new ItemMenuForm(this.runtime, this.spriteCache);
+            dialog.ShowDialog(this);
+        });
+        this.hints.SetToolTip(this.cheats, "Je 99 Items ins lokale PC-Lager legen");
         navigation.Controls.AddRange([
             Button("Box", (_, _) => this.ShowRoster("Box", RosterView.Box)),
             Button("Tot", (_, _) => this.ShowRoster("Tot", RosterView.Dead)),
             Button("Shinies", (_, _) => this.ShowRoster("Shinies", RosterView.Shiny)),
             Button("Fangorte", (_, _) => this.ShowPlaces()),
+            Button("Regeln", (_, _) =>
+            {
+                using var dialog = new RulesForm(this.runtime);
+                dialog.ShowDialog(this);
+            }),
+            this.cheats,
             this.checkCatch, this.pendingDeathButton,
         ]);
         var chrome = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(3, 0, 0, 0) };
@@ -413,7 +427,7 @@ internal sealed class CompanionForm : Form
             this.rom.Save(path);
             await this.runtime.SelectLocalGameAsync(path);
             if (this.closing) return;
-            string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort);
+            string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort, this.runtime.BeginLocalItemSession());
             this.game = await Task.Run(() => this.emulator.Start(path, bridge));
             if (this.closing) return;
             this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), attempted: true);
@@ -476,6 +490,7 @@ internal sealed class CompanionForm : Form
         var view = this.runtime.Status();
         this.displayedRunId = view.Run?.Id;
         bool running = this.game is { HasExited: false };
+        this.cheats.Enabled = running && this.runtime.CanAddPcItems;
         string registration = view.IsLocalRun ? "Lokaler Spieltest"
             : view.Run is { } run ? run.Name + ": " + view.Player + " (" + (run.Phase switch
             {

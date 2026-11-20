@@ -35,6 +35,7 @@ public sealed class ClientRuntime : BackgroundService
     private readonly JoinForm? autoJoin;
     private DateTimeOffset nextJoinAttempt;
     private readonly object stateGate = new();
+    private readonly ItemBridge items = new();
     private readonly Queue<string> log = new();
     private HubConnection? connection;
     private SessionInfo? session;
@@ -164,6 +165,16 @@ public sealed class ClientRuntime : BackgroundService
 
     public Task ChangeArenaAsync(Guid runId, int number, bool complete) =>
         this.RunActionAsync(runId, t => t.ChangeArena(number, complete), c => c.InvokeAsync("ChangeArena", number, complete));
+
+    public Task AddRuleAsync(Guid runId, string text) =>
+        this.RunActionAsync(runId, t => t.AddRule(text), c => c.InvokeAsync("AddRule", text));
+
+    public string BeginLocalItemSession() => this.items.Begin();
+
+    public bool CanAddPcItems => this.items.Ready;
+
+    public Task<int> AddPcItemsAsync(PcItem item, CancellationToken cancellationToken = default) =>
+        this.items.AddAsync(item, cancellationToken);
 
     public Task ResolveFaintAsync(Guid runId, Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
         this.RunActionAsync(runId, t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
@@ -415,6 +426,7 @@ public sealed class ClientRuntime : BackgroundService
             while (!cancellationToken.IsCancellationRequested)
             {
                 using var peer = await listener.AcceptTcpClientAsync(cancellationToken);
+                var stream = peer.GetStream();
                 lock (this.stateGate)
                 {
                     this.bridgeReconnected = true;
@@ -423,9 +435,16 @@ public sealed class ClientRuntime : BackgroundService
                 this.Note("mGBA bridge connected on loopback.");
                 try
                 {
-                    await foreach (string line in JsonLines.ReadAsync(peer.GetStream(), cancellationToken))
+                    await foreach (string line in JsonLines.ReadAsync(stream, cancellationToken))
                     {
-                        this.AcceptFrame(Protocol.Deserialize<BridgeFrame>(line));
+                        var frame = Protocol.Deserialize<BridgeFrame>(line);
+                        if (frame is { Version: Protocol.Version, Type: "pc-item-result" })
+                        {
+                            this.items.AcceptResult(stream, frame);
+                            continue;
+                        }
+                        this.AcceptFrame(frame);
+                        this.items.Observe(stream, frame);
                     }
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
@@ -434,6 +453,7 @@ public sealed class ClientRuntime : BackgroundService
                     this.Note("Bridge rejected: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
+                finally { this.items.Disconnect(stream); }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }

@@ -50,6 +50,8 @@ internal sealed class RubySprites(string directory, string? cache = null, HttpCl
         return (this.Load(Path.Combine("tcg-icons", entry.Energy + ".png"), $"{EnergySource}{filename}?width=120"), entry.Label);
     }
 
+    public Image? FindItem(string name) => this.Load(Path.Combine("items", name + ".png"), $"{SpriteSource}items/{name}.png");
+
     private Image? Load(string key, string remotePath)
     {
         if (this.disposed) return null;

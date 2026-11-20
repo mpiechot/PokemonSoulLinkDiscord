@@ -33,7 +33,8 @@ internal static class Program
             return;
         }
         bool smokeTest = args.Length == 2 && args[0] == "--smoke-test";
-        bool smokeGame = args.Length is 3 or 4 && args[0] == "--smoke-game";
+        bool smokeItems = args.Length == 3 && args[0] == "--smoke-pc-items";
+        bool smokeGame = smokeItems || (args.Length is 3 or 4 && args[0] == "--smoke-game");
         bool smokeClose = args.Length is 3 or 4 && args[0] == "--smoke-close";
         using var instance = new Mutex(true, "Local\\SoulLink.Player", out bool firstInstance);
         if (!smokeTest && !smokeGame && !smokeClose && !firstInstance)
@@ -75,7 +76,7 @@ internal static class Program
         }
         if (smokeGame)
         {
-            DockSmokeTest.Run(runtime, emulator, rom, home, args[2], args.Length == 4 ? Path.GetFullPath(args[3]) : null);
+            DockSmokeTest.Run(runtime, emulator, rom, home, args[2], args.Length == 4 ? Path.GetFullPath(args[3]) : null, smokeItems);
             return;
         }
         if (smokeClose)

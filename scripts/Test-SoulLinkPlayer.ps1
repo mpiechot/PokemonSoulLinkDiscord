@@ -20,7 +20,7 @@ function Run-Player([string]$Path, [string[]]$Arguments) {
             throw "Packaged check timed out ($($Arguments[0]))."
         }
         if ($process.ExitCode -ne 0) {
-            $report = if ($Arguments[0] -in '--smoke-game','--smoke-close') { Join-Path $Arguments[1] 'game-error.txt' }
+            $report = if ($Arguments[0] -in '--smoke-game','--smoke-pc-items','--smoke-close') { Join-Path $Arguments[1] 'game-error.txt' }
             if ($report -and (Test-Path -LiteralPath $report)) { Get-Content -LiteralPath $report | Write-Host }
             throw "Packaged startup failed: $($process.ExitCode)."
         }
@@ -79,12 +79,14 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species) {
     # Branch from the party initializer to a short series of 32-bit writes.
     [BitConverter]::GetBytes(0xEA000054u).CopyTo($rom, 0xE8)
     $writes = [ordered]@{
+        '02025BCC' = 0x03B60044u # First PC item slot: 950 Rare Candies.
         '0202E828' = 0x08000600u # Map header: pointer to a 28 x 24 layout.
         '030048B0' = 0x00010001u # Active player object.
         '030048C0' = 0x000E000Cu # Live (5, 7), padding of seven metatiles.
     }
     [BitConverter]::GetBytes(28).CopyTo($rom, 0x600)
     [BitConverter]::GetBytes(24).CopyTo($rom, 0x604)
+    [Text.Encoding]::ASCII.GetBytes('SoulLinkPCFixture').CopyTo($rom, 0x700)
     if ($Revision -eq 1) {
         $rom[0x156] = 0
         $writes['03001BAC'] = 0x200u # Main.inBattle.
@@ -145,7 +147,7 @@ try {
         if ($ShutdownOnly) { continue }
         $mapResult = Join-Path $preparedHome 'rubymap-result.txt'
         if (Test-Path -LiteralPath $mapResult) { Remove-Item -LiteralPath $mapResult }
-        Run-Player $player @('--smoke-game', $preparedHome, $romPath)
+        Run-Player $player @('--smoke-pc-items', $preparedHome, $romPath)
         $game = Get-Content (Join-Path $preparedHome 'game-result.json') -Raw | ConvertFrom-Json
         if ($game.layoutId -ne 'ruby-axvd-reference-v2' -or $game.pokemon.Count -ne 1 -or $game.pokemon[0].species -ne $species) {
             throw "Live emulator bridge returned incorrect party data for revision $revision."
@@ -167,7 +169,7 @@ try {
     }
     $romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
     if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }
-    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, dock and detach for both German Ruby revisions.'
+    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, dock, detach and PC item checks for German Ruby.'
 } finally {
     $directory = Get-Item -LiteralPath $testRoot
     if ($directory.FullName -eq $testRoot -and $directory.Name -match '^soullink-player-check-[a-f0-9]{32}$' -and

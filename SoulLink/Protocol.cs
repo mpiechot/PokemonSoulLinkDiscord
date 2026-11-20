@@ -96,6 +96,7 @@ public sealed class AutomationRun
     public List<AutomationPlayer> Players { get; set; } = [];
     public List<Encounter> Encounters { get; set; } = [];
     public List<AutomationEvent> History { get; set; } = [];
+    public List<string> AdditionalRules { get; set; } = [];
 }
 
 public sealed class AutomationPlayer

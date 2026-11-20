@@ -14,6 +14,10 @@ public sealed record BridgeFrame
     public long Frame { get; init; }
     public long PlaySeconds { get; init; }
     public uint? TrainerId { get; init; }
+    public string? ItemSession { get; init; }
+    public Guid? ItemRequest { get; init; }
+    public string? ItemResult { get; init; }
+    public int? ItemQuantity { get; init; }
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; } = 255;

@@ -4,7 +4,7 @@ The existing executable co-hosts the Discord lifecycle and ASP.NET Core SignalR.
 
 - `SoulLink`: transport DTOs, Gen III parsing, map/species catalogs, transactional SQLite store, lifecycle and observation engine, bounded JSON Lines framing and shared status presentation.
 - `PokeSoulLinkBot/Automation`: SignalR authorization boundary, optional administration API, Discord commands/context routing, asynchronous durable notification dispatcher.
-- `SoulLink.Client`: loopback bridge listener, raw-frame validation, authenticated SignalR session and local diagnostic UI. It has no encounter business rules and no game-write API.
+- `SoulLink.Client`: loopback bridge listener, raw-frame validation, authenticated SignalR session and local diagnostic UI. The desktop player uses a scoped loopback channel for manual PC item grants.
 - `integration/mgba/soullink.lua`: reads fixed, documented Ruby reference structures once per 60 emulated frames and emits complete inventories. The only outbound socket connects to `127.0.0.1`.
 - `SoulLink.Demo`: synthetic Pokémon generator and a real three-player integration harness, with isolated server/client processes and databases.
 

@@ -5,7 +5,7 @@ using SoulLink;
 
 namespace PokeSoulLinkBot.Automation;
 
-/// <summary>Allows only authenticated, run-bound observation messages; no write command exists.</summary>
+/// <summary>Exposes authenticated run observations and scoped run actions.</summary>
 public sealed class AutomationHub : Hub
 {
     private readonly AutomationEngine engine;
@@ -88,6 +88,20 @@ public sealed class AutomationHub : Hub
 
     /// <summary>Checks the catch family against the caller's run.</summary>
     public CatchCheck CheckCatch(string name) => this.engine.CheckCatch(this.Registration(), name);
+
+    /// <summary>Adds a shared rule to the caller's run.</summary>
+    public void AddRule(string text)
+    {
+        this.RequireReadTracking();
+        try
+        {
+            this.engine.AddRule(this.Registration(), text);
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException)
+        {
+            throw new HubException(error.Message);
+        }
+    }
 
     /// <summary>Updates arena progress for the registered player.</summary>
     public void ChangeArena(int number, bool complete)
