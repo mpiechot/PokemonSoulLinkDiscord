@@ -9,7 +9,7 @@ internal sealed class CatchCheckForm : Form
     private readonly Label outcome = new() { Dock = DockStyle.Fill, Padding = new Padding(0, 12, 0, 0) };
     private readonly Button check = DashboardTheme.Button("Prüfen");
 
-    public CatchCheckForm(ClientRuntime runtime)
+    public CatchCheckForm(ClientRuntime runtime, Guid runId)
     {
         RunDialogs.Configure(this, "Catch-Check", new Size(410, 190));
         this.query.PlaceholderText = "Deutscher oder englischer Pokémon-Name";
@@ -25,7 +25,7 @@ internal sealed class CatchCheckForm : Form
             this.check.Enabled = false;
             try
             {
-                var result = await runtime.CheckCatchAsync(this.query.Text);
+                var result = await runtime.CheckCatchAsync(runId, this.query.Text);
                 if (this.IsDisposed) return;
                 this.outcome.ForeColor = result.Pokemon is null ? DashboardTheme.Gold
                     : result.PreviouslyCaught is null ? DashboardTheme.Accent : DashboardTheme.Danger;

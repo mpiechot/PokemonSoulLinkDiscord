@@ -25,7 +25,8 @@ using var host = Start("PokeSoulLinkBot", "PokeSoulLinkBot.dll", "--SoulLink:Ena
     "--SoulLink:ListenUrl=" + server, "--SoulLink:DatabasePath=" + Path.Combine(data, "server.sqlite"),
     "--SoulLink:PersistencePath=" + Path.Combine(data, "legacy.json"), "--SoulLink:AdminKey=" + adminKey);
 using var client = Start("SoulLink.Client", "SoulLink.Client.dll", "--UiPort=" + uiPort,
-    "--BridgePort=" + bridgePort, "--AllowSyntheticFrames=true", "--SettingsPath=" + Path.Combine(data, "client.json"));
+    "--BridgePort=" + bridgePort, "--AllowSyntheticFrames=true", "--SettingsPath=" + Path.Combine(data, "client.json"),
+    "--EnableLocalRun=" + args.Contains("--verify"));
 var hubs = new List<HubConnection>();
 try
 {
@@ -90,7 +91,8 @@ try
         using var dashboard = JsonDocument.Parse(await http.GetStringAsync(ui + "/api/status", lifetime.Token));
         if (!dashboard.RootElement.TryGetProperty("run", out var state) || state.ValueKind != JsonValueKind.Object) return false;
         var players = state.GetProperty("players").EnumerateArray().ToArray();
-        return players.Any(p => p.GetProperty("marker").GetString() == "Star" && p.GetProperty("area").GetInt32() == 16)
+        return !dashboard.RootElement.GetProperty("isLocalRun").GetBoolean() && state.GetProperty("id").GetGuid() == run.Id
+            && players.Any(p => p.GetProperty("marker").GetString() == "Star" && p.GetProperty("area").GetInt32() == 16)
             && players.Any(p => p.GetProperty("marker").GetString() == "Diamond" && p.GetProperty("area").GetInt32() == 17
                 && p.GetProperty("connection").GetString() == "Stale")
             && state.GetProperty("links").GetArrayLength() == 1
@@ -174,7 +176,29 @@ try
         if (pokemon.GetProperty("container").GetString() != "Party")
             throw new InvalidDataException("Local UI API must expose placement enums as strings.");
     }
-    if (args.Contains("--verify")) return;
+    if (args.Contains("--verify"))
+    {
+        host.Kill(true);
+        await host.WaitForExitAsync(lifetime.Token);
+        current = current with
+        {
+            Frame = ++frame,
+            PlaySeconds = frame,
+            Pokemon = [.. current.Pokemon, SyntheticPokemon.Raw(301, 25, slot: 2, area: 17)],
+        };
+        await Send(current);
+        await WaitUntil(async () =>
+        {
+            using var status = JsonDocument.Parse(await http.GetStringAsync(ui + "/api/status", lifetime.Token));
+            var local = status.RootElement.GetProperty("run");
+            return status.RootElement.GetProperty("registered").GetBoolean() && status.RootElement.GetProperty("isLocalRun").GetBoolean()
+                && local.GetProperty("id").GetGuid() != run.Id
+                && local.GetProperty("history").EnumerateArray().Any(e => e.GetProperty("kind").GetString() == "caught"
+                    && e.GetProperty("message").GetString()!.Contains("Pikachu", StringComparison.Ordinal));
+        });
+        Console.WriteLine("Verified: the connected run takes priority and the local feed continues after the isolated server stops.");
+        return;
+    }
     Console.WriteLine("Press Ctrl+C to close only these demo processes. No Discord connection or real save is used.");
     while (!lifetime.IsCancellationRequested)
     {

@@ -72,6 +72,64 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task SavedRegistrationWithUnavailableRunServerStillShowsLocalCatches()
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        await using var unavailableServer = builder.Build();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await unavailableServer.StartAsync(timeout.Token);
+        Directory.CreateDirectory(this.directory);
+        string settingsPath = Path.Combine(this.directory, "player.json");
+        var settings = new ClientSettings { Server = unavailableServer.Urls.Single(), Name = "Previously registered" };
+        settings = settings with { Registration = new Registration(Guid.NewGuid(), Guid.NewGuid(), settings.ClientId) };
+        File.WriteAllText(settingsPath, Protocol.Serialize(settings));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = settingsPath,
+            ["EnableLocalRun"] = "true",
+            ["BridgePort"] = "0",
+        }).Build();
+        using var client = new ClientRuntime(configuration);
+        await client.StartAsync(timeout.Token);
+        try
+        {
+            using var bridge = new System.Net.Sockets.TcpClient();
+            await bridge.ConnectAsync(System.Net.IPAddress.Loopback, client.Status().BridgePort, timeout.Token);
+            var starter = SyntheticPokemon.Raw(1, 392);
+            await SendFrame(SyntheticPokemon.Frame(1, starter));
+            while (client.Status() is not { Snapshot.Frame: 1 } ||
+                   !client.Status().State.StartsWith("Offline", StringComparison.Ordinal))
+                await Task.Delay(25, timeout.Token);
+
+            await SendFrame(SyntheticPokemon.Frame(2, starter, SyntheticPokemon.Raw(2, 25, slot: 1)));
+            while (client.Status().Snapshot?.Frame != 2) await Task.Delay(25, timeout.Token);
+
+            var view = client.Status();
+            Assert.True(view.Registered);
+            Assert.True(view.IsLocalRun);
+            Assert.NotEqual(settings.Registration.RunId, view.Run!.Id);
+            Assert.Contains("Pikachu", Assert.Single(view.Run.History, e => e.Kind == "caught").Message);
+            Assert.Equal("Pikachu", (await client.CheckCatchAsync(view.Run.Id, "Raichu")).PreviouslyCaught);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => client.ChangeArenaAsync(settings.Registration.RunId, 1, true));
+            await client.ChangeArenaAsync(view.Run.Id, 1, true);
+            Assert.Single(client.Status().Run!.History, e => e.Kind == "arena-completed");
+            Assert.Equal(settings, Protocol.Deserialize<ClientSettings>(File.ReadAllText(settingsPath)));
+
+            async Task SendFrame(BridgeFrame frame)
+            {
+                string json = Protocol.Serialize(frame with { LayoutId = "ruby-axvd-reference-v2" });
+                await bridge.GetStream().WriteAsync(System.Text.Encoding.UTF8.GetBytes(json + "\n"), timeout.Token);
+            }
+        }
+        finally
+        {
+            await client.StopAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public void PlayerCopiesKeepExecutableBytesAndReplaceOnlyJoinDetails()
     {
         Directory.CreateDirectory(this.directory);

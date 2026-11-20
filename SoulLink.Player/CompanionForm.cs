@@ -35,6 +35,7 @@ internal sealed class CompanionForm : Form
     private readonly HashSet<Guid> shownDeaths = [];
     private bool deathDialogOpen;
     private bool actionRunning;
+    private Guid? displayedRunId;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
         string? requestedRom, PlayerProfile? profile, string sprites)
@@ -84,7 +85,8 @@ internal sealed class CompanionForm : Form
         this.joinRun = Button("Beitreten", async (_, _) => await this.OpenIdentityAsync());
         this.checkCatch = Button("Catch-Check", (_, _) =>
         {
-            using var dialog = new CatchCheckForm(this.runtime);
+            if (this.displayedRunId is not Guid runId) return;
+            using var dialog = new CatchCheckForm(this.runtime, runId);
             dialog.ShowDialog(this);
         });
         this.pendingDeathButton = Button("Todesfall prüfen", async (_, _) => await this.ReviewDeathAsync());
@@ -119,8 +121,8 @@ internal sealed class CompanionForm : Form
         this.surface.SizeChanged += (_, _) => this.dock.Resize();
         this.surface.GameClicked += () => this.dock.FocusGame();
         this.dashboard = new RunDashboard(sprites);
-        this.dashboard.ArenaChanged += async (number, complete) =>
-            await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(number, complete));
+        this.dashboard.ArenaChanged += async (runId, number, complete) =>
+            await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
         var news = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -267,10 +269,11 @@ internal sealed class CompanionForm : Form
             EmulatorDock.CloseStartupScriptingWindow(game);
         }
         this.Render();
-        var pending = this.OwnDeaths();
+        var view = this.runtime.Status();
+        var pending = OwnDeaths(view);
         if (!this.deathDialogOpen && !this.actionRunning && !this.OwnedForms.Any(form => form.Visible) &&
-            pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident && this.Visible)
-            this.BeginInvoke((Action)(async () => await this.ReviewDeathAsync(incident)));
+            view.Run is { } run && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident && this.Visible)
+            this.BeginInvoke((Action)(async () => await this.ReviewDeathAsync(incident, run.Id)));
     }
 
     private void ChangeDock()
@@ -291,12 +294,14 @@ internal sealed class CompanionForm : Form
     private void Render()
     {
         var view = this.runtime.Status();
+        this.displayedRunId = view.Run?.Id;
         bool running = this.game is { HasExited: false };
-        string registration = view.Run is not null && !view.IsLocalRun ? view.Run.Name + "  ·  " + view.Player
+        string registration = view.IsLocalRun ? (view.Registered ? "Lokaler Spieltest  ·  Run-Server nicht verbunden" : "Lokaler Spieltest")
+            : view.Run is not null ? view.Run.Name + "  ·  " + view.Player
             : view.Registered ? "Verbindung zum Run wird hergestellt"
             : view.Player.Length > 0 ? view.Player + "  ·  Anmeldung läuft"
             : "Lokaler Spieltest";
-        this.status.Text = this.joinError ?? registration + (view.State.StartsWith("OutOfSync", StringComparison.Ordinal)
+        this.status.Text = this.joinError ?? registration + (!view.IsLocalRun && view.State.StartsWith("OutOfSync", StringComparison.Ordinal)
             ? "  ·  Erfassung pausiert" : view.Snapshot is null ? "  ·  Warte auf Spieldaten" : "  ·  Spieldaten verbunden");
         this.gameStatus.Visible = !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
@@ -320,13 +325,14 @@ internal sealed class CompanionForm : Form
     private static PendingDeath[] OwnDeaths(ClientView view) =>
         view.Run?.Players.SingleOrDefault(player => player.Id == view.LocalPlayerId)?.PendingDeaths ?? [];
 
-    private PendingDeath[] OwnDeaths() => OwnDeaths(this.runtime.Status());
-
-    private async Task ReviewDeathAsync(PendingDeath? pending = null)
+    private async Task ReviewDeathAsync(PendingDeath? pending = null, Guid? expectedRunId = null)
     {
         if (this.deathDialogOpen || this.actionRunning || this.IsDisposed) return;
-        pending ??= this.OwnDeaths().FirstOrDefault();
-        if (pending is null || !this.OwnDeaths().Any(d => d.PokemonId == pending.PokemonId)) return;
+        var view = this.runtime.Status();
+        if (view.Run is not { } run || (expectedRunId is Guid expected && expected != run.Id)) return;
+        var deaths = OwnDeaths(view);
+        pending ??= deaths.FirstOrDefault();
+        if (pending is null || !deaths.Any(d => d.IncidentId == pending.IncidentId)) return;
         this.deathDialogOpen = true;
         this.shownDeaths.Add(pending.IncidentId);
         try
@@ -334,7 +340,8 @@ internal sealed class CompanionForm : Form
             using var dialog = new DeathReasonForm(pending);
             var choice = dialog.ShowDialog(this);
             if (choice is DialogResult.Yes or DialogResult.No)
-                await this.RunActionAsync(() => this.runtime.ResolveFaintAsync(pending.PokemonId, pending.IncidentId, choice == DialogResult.Yes, dialog.Reason));
+                await this.RunActionAsync(() => this.runtime.ResolveFaintAsync(run.Id, pending.PokemonId, pending.IncidentId,
+                    choice == DialogResult.Yes, dialog.Reason));
         }
         finally
         {

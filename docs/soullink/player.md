@@ -12,7 +12,7 @@ Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird d
 
 Die nächste Arena richtet sich nach deinen Orden. **Abschließen** verbucht sie für deinen Spieler. **Zurücknehmen** nimmt den zuletzt verbuchten Arena-Fortschritt zurück. Für erkannte Arenateams zeigt SoulLink die Level aus der geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 
-Nach den ersten gültigen Spieldaten schließt SoulLink das bei der automatischen Skripteinrichtung geöffnete Fenster. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Im gemeinsamen Run beginnt die Fang-Erfassung mit dem Start der Lobby.
+Nach den ersten gültigen Spieldaten schließt SoulLink das bei der automatischen Skripteinrichtung geöffnete Fenster. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Die allgemeine Spielerdatei zeigt den lokalen Feed auch bei einer gespeicherten Anmeldung, solange der Run-Server nicht verbunden ist. Die lokale Erfassung gilt nur für diese Sitzung. Sobald der Server wieder erreichbar ist, wechselt die Anzeige zum gemeinsamen Run. Dort erscheinen Fänge, sobald der Gastgeber den Run gestartet hat.
 
 Neue Runs fragen bei einem erkannten Kampfunfähigkeitsfall nach. Im Dialog kannst du den Tod bestätigen und einen Grund angeben. Erkannte Gegner und die zuletzt erfasste Attacke werden angezeigt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
 

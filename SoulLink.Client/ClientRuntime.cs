@@ -69,7 +69,7 @@ public sealed class ClientRuntime : BackgroundService
         {
             bool live = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(10);
             var pending = this.settings.PendingJoin ?? this.autoJoin;
-            bool local = this.settings.Registration is null && this.localView is not null;
+            bool local = this.run is null && this.localView is not null;
             return new ClientView(
                 this.settings.Registration is null ? pending?.Name ?? this.settings.Name : this.settings.Name,
                 this.settings.Registration is null ? pending?.Server ?? this.settings.Server : this.settings.Server,
@@ -92,7 +92,7 @@ public sealed class ClientRuntime : BackgroundService
         {
             this.latest = snapshot;
             this.bridgeSeen = this.clock.GetUtcNow();
-            if (this.enableLocalRun && this.settings.Registration is null && this.settings.PendingJoin is null)
+            if (this.enableLocalRun)
             {
                 this.localTracker ??= new LocalRunTracker(this.clock);
                 if (this.localTracker.Observe(snapshot)) this.localView = this.localTracker.View();
@@ -116,30 +116,30 @@ public sealed class ClientRuntime : BackgroundService
         this.ResetLocalRun();
     }
 
-    public async Task<CatchCheck> CheckCatchAsync(string name)
+    public async Task<CatchCheck> CheckCatchAsync(Guid runId, string name)
     {
         lock (this.stateGate)
         {
-            if (this.settings.Registration is null && this.localTracker is { } tracker)
+            if (this.localView?.Id == runId && this.localTracker is { } tracker)
                 return tracker.CheckCatch(name);
         }
         await this.connectionGate.WaitAsync();
-        try { return await this.RequireConnection().InvokeAsync<CatchCheck>("CheckCatch", name); }
+        try { return await this.RequireConnection(runId).InvokeAsync<CatchCheck>("CheckCatch", name); }
         finally { this.connectionGate.Release(); }
     }
 
-    public Task ChangeArenaAsync(int number, bool complete) =>
-        this.RunActionAsync(t => t.ChangeArena(number, complete), c => c.InvokeAsync("ChangeArena", number, complete));
+    public Task ChangeArenaAsync(Guid runId, int number, bool complete) =>
+        this.RunActionAsync(runId, t => t.ChangeArena(number, complete), c => c.InvokeAsync("ChangeArena", number, complete));
 
-    public Task ResolveFaintAsync(Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
-        this.RunActionAsync(t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
+    public Task ResolveFaintAsync(Guid runId, Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
+        this.RunActionAsync(runId, t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
             c => c.InvokeAsync("ResolveFaint", pokemonId, incidentId, confirm, reason));
 
-    private async Task RunActionAsync(Action<LocalRunTracker> localAction, Func<HubConnection, Task> remoteAction)
+    private async Task RunActionAsync(Guid runId, Action<LocalRunTracker> localAction, Func<HubConnection, Task> remoteAction)
     {
         lock (this.stateGate)
         {
-            if (this.settings.Registration is null && this.localTracker is { } tracker)
+            if (this.localView?.Id == runId && this.localTracker is { } tracker)
             {
                 localAction(tracker);
                 this.localView = tracker.View();
@@ -149,7 +149,7 @@ public sealed class ClientRuntime : BackgroundService
         await this.connectionGate.WaitAsync();
         try
         {
-            var connected = this.RequireConnection();
+            var connected = this.RequireConnection(runId);
             await remoteAction(connected);
             var dashboard = DashboardProjection.FromRun(await connected.InvokeAsync<AutomationRun>("Status"));
             lock (this.stateGate) this.run = dashboard;
@@ -157,8 +157,14 @@ public sealed class ClientRuntime : BackgroundService
         finally { this.connectionGate.Release(); }
     }
 
-    private HubConnection RequireConnection() => this.connection is { State: HubConnectionState.Connected } connected
-        ? connected : throw new InvalidOperationException("Warte auf eine Verbindung zum Run.");
+    private HubConnection RequireConnection(Guid runId)
+    {
+        lock (this.stateGate)
+        {
+            return this.run?.Id == runId && this.connection is { State: HubConnectionState.Connected } connected
+                ? connected : throw new InvalidOperationException("Der gewählte Run ist gerade nicht verbunden.");
+        }
+    }
 
     public async Task JoinAsync(JoinForm form)
     {

@@ -19,11 +19,7 @@ internal sealed class RunDashboard : TableLayoutPanel
     private int selectedPanel;
     private string[] lastTags = [];
 
-    public event Action<int, bool>? ArenaChanged
-    {
-        add => this.arena.ProgressChange += value;
-        remove => this.arena.ProgressChange -= value;
-    }
+    public event Action<Guid, int, bool>? ArenaChanged;
 
     public RunDashboard(string spriteDirectory)
     {
@@ -52,6 +48,10 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.locations.TabStop = false;
         this.locations.AccessibleName = "Spielerpositionen";
         this.arena.AccessibleName = "Nächste Arena";
+        this.arena.ProgressChange += (number, complete) =>
+        {
+            if (this.view?.Run is { } run) this.ArenaChanged?.Invoke(run.Id, number, complete);
+        };
         this.player.AccessibleName = "Spieler auswählen";
         this.player.BackColor = DashboardTheme.Panel;
         this.player.ForeColor = DashboardTheme.Text;
