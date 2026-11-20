@@ -10,15 +10,15 @@ namespace SoulLink.Client;
 
 public sealed record JoinForm(string Server, string Invitation, string Name, PlayerMarker Marker = PlayerMarker.Circle);
 
-public sealed class ClientSettings
+public sealed record ClientSettings
 {
-    public string Server { get; set; } = "http://127.0.0.1:5080";
-    public string Name { get; set; } = "";
-    public Guid ClientId { get; set; } = Guid.NewGuid();
-    public string Token { get; set; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-    public Registration? Registration { get; set; }
-    public PlayerMarker Marker { get; set; }
-    public JoinForm? PendingJoin { get; set; }
+    public string Server { get; init; } = "http://127.0.0.1:5080";
+    public string Name { get; init; } = "";
+    public Guid ClientId { get; init; } = Guid.NewGuid();
+    public string Token { get; init; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    public Registration? Registration { get; init; }
+    public PlayerMarker Marker { get; init; }
+    public JoinForm? PendingJoin { get; init; }
 }
 
 /// <summary>One local bridge, one authenticated server session, and no offline event queue.</summary>
@@ -27,7 +27,7 @@ public sealed class ClientRuntime : BackgroundService
     private readonly string settingsPath;
     private readonly int bridgePort;
     private readonly SemaphoreSlim connectionGate = new(1);
-    private readonly ClientSettings settings;
+    private ClientSettings settings;
     private readonly bool allowSyntheticFrames;
     private readonly TimeProvider clock;
     private readonly JoinForm? autoJoin;
@@ -56,7 +56,7 @@ public sealed class ClientRuntime : BackgroundService
         this.settingsPath = Path.GetFullPath(configuration["SettingsPath"] ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "client.json"));
         this.settings = File.Exists(this.settingsPath) ? Protocol.Deserialize<ClientSettings>(File.ReadAllText(this.settingsPath)) : new ClientSettings();
-        this.SaveSettings();
+        this.SaveSettings(this.settings);
     }
 
     public ClientView Status()
@@ -104,13 +104,15 @@ public sealed class ClientRuntime : BackgroundService
                 ?? throw new InvalidDataException("Server returned an empty registration.");
             lock (this.stateGate)
             {
-                this.settings.Registration = registration;
-                this.settings.Server = form.Server.TrimEnd('/');
-                this.settings.Name = form.Name.Trim();
-                this.settings.Marker = form.Marker;
-                this.settings.PendingJoin = null;
+                this.SaveSettings(this.settings with
+                {
+                    Registration = registration,
+                    Server = form.Server.TrimEnd('/'),
+                    Name = form.Name.Trim(),
+                    Marker = form.Marker,
+                    PendingJoin = null,
+                });
             }
-            this.SaveSettings();
             this.Note("Registration saved. Connecting to the server.");
         }
         finally { this.connectionGate.Release(); }
@@ -126,10 +128,9 @@ public sealed class ClientRuntime : BackgroundService
             if (this.settings.Registration is not null) return;
             lock (this.stateGate)
             {
-                this.settings.PendingJoin = form with { Name = form.Name.Trim() };
+                this.SaveSettings(this.settings with { PendingJoin = form with { Name = form.Name.Trim() } });
                 this.nextJoinAttempt = DateTimeOffset.MinValue;
             }
-            this.SaveSettings();
         }
         finally { this.connectionGate.Release(); }
     }
@@ -182,7 +183,7 @@ public sealed class ClientRuntime : BackgroundService
                 if (this.GetPendingJoin() is { } pending)
                 {
                     try { await this.JoinAsync(pending); }
-                    catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or InvalidDataException)
+                    catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or TaskCanceledException or InvalidDataException or IOException or UnauthorizedAccessException)
                     {
                         this.SetState("Anmeldung noch nicht möglich — wird automatisch erneut versucht.");
                         this.Note("Prepared registration unavailable (" + exception.GetType().Name + ").");
@@ -322,13 +323,14 @@ public sealed class ClientRuntime : BackgroundService
         lock (this.stateGate) this.run = null;
     }
 
-    private void SaveSettings()
+    private void SaveSettings(ClientSettings settings)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(this.settingsPath)!);
         string temporary = this.settingsPath + ".tmp";
-        File.WriteAllText(temporary, Protocol.Serialize(this.settings));
+        File.WriteAllText(temporary, Protocol.Serialize(settings));
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         File.Move(temporary, this.settingsPath, true);
+        this.settings = settings;
     }
 
     private void SetState(string value) { lock (this.stateGate) this.state = value; }
