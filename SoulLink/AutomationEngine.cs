@@ -392,13 +392,16 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             if (run.Phase != RunPhase.Active) throw new InvalidOperationException("Der Run muss aktiv sein.");
             var gym = RubyDashboardCatalog.Gyms.Single(g => g.Number == number);
             int flag = 1 << (number - 1);
-            byte progress = player.ArenaProgress;
+            byte progress = run.ArenaProgress;
             if (((progress & flag) != 0) == complete) return false;
             int? expected = complete ? RubyDashboardCatalog.NextGym(progress)?.Number
                 : RubyDashboardCatalog.Gyms.LastOrDefault(g => (progress & (1 << (g.Number - 1))) != 0)?.Number;
             if (expected != number) throw new InvalidOperationException("Der Arena-Fortschritt hat sich geändert.");
-            player.ArenaConfirmed = (byte)(complete ? player.ArenaConfirmed | flag : player.ArenaConfirmed & ~flag);
-            player.ArenaReverted = (byte)(complete ? player.ArenaReverted & ~flag : player.ArenaReverted | flag);
+            foreach (var participant in run.Players)
+            {
+                participant.ArenaConfirmed = (byte)(complete ? participant.ArenaConfirmed | flag : participant.ArenaConfirmed & ~flag);
+                participant.ArenaReverted = (byte)(complete ? participant.ArenaReverted & ~flag : participant.ArenaReverted | flag);
+            }
             this.Event(tx, run, complete ? "arena-completed" : "arena-reverted",
                 $"{player.Name}: Arena {gym.Number} · {gym.Name} {(complete ? "abgeschlossen" : "zurückgenommen")}.",
                 player: player, notify: false);

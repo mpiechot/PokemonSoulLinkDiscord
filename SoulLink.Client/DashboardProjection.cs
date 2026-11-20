@@ -7,9 +7,10 @@ internal static class DashboardProjection
     public static ClientRunView FromRun(AutomationRun run)
     {
         var playerById = run.Players.ToDictionary(p => p.Id);
+        byte arenaProgress = run.ArenaProgress;
         var players = run.Players.Select(p => new ClientPlayerView(p.Name, p.Id, p.Diagnostic, p.Connection,
             p.Marker, p.DisplayArea ?? p.LastSnapshot?.Area, p.Pokemon.Select(ProjectPokemon).ToArray(),
-            p.DisplayPosition ?? p.LastSnapshot?.Position, p.ArenaProgress,
+            p.DisplayPosition ?? p.LastSnapshot?.Position, arenaProgress,
             p.Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().ToArray())).ToArray();
         var links = run.Encounters.Select(encounter =>
         {

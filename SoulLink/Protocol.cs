@@ -95,6 +95,8 @@ public sealed class AutomationRun
     public string? EndReason { get; set; }
     public DeathRule DeathRule { get; set; }
     public List<AutomationPlayer> Players { get; set; } = [];
+    public byte ArenaProgress => this.Players.Count == 0 ? (byte)0 :
+        this.Players.Aggregate(byte.MaxValue, (shared, player) => (byte)(shared & player.ArenaProgress));
     public List<Encounter> Encounters { get; set; } = [];
     public List<AutomationEvent> History { get; set; } = [];
     public List<string> AdditionalRules { get; set; } = [];

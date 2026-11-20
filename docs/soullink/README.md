@@ -2,7 +2,7 @@
 
 Dieser Branch ergänzt den Discord-Bot um eine **schreibgeschützte Erfassung** für Pokémon Rubin (deutsche AXVD-ROM). Ein lokaler C#-Client liest mGBA-Lua-Daten, verbindet sich mit dem integrierten SignalR-Server und zeigt Party, Boxbestand, Links und Diagnose an. Die Windows-Spielerdatei bietet zusätzlich manuelle Item-Zugaben ins lokale PC-Lager.
 
-**Für Mitspieler:** Starte die vorbereitete Spieler-EXE. Wähle beim ersten Start Namen, Karten-Icon und ROM. Danach startet SoulLink mGBA mit der Lesebrücke und zeigt den Run neben dem Spielfenster. [Spieleranleitung](player.md)
+**Für Mitspieler.** Verwende für alle Runs dieselbe SoulLink.exe. Füge die Einladung unter **Run beitreten / wechseln** ein und wähle Namen, Karten-Icon und ROM. SoulLink startet mGBA mit der Lesebrücke und zeigt den Run neben dem Spielfenster. [Spieleranleitung](player.md)
 
 ## Eigener Test mit mGBA ohne Discord
 
@@ -14,7 +14,7 @@ $env:SoulLink__AdminKey
 .\scripts\Start-SoulLinkServer.ps1 -WithoutDiscord -DatabasePath .\artifacts\automation-test\standalone.sqlite
 ```
 
-Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Lege eine Gruppe und darin einen Run an. Mit **Für mich merken** erscheint er unter **SoulLink → Run wechseln**. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
+Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Lege eine Gruppe und darin einen Run an. Mit **Für mich merken** erscheint er unter **SoulLink → Run beitreten / wechseln**. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
 
 Für Mitspieler auf anderen Rechnern braucht ihr einen gemeinsamen HTTPS-Run-Server mit WebSocket-Unterstützung. Die Linux-Veröffentlichung und der Update-Ablauf sind in der [Betriebsanleitung](development.md#linux-release-and-updates) beschrieben. Sobald der Server erreichbar ist, könnt ihr der [Anleitung für zwei Spieler](player.md#zu-zweit-ohne-discord-testen) folgen.
 
@@ -54,8 +54,8 @@ Für einen parallelen Test zu einem laufenden Run **einen eigenen Discord-Test-B
 
 2. In Discord `/run-init name:Test edition:ruby` aufrufen. Der Bot liefert einen Einladungscode. Optional `death-rule:zero-hp-outside-battle` wählen; standardmäßig sind automatische Todesmeldungen deaktiviert.
 3. Falls du die EXE selbst baust, in PowerShell 7 `./scripts/Publish-SoulLinkPlayer.ps1` ausführen. Die fertige Datei liegt unter `artifacts/player/SoulLink.exe`.
-4. Unter **Einrichtung → Für Gastgeber** Server und Einladung eintragen und eine EXE für alle Mitspieler erzeugen. Für entfernte Server HTTPS verwenden. Die Dashboard-EXE verwendet den aktualisierten Testserver aus diesem Branch.
-5. Die Spieler-EXE starten und einmal Namen, Karten-Icon und die lokale ROM für diesen Run wählen. mGBA und die Brücke starten automatisch. Danach im Spiel wie gewohnt den Spielstand fortsetzen.
+4. Verwendet dieselbe SoulLink.exe für alle Runs. Unter **SoulLink → Run beitreten / wechseln** fügen die Mitspieler den Discord-Code ein und geben die gemeinsame HTTPS-Serveradresse an.
+5. Namen, Karten-Icon und die lokale ROM für diesen Run wählen. mGBA und die Brücke starten automatisch. Danach im Spiel wie gewohnt den Spielstand fortsetzen.
 6. **Vor dem Run-Start Party, Boxbestand und Map im Client mit dem Spiel vergleichen.** Details zum deutschen Rubin-Profil stehen in der [mGBA-Anleitung](mgba.md).
 7. Sobald alle Spieler eine gültige Baseline gemeldet haben, in Discord `/run-start` ohne Parameter ausführen. Bereits vorhandene Pokémon werden als Ausgangsbestand importiert; sie erzeugen keine nachträglichen Fangereignisse oder Starter-Links.
 8. Pokémon fangen, umbenennen, entwickeln und zwischen Team/Box bewegen. `/status`, `/team` und `/soullink action:status` zeigen den ausgewählten automatischen Run. Neue Identitäten werden als beobachtete Fänge erfasst; alle Spieler im selben Fanggebiet ergeben eine Link-Gruppe.

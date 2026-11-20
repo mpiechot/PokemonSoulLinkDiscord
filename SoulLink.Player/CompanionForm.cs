@@ -13,6 +13,7 @@ internal sealed class CompanionForm : Form
     private readonly string bridgeDirectory;
     private readonly string? requestedRom;
     private readonly PlayerProfile? profile;
+    private readonly PlayerProfileLibrary? profiles;
     private readonly Label status = new();
     private readonly Label gameStatus = new();
     private readonly EmulatorSurface surface = new();
@@ -62,6 +63,7 @@ internal sealed class CompanionForm : Form
         this.bridgeDirectory = bridgeDirectory;
         this.requestedRom = requestedRom;
         this.profile = profile;
+        this.profiles = profiles;
         this.dock = new EmulatorDock(this.surface);
         this.Text = "SoulLink";
         this.FormBorderStyle = FormBorderStyle.None;
@@ -101,11 +103,10 @@ internal sealed class CompanionForm : Form
         this.programMenu.Renderer = new ToolStripProfessionalRenderer(new ProgramMenuColors());
         this.startGame = new ToolStripMenuItem("Spiel starten", null, async (_, _) => await this.StartGameAsync());
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
-        this.joinRun = new ToolStripMenuItem("Run beitreten", null, async (_, _) => await this.OpenIdentityAsync());
-        this.programMenu.Items.AddRange([this.startGame, this.toggleDock, this.joinRun, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
         if (profiles is not null)
         {
-            this.programMenu.Items.Insert(1, new ToolStripMenuItem("Run wechseln", null, (_, _) => this.ChooseProfile(profiles)));
             this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, (_, _) =>
             {
                 if (this.closing) return;
@@ -210,12 +211,23 @@ internal sealed class CompanionForm : Form
 
     internal Guid? RequestedProfile { get; private set; }
 
-    private void ChooseProfile(PlayerProfileLibrary profiles)
+    private async Task JoinOrSwitchAsync()
     {
         if (this.closing) return;
+        if (this.profiles is null)
+        {
+            await this.OpenIdentityAsync();
+            return;
+        }
         Guid current = this.profile?.Id ?? Guid.Empty;
-        using var dialog = new ProfilePicker(profiles, current, this.runtime.Status().Server);
-        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedProfile == current) return;
+        using var dialog = new ProfilePicker(this.profiles, current, this.runtime.Status());
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (dialog.SelectedProfile == current)
+        {
+            if (current == Guid.Empty) await this.StartGameAsync();
+            else await this.OpenIdentityAsync();
+            return;
+        }
         if (this.game is { HasExited: false } &&
             MessageBox.Show(this, "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.",
                 "Run wechseln", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
@@ -413,7 +425,8 @@ internal sealed class CompanionForm : Form
             this.refresh.Start();
             var view = this.runtime.Status();
             if (this.profile is not null && !view.Registered && view.Player.Length == 0) await this.OpenIdentityAsync();
-            await this.StartGameAsync(path: this.requestedRom);
+            if (this.profile is not null || this.profiles is null || this.requestedRom is not null || this.rom.Read() is not null)
+                await this.StartGameAsync(path: this.requestedRom);
         }
         catch (Exception exception)
         {
@@ -543,11 +556,12 @@ internal sealed class CompanionForm : Form
         this.gameStatus.Visible = !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
             : running ? "mGBA läuft separat. Im SoulLink-Menü einbetten."
+            : this.profiles is not null && this.profile is null ? "Füge deine Einladung unter „SoulLink → Run beitreten / wechseln“ ein."
             : "Wähle beim ersten Start die ROM für diesen Run.");
         this.startGame.Enabled = this.started && !running && !this.launching;
         this.toggleDock.Enabled = running;
         this.toggleDock.Text = this.dock.Attached ? "mGBA lösen" : "mGBA einbetten";
-        this.joinRun.Available = this.profile is not null && !view.Registered;
+        this.joinRun.Available = this.profiles is not null || (this.profile is not null && !view.Registered);
         this.checkCatch.Enabled = view.Run is not null;
         this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
         this.dashboard.Render(view);
@@ -608,7 +622,8 @@ internal sealed class CompanionForm : Form
     {
         if (this.closing || this.profile is null || this.runtime.Status().Registered) return;
         var view = this.runtime.Status();
-        using var identity = new PlayerIdentityForm(view.Player.Length == 0 ? this.profile.Name : view.Player, view.Marker);
+        using var identity = new PlayerIdentityForm(view.Player.Length == 0 ? this.profile.Name : view.Player,
+            view.Player.Length == 0 ? this.profile.Marker ?? view.Marker : view.Marker);
         if (identity.ShowDialog(this) != DialogResult.OK) return;
         try
         {
@@ -625,10 +640,10 @@ internal sealed class CompanionForm : Form
     private async void OpenSetup(object? sender, EventArgs e)
     {
         if (this.closing) return;
-        using var dialog = new SetupForm(this.runtime, !this.launching && this.game is not { HasExited: false }, this.profile);
+        using var dialog = new SetupForm(this.runtime, !this.launching && this.game is not { HasExited: false }, this.profiles is not null);
         var result = dialog.ShowDialog(this);
         if (result == DialogResult.Retry) await this.StartGameAsync(chooseRom: true);
-        else if (result == DialogResult.Yes) await this.OpenIdentityAsync();
+        else if (result == DialogResult.Yes) await this.JoinOrSwitchAsync();
         this.Render();
     }
 }

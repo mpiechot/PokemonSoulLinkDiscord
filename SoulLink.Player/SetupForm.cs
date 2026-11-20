@@ -1,4 +1,3 @@
-using SoulLink;
 using SoulLink.Client;
 
 namespace SoulLink.Player;
@@ -7,13 +6,11 @@ internal sealed class SetupForm : Form
 {
     private readonly ClientRuntime runtime;
     private readonly bool canChooseRom;
-    private readonly PlayerProfile? profile;
 
-    public SetupForm(ClientRuntime runtime, bool canChooseRom, PlayerProfile? profile)
+    public SetupForm(ClientRuntime runtime, bool canChooseRom, bool canSwitchRun)
     {
         this.runtime = runtime;
         this.canChooseRom = canChooseRom;
-        this.profile = profile;
         this.Text = "SoulLink – Einrichtung";
         this.ClientSize = new Size(590, 500);
         this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -23,8 +20,7 @@ internal sealed class SetupForm : Form
         this.Font = new Font("Segoe UI", 10);
         var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 10) };
         tabs.TabPages.Add(this.GamePage());
-        tabs.TabPages.Add(this.JoinPage());
-        if (profile is null) tabs.TabPages.Add(this.PackagePage());
+        if (canSwitchRun) tabs.TabPages.Add(this.JoinPage());
         tabs.TabPages.Add(this.DiagnosticsPage());
         this.Controls.Add(tabs);
     }
@@ -34,7 +30,7 @@ internal sealed class SetupForm : Form
         var page = new TabPage("Spiel");
         AddText(page, "ROM für diesen Run", 22, 25, 530, 30, true);
         AddText(page, this.canChooseRom
-            ? "SoulLink merkt sich die ROM für diese Spielerdatei. Beim Wechsel startet mGBA automatisch mit der neuen ROM."
+            ? "SoulLink merkt sich die ROM für diesen Run. Beim Wechsel startet mGBA automatisch mit der neuen ROM."
             : "Schließe mGBA, um eine andere ROM für diesen Run zu wählen.", 22, 72, 530, 65);
         var choose = AddButton(page, "Andere ROM auswählen", 22, 145, (_, _) => this.DialogResult = DialogResult.Retry);
         choose.Enabled = this.canChooseRom;
@@ -44,72 +40,8 @@ internal sealed class SetupForm : Form
     private TabPage JoinPage()
     {
         var page = new TabPage("Run verbinden");
-        var view = this.runtime.Status();
-        if (this.profile is not null)
-        {
-            AddText(page, view.Registered ? "Die Anmeldung ist für diese Spielerdatei gespeichert."
-                : "Server und Einladung stehen schon in deiner Spielerdatei. Deinen Namen und dein Karten-Icon wählst du selbst.", 22, 25, 530, 65);
-            var identity = AddButton(page, "Name und Icon wählen", 22, 108, (_, _) => this.DialogResult = DialogResult.Yes);
-            identity.Enabled = !view.Registered;
-            return page;
-        }
-        AddText(page, "Bei einer vorbereiteten Spielerdatei sind der Server und die Einladung bereits eingetragen.", 22, 25, 530, 65);
-        var server = Input(page, "Serveradresse", view.Registered ? view.Server : "", 105);
-        var invitation = Input(page, "Einladung", "", 180);
-        var name = Input(page, "Dein Spielername", view.Player, 255);
-        var marker = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Bounds = new Rectangle(255, 333, 190, 29) };
-        foreach (var item in Enum.GetValues<PlayerMarker>()) marker.Items.Add(MarkerPalette.Label(item));
-        marker.SelectedIndex = Enum.IsDefined(view.Marker) ? (int)view.Marker : 0;
-        page.Controls.Add(marker);
-        var feedback = new Label { Bounds = new Rectangle(22, 378, 530, 50) };
-        page.Controls.Add(feedback);
-        var join = AddButton(page, "Verbinden", 22, 330, async (_, _) =>
-        {
-            try
-            {
-                var form = new JoinForm(server.Text.Trim(), invitation.Text.Trim(), name.Text.Trim(), (PlayerMarker)marker.SelectedIndex);
-                feedback.Text = "Verbinde …";
-                await Task.Run(() => this.runtime.JoinAsync(form));
-                feedback.Text = "Verbunden. Die Anmeldung ist für kommende Starts gespeichert.";
-            }
-            catch (Exception exception) { feedback.Text = exception.Message; }
-        });
-        join.Enabled = !view.Registered;
-        if (view.Registered) feedback.Text = "Deine Anmeldung ist bereits gespeichert. Du musst hier nichts eingeben.";
-        return page;
-    }
-
-    private TabPage PackagePage()
-    {
-        var page = new TabPage("Für Gastgeber");
-        AddText(page, "Spielerdatei für euren Run", 22, 25, 530, 32, true);
-        AddText(page, "Server und Einladung aus /run-init eintragen. Alle Mitspieler können dieselbe Datei erhalten und wählen beim Start ihren Namen und ihr Karten-Icon.", 22, 67, 530, 75);
-        var server = Input(page, "Serveradresse", this.runtime.Status().Registered ? this.runtime.Status().Server : "", 153);
-        var invitation = Input(page, "Einladung", "", 220);
-        var feedback = new Label { Bounds = new Rectangle(22, 402, 530, 36) };
-        page.Controls.Add(feedback);
-        AddButton(page, "Spielerdatei erstellen", 22, 290, (_, _) =>
-        {
-            try
-            {
-                string source = Environment.ProcessPath ?? throw new InvalidOperationException("Anwendungspfad nicht gefunden.");
-                if (Path.GetFileNameWithoutExtension(source).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("Bitte diese Funktion in der veröffentlichten SoulLink.exe verwenden.");
-                var profile = new PlayerProfile(Guid.NewGuid(), server.Text.Trim(), invitation.Text.Trim());
-                PlayerBundle.Validate(profile);
-                using var save = new SaveFileDialog
-                {
-                    Title = "Neue Spielerdatei speichern",
-                    Filter = "SoulLink-Anwendung (*.exe)|*.exe",
-                    FileName = "SoulLink-Spieler.exe",
-                    OverwritePrompt = true
-                };
-                if (save.ShowDialog(this) != DialogResult.OK) return;
-                PlayerBundle.Create(source, save.FileName, profile);
-                feedback.Text = "Fertig. Gib deinem Mitspieler diese EXE weiter.";
-            }
-            catch (Exception exception) { feedback.Text = exception.Message; }
-        });
+        AddText(page, "Füge eine neue Einladung ein oder öffne einen gespeicherten Run.", 22, 25, 530, 56);
+        AddButton(page, "Run beitreten / wechseln", 22, 92, (_, _) => this.DialogResult = DialogResult.Yes);
         return page;
     }
 
@@ -132,14 +64,6 @@ internal sealed class SetupForm : Form
         diagnostics.Bounds = new Rectangle(22, 80, 530, 350);
         page.Controls.Add(diagnostics);
         return page;
-    }
-
-    private static TextBox Input(Control parent, string label, string value, int y)
-    {
-        AddText(parent, label, 22, y, 530, 24);
-        var field = new TextBox { Bounds = new Rectangle(22, y + 27, 530, 28), Text = value };
-        parent.Controls.Add(field);
-        return field;
     }
 
     private static void AddText(Control parent, string text, int x, int y, int width, int height, bool bold = false)

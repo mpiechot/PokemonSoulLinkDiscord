@@ -137,6 +137,29 @@ try
     Console.WriteLine("Verified: the shared feed reports all three catches, and starter and catch links appear as rows in the team and box grids.");
     if (verifyOnly)
     {
+        byte[] invalid = Convert.FromHexString(current.Pokemon[0].Hex);
+        invalid[40] ^= 0x20;
+        await Send(current with { Pokemon = [current.Pokemon[0] with { Hex = Convert.ToHexString(invalid) }, current.Pokemon[1]] });
+        await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
+            .Log.Any(message => message.Contains("Teamplatz 1: Ungültige Pokémon-Prüfsumme", StringComparison.Ordinal)));
+        foreach (int hp in new[] { 7, 13 })
+        {
+            current = current with
+            {
+                Frame = ++frame,
+                PlaySeconds = frame,
+                InBattle = true,
+                Pokemon = [current.Pokemon[0] with { LiveHp = hp }, current.Pokemon[1]],
+            };
+            await Send(current);
+            await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+                .Single(p => p.Id == rosterView.LocalPlayerId).Pokemon.Single(p => p.State.Slot == 0).State.Hp == hp);
+        }
+        if (!(await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
+            .Log.Any(message => message.Contains("wieder gültige Spieldaten", StringComparison.Ordinal)))
+            throw new InvalidDataException("The bridge did not confirm recovery after a rejected frame.");
+        Console.WriteLine("Verified: a rejected Pokémon frame does not break the socket, and other players receive subsequent HP-only updates.");
+
         const string rule = "Keine Heilitems im Arenakampf.";
         await hubs[0].InvokeAsync("AddRule", rule, lifetime.Token);
         var rulesForPartner = (await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules;
@@ -148,9 +171,13 @@ try
         if (eligibility.Pokemon != "Jungglut" || eligibility.PreviouslyCaught is null)
             throw new InvalidDataException("German/English catch family lookup did not cross SignalR.");
         await hub.InvokeAsync("ChangeArena", 1, true, lifetime.Token);
-        if (!(await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).History.Any(e => e.Kind == "arena-completed"))
-            throw new InvalidDataException("Arena completion did not reach the shared feed.");
-        await hub.InvokeAsync("ChangeArena", 1, false, lifetime.Token);
+        var sharedArena = await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token);
+        if (sharedArena.ArenaProgress != 1 || sharedArena.Players.Any(p => p.ArenaProgress != 1) ||
+            !sharedArena.History.Any(e => e.Kind == "arena-completed"))
+            throw new InvalidDataException("Arena completion did not reach all players and the shared feed.");
+        await hubs[1].InvokeAsync("ChangeArena", 1, false, lifetime.Token);
+        if ((await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Any(p => p.ArenaProgress != 0))
+            throw new InvalidDataException("Arena revert did not reach all players.");
         var trace = new BattleTrace(1, 25, 33, "MAX");
         for (int sequence = 4; sequence <= 6; sequence++)
         {
@@ -174,7 +201,7 @@ try
         if (!resolved.Encounters.Single(e => e.Area == 16).Dead || resolved.Encounters.Single(e => e.Area == Encounter.StarterArea).Dead ||
             !resolved.History.Any(e => e.Kind == "death" && e.Message.Contains("Volltreffer")))
             throw new InvalidDataException("The shared link death or reason was not saved.");
-        Console.WriteLine("Verified: bilingual catch check, player-scoped arena changes, and battle context and death confirmation cross SignalR.");
+        Console.WriteLine("Verified: bilingual catch check, shared arena changes, and battle context and death confirmation cross SignalR.");
     }
     var isolatedRun = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("isolated-guild", "Isolated run"));
     Guid isolatedClientId = Guid.NewGuid();

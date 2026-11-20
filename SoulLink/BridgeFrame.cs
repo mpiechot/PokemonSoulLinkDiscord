@@ -1,6 +1,6 @@
 namespace SoulLink;
 
-public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null);
+public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null, int? LiveHp = null);
 public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex, bool FinishingBlow = false);
 
 public sealed record BridgeFrame
@@ -43,9 +43,20 @@ public sealed record BridgeFrame
             if (raw is null || raw.Hex is null || !Enum.IsDefined(raw.Container)) throw new InvalidDataException("Invalid raw Pokémon record.");
             int expected = raw.Container == Placement.Party ? 200 : 160;
             if (raw.Hex.Length != expected) throw new InvalidDataException("Invalid raw Pokémon length.");
-            var parsed = Gen3Parser.Parse(Convert.FromHexString(raw.Hex), raw.Container, raw.Slot, raw.Box);
+            PokemonState? parsed;
+            try
+            {
+                parsed = Gen3Parser.Parse(Convert.FromHexString(raw.Hex), raw.Container, raw.Slot, raw.Box);
+            }
+            catch (Exception error) when (error is InvalidDataException or FormatException)
+            {
+                string location = raw.Container == Placement.Party ? $"Teamplatz {raw.Slot + 1}" : $"Box {raw.Box + 1}, Platz {raw.Slot + 1}";
+                throw new InvalidDataException($"{location}: {error.Message}", error);
+            }
             if (parsed is not null)
             {
+                if (this.InBattle && parsed.Container == Placement.Party && raw.LiveHp is >= 0 && raw.LiveHp <= parsed.MaxHp)
+                    parsed = parsed with { Hp = raw.LiveHp };
                 if (types is not null && types[parsed.Species * 2] is < 18 and not 9 && types[parsed.Species * 2 + 1] is < 18 and not 9)
                 {
                     parsed = parsed with { RubyType1 = types[parsed.Species * 2], RubyType2 = types[parsed.Species * 2 + 1] };

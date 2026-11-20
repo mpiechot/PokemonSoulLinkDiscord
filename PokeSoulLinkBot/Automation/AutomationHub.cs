@@ -103,7 +103,7 @@ public sealed class AutomationHub : Hub
         }
     }
 
-    /// <summary>Updates arena progress for the registered player.</summary>
+    /// <summary>Updates shared arena progress for the caller's run.</summary>
     public void ChangeArena(int number, bool complete)
     {
         this.RequireReadTracking();

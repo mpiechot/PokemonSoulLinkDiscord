@@ -250,6 +250,27 @@ local function sendPending()
     end
 end
 
+local function readBattlePartyHealth(profile, partyCount)
+    local health = {}
+    local addresses = profile.battle
+    if not addresses then return health end
+    local count = read8(addresses.count)
+    if count < 2 or count > 4 then return health end
+    for battler = 0, count - 1 do
+        local slot = read16(addresses.slots + battler * 2)
+        if (read8(addresses.sides + battler) & 1) == 0 and slot < partyCount then
+            local mon = addresses.mons + battler * 88
+            local party = profile.party + slot * 100
+            local hp, max = read16(mon + 0x28), read16(mon + 0x2C)
+            if max > 0 and max == read16(party + 88) and hp <= max and
+                read32(mon + 0x48) == read32(party) and read32(mon + 0x54) == read32(party + 4) then
+                health[slot] = hp
+            end
+        end
+    end
+    return health
+end
+
 local function readProfile()
     -- Header identity tolerates randomization; structural checks reject invalid memory reads.
     local code = readRange(0x080000AC, 4)
@@ -285,8 +306,10 @@ local function snapshot(frame)
         error("Waiting for a loaded save or a new game on the field.", 0)
     end
     local pokemon = {}
+    local battleHealth = battle and readBattlePartyHealth(profile, count) or {}
     for slot = 0, count - 1 do
-        table.insert(pokemon, string.format('{"hex":"%s","container":"Party","slot":%d}', hex(profile.party + slot * 100, 100), slot))
+        table.insert(pokemon, string.format('{"hex":"%s","container":"Party","slot":%d,"liveHp":%s}',
+            hex(profile.party + slot * 100, 100), slot, battleHealth[slot] or "null"))
     end
     -- Every snapshot covers all 14 boxes. A temporary partial read must never look like a release.
     for box = 0, 13 do

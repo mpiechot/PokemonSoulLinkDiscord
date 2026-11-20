@@ -16,6 +16,42 @@ public sealed class PlayerClientTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "soullink-player-tests-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void AnInvitationCanSwitchTheSameExeToAnotherRunAndStaySelectedOnRestart()
+    {
+        var profiles = new PlayerProfileLibrary(this.directory);
+        var old = new PlayerProfile(Guid.NewGuid(), "https://example.invalid", "old-code", Label: "Alter Run");
+        Assert.Equal(old, profiles.OpenForStartup(old, selection: null));
+
+        var next = new PlayerProfile(Guid.NewGuid(), "https://new.example.invalid", "new-code", "Host", "Neue Runde / Rubin", PlayerMarker.Moon);
+        string code = PlayerInvitation.Encode(next);
+        var invite = PlayerInvitation.Read("  " + code + "\r\n", old.Server);
+        Assert.Equal(next.Server, invite.Server);
+        Assert.Equal(next.Invitation, invite.Invitation);
+        Assert.Equal(next.Label, invite.Label);
+        Assert.Null(invite.Name);
+        Assert.Null(invite.Marker);
+        var added = profiles.AddInvitation(invite.Server, invite.Invitation, invite.Label!);
+        Assert.Equal(added.Id, profiles.AddInvitation(invite.Server, invite.Invitation, invite.Label!).Id);
+        Assert.Equal(added, profiles.OpenForStartup(old, added.Id));
+
+        var reopened = new PlayerProfileLibrary(this.directory);
+        Assert.Equal(added, reopened.OpenForStartup(old, selection: null));
+        Assert.Equal(old, reopened.Read(old.Id));
+        Assert.Null(reopened.OpenForStartup(old, Guid.Empty));
+        Assert.Null(reopened.OpenForStartup(old, selection: null));
+    }
+
+    [Fact]
+    public void ExistingCodesStillUseAnExplicitServerAndBrokenShareCodesAreRejected()
+    {
+        const string server = "https://example.invalid";
+        Assert.Equal("legacy-code", PlayerInvitation.Read("legacy-code", server).Invitation);
+        Assert.Throws<InvalidDataException>(() => PlayerInvitation.Read("SL1-%%broken", server));
+        Assert.Throws<InvalidDataException>(() => PlayerInvitation.Read("legacy-code", "http://example.invalid"));
+        Assert.Throws<InvalidDataException>(() => PlayerInvitation.Read("legacy\ncode", server));
+    }
+
+    [Fact]
     public void RunProfileLibraryKeepsAndReopensSeparateGroupInvitations()
     {
         var profiles = new PlayerProfileLibrary(this.directory);
@@ -279,6 +315,19 @@ public sealed class PlayerClientTests : IDisposable
         Assert.Throws<InvalidDataException>(() => (field with { InBattle = true }).Parse());
         Assert.Throws<InvalidDataException>(() => (field with { CompleteInventory = false }).Parse());
         Assert.Throws<InvalidDataException>(() => (field with { Pokemon = [new RawPokemon(new string('0', 200), Placement.Party, 0)] }).Parse());
+    }
+
+    [Fact]
+    public void BattleHealthOverridesOnlyAValidPartySlotWhileInBattle()
+    {
+        var party = SyntheticPokemon.Raw(1, 25) with { LiveHp = 7 };
+        var box = SyntheticPokemon.Raw(2, 25, box: true) with { LiveHp = 7 };
+        var battle = SyntheticPokemon.Frame(1, party, box) with { InBattle = true };
+        var observed = battle.Parse().Pokemon;
+        Assert.Equal(7, observed[0].Hp);
+        Assert.Null(observed[1].Hp);
+        Assert.Equal(20, (battle with { InBattle = false }).Parse().Pokemon[0].Hp);
+        Assert.Equal(20, (battle with { Pokemon = [party with { LiveHp = 21 }] }).Parse().Pokemon[0].Hp);
     }
 
     [Fact]

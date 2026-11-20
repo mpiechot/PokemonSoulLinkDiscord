@@ -32,8 +32,23 @@ public sealed class PlayerProfileLibrary(string home)
 
     public PlayerProfile? Current()
     {
-        string path = Path.Combine(this.directory, "current.txt");
+        string path = this.CurrentPath;
         return File.Exists(path) && Guid.TryParse(File.ReadAllText(path), out Guid id) ? this.Read(id) : null;
+    }
+
+    public PlayerProfile? OpenForStartup(PlayerProfile? bundled, Guid? selection)
+    {
+        if (selection is Guid id)
+        {
+            var selected = id == Guid.Empty ? null : this.Read(id) ?? throw new InvalidDataException("Das Run-Profil fehlt.");
+            this.Choose(id);
+            return selected;
+        }
+
+        if (bundled is not null && this.Read(bundled.Id) is null) this.Remember(bundled);
+        if (File.Exists(this.CurrentPath) || bundled is null) return this.Current();
+        this.Choose(bundled.Id);
+        return bundled;
     }
 
     public void Remember(PlayerProfile profile)
@@ -46,7 +61,7 @@ public sealed class PlayerProfileLibrary(string home)
     public void Choose(Guid id)
     {
         if (id != Guid.Empty && this.Read(id) is null) throw new InvalidDataException("Das Run-Profil fehlt.");
-        WriteFile(Path.Combine(this.directory, "current.txt"), id.ToString("N"));
+        WriteFile(this.CurrentPath, id.ToString("N"));
     }
 
     public PlayerProfile AddInvitation(string server, string invitation, string label)
@@ -56,7 +71,7 @@ public sealed class PlayerProfileLibrary(string home)
         PlayerBundle.Validate(new PlayerProfile(Guid.NewGuid(), server, invitation));
         var previous = this.List().FirstOrDefault(p => new Uri(p.Server) == new Uri(server, UriKind.Absolute) && p.Invitation == invitation);
         var profile = new PlayerProfile(previous?.Id ?? Guid.NewGuid(), server, invitation,
-            previous?.Name, string.IsNullOrWhiteSpace(label) ? previous?.Label : label.Trim());
+            previous?.Name, string.IsNullOrWhiteSpace(label) ? previous?.Label : label.Trim(), previous?.Marker);
         this.Remember(profile);
         return profile;
     }
@@ -69,6 +84,8 @@ public sealed class PlayerProfileLibrary(string home)
     }
 
     private string ProfilePath(Guid id) => Path.Combine(this.directory, $"{id:N}.json");
+
+    private string CurrentPath => Path.Combine(this.directory, "current.txt");
 
     private static void WriteFile(string path, string data)
     {

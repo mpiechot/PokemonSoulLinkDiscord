@@ -90,7 +90,6 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species, [switch]$Em
     [BitConverter]::GetBytes(24).CopyTo($rom, 0x604)
     [Text.Encoding]::ASCII.GetBytes('SoulLinkPCFixture').CopyTo($rom, 0x700)
     if ($Revision -eq 1) {
-        $rom[0x156] = 0
         $writes['03001BAC'] = 0x200u # Main.inBattle.
         $writes['020239F8'] = 8u # Trainer battle.
         $writes['02024A68'] = 2u # Battler count; first battler maps to party slot zero.

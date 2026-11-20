@@ -377,20 +377,30 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
-    public void ArenaProgressIsPlayerScopedAndCanOverrideTheCurrentBadgeReading()
+    public void ArenaProgressIsSharedAndPersistsAcrossDifferentBadgeReadings()
     {
-        var (_, player) = this.Active();
-        this.Send(player, 2, false, Snapshot(2, Mon(1)) with { BadgeMask = 1 });
-        this.engine.ChangeArena(player.Registration, 1, false);
-        Assert.Equal(0, this.engine.View(player.Registration).Players.Single().ArenaProgress);
-        this.engine.ChangeArena(player.Registration, 1, true);
-        this.engine.ChangeArena(player.Registration, 2, true);
-        this.engine.ChangeArena(player.Registration, 2, true);
-        var state = this.engine.View(player.Registration);
-        Assert.Equal(3, state.Players.Single().ArenaProgress);
+        var run = this.engine.Initialize("guild", 0, "Gemeinsam");
+        var first = this.Join(run, "First");
+        var second = this.Join(run, "Second");
+        this.Send(first, 1, true, Snapshot(1, Mon(1)) with { BadgeMask = 1 });
+        this.Send(second, 1, true, Snapshot(1, Mon(1)) with { BadgeMask = 0 });
+        this.engine.ChangeRun("guild", run.Id, "start");
+        var isolated = this.engine.Initialize("other", 0, "Andere Gruppe");
+        var outsider = this.Join(isolated, "Outsider");
+
+        Assert.Equal(0, this.engine.View(first.Registration).ArenaProgress);
+        this.engine.ChangeArena(first.Registration, 1, true);
+        this.engine.ChangeArena(second.Registration, 2, true);
+        this.engine.ChangeArena(first.Registration, 2, true);
+        var reopened = new AutomationEngine(new AutomationStore(Path.Combine(this.directory, "runs.sqlite")));
+        var state = reopened.View(second.Registration);
+        Assert.Equal(3, state.ArenaProgress);
+        Assert.All(state.Players, player => Assert.Equal(3, player.ArenaProgress));
         Assert.Equal(2, state.History.Count(item => item.Kind == "arena-completed"));
-        this.engine.ChangeArena(player.Registration, 2, false);
-        Assert.Equal(1, this.engine.View(player.Registration).Players.Single().ArenaProgress);
+        this.engine.ChangeArena(second.Registration, 2, false);
+        this.engine.ChangeArena(second.Registration, 1, false);
+        Assert.All(this.engine.View(first.Registration).Players, player => Assert.Equal(0, player.ArenaProgress));
+        Assert.Equal(0, this.engine.View(outsider.Registration).ArenaProgress);
     }
 
     [Fact]

@@ -439,27 +439,39 @@ public sealed class ClientRuntime : BackgroundService
                 this.Note("mGBA bridge connected on loopback.");
                 try
                 {
+                    string? frameError = null;
                     await foreach (string line in JsonLines.ReadAsync(stream, cancellationToken))
                     {
-                        var frame = Protocol.Deserialize<BridgeFrame>(line);
-                        if (frame is { Version: Protocol.Version, Type: "bridge-ready" })
+                        try
                         {
-                            if (this.items.MatchesSession(frame.ItemSession)) Volatile.Write(ref this.startedBridgeSession, frame.ItemSession);
-                            continue;
+                            var frame = Protocol.Deserialize<BridgeFrame>(line);
+                            if (frame is { Version: Protocol.Version, Type: "bridge-ready" })
+                            {
+                                if (this.items.MatchesSession(frame.ItemSession)) Volatile.Write(ref this.startedBridgeSession, frame.ItemSession);
+                                continue;
+                            }
+                            if (frame is { Version: Protocol.Version, Type: "pc-item-result" })
+                            {
+                                this.items.AcceptResult(stream, frame);
+                                continue;
+                            }
+                            this.AcceptFrame(frame);
+                            this.items.Observe(stream, frame);
+                            if (frameError is not null) this.Note("mGBA sendet wieder gültige Spieldaten.");
+                            frameError = null;
                         }
-                        if (frame is { Version: Protocol.Version, Type: "pc-item-result" })
+                        catch (Exception exception) when (exception is InvalidDataException or JsonException or FormatException)
                         {
-                            this.items.AcceptResult(stream, frame);
-                            continue;
+                            string detail = exception.Message[..Math.Min(exception.Message.Length, 180)];
+                            if (frameError != detail) this.Note("Spieldaten-Snapshot verworfen: " + detail);
+                            frameError = detail;
                         }
-                        this.AcceptFrame(frame);
-                        this.items.Observe(stream, frame);
                     }
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
-                catch (Exception exception) when (exception is InvalidDataException or JsonException or FormatException or IOException or SocketException)
+                catch (Exception exception) when (exception is InvalidDataException or IOException or SocketException)
                 {
-                    this.Note("Bridge rejected: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
+                    this.Note("mGBA-Verbindung getrennt: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
                 finally

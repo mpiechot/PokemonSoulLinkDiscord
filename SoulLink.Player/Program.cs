@@ -58,20 +58,7 @@ internal static class Program
         {
             try
             {
-                if (selectedProfile is Guid id)
-                {
-                    profile = id == Guid.Empty ? null : profiles.Read(id) ?? throw new InvalidDataException("Das Run-Profil fehlt.");
-                    profiles.Choose(id);
-                }
-                else if (profile is not null)
-                {
-                    profiles.Remember(profile);
-                    profiles.Choose(profile.Id);
-                }
-                else
-                {
-                    profile = profiles.Current();
-                }
+                profile = profiles.OpenForStartup(profile, selectedProfile);
             }
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
             {

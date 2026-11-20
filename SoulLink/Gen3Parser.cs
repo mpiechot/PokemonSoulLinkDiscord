@@ -42,9 +42,14 @@ public static class Gen3Parser
             checksum = unchecked((ushort)(checksum + BinaryPrimitives.ReadUInt16LittleEndian(plain[i..])));
         }
 
-        if (checksum != BinaryPrimitives.ReadUInt16LittleEndian(bytes[28..]) || (bytes[19] & 1) != 0)
+        if ((bytes[19] & 1) != 0)
         {
-            throw new InvalidDataException("Invalid Pokémon checksum or Bad Egg flag; observation discarded.");
+            throw new InvalidDataException("Schlechtes Ei (Bad-Egg-Markierung).");
+        }
+
+        if (checksum != BinaryPrimitives.ReadUInt16LittleEndian(bytes[28..]))
+        {
+            throw new InvalidDataException("Ungültige Pokémon-Prüfsumme.");
         }
 
         string order = Orders[pid % 24];

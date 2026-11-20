@@ -19,7 +19,6 @@ internal sealed class HostingForm : Form
     private readonly Button resume;
     private readonly Button end;
     private readonly Button saveProfile;
-    private readonly Button package;
     private readonly Button invite;
     private readonly Button players;
     private readonly Button linkStarters;
@@ -59,14 +58,9 @@ internal sealed class HostingForm : Form
         this.resume = this.ActionButton("Auswählen / fortsetzen", "load");
         this.end = this.ActionButton("Abschließen", "end");
         this.saveProfile = DashboardTheme.Button("Für mich merken");
-        this.saveProfile.Click += (_, _) => this.SaveInvitation(package: false);
-        this.package = DashboardTheme.Button("Spielerdatei erstellen");
-        this.package.Click += (_, _) => this.SaveInvitation(package: true);
+        this.saveProfile.Click += (_, _) => this.SaveInvitation(copy: false);
         this.invite = DashboardTheme.Button("Einladung kopieren");
-        this.invite.Click += (_, _) =>
-        {
-            if (this.Run is { Invitation.Length: > 0 } lobby) Clipboard.SetText(lobby.Invitation);
-        };
+        this.invite.Click += (_, _) => this.SaveInvitation(copy: true);
         this.players = DashboardTheme.Button("Spieler und Spielstände");
         this.players.Click += async (_, _) => await this.UseServerAsync(this.ShowPlayersAsync);
         this.linkStarters = DashboardTheme.Button("Starter verlinken");
@@ -95,7 +89,7 @@ internal sealed class HostingForm : Form
         layout.Controls.Add(Line(this.runName, this.createRun), 0, 2);
         layout.Controls.Add(this.runs, 0, 3);
         layout.Controls.Add(Line(this.start, this.pause, this.resume, this.end, this.players), 0, 4);
-        layout.Controls.Add(Line(this.saveProfile, this.package, this.invite, this.linkStarters), 0, 5);
+        layout.Controls.Add(Line(this.invite, this.saveProfile, this.linkStarters), 0, 5);
         layout.Controls.Add(this.feedback, 0, 6);
         this.Controls.Add(layout);
         this.ClearServerView();
@@ -215,7 +209,7 @@ internal sealed class HostingForm : Form
         this.end.Enabled = !this.busy && run is { Phase: not RunPhase.Finished };
         this.players.Enabled = !this.busy && run is { Players: > 0 };
         this.linkStarters.Enabled = !this.busy && run is { Players: >= 2, Phase: RunPhase.Active or RunPhase.Paused };
-        this.saveProfile.Enabled = this.package.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
+        this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
     }
 
     private async Task ShowStartersAsync(HostAdminClient client)
@@ -292,23 +286,19 @@ internal sealed class HostingForm : Form
         MessageBox.Show(this, "Der Spieler kann im SoulLink-Menü „Run-Server neu verbinden“ wählen.", "Neuer Abgleich");
     }
 
-    private void SaveInvitation(bool package)
+    private void SaveInvitation(bool copy)
     {
         if (this.Group is not { } group || this.Run is not { Invitation.Length: > 0 } run) return;
         try
         {
             var profile = PlayerProfileLibrary.ForHostedRun(this.server.Text, group, run);
-            this.profiles.Remember(profile);
-            if (package)
-            {
-                using var save = new SaveFileDialog { FileName = "SoulLink-Spieler.exe", Filter = "SoulLink-Anwendung (*.exe)|*.exe" };
-                if (save.ShowDialog(this) != DialogResult.OK) return;
-                PlayerBundle.Create(Environment.ProcessPath!, save.FileName, profile);
-            }
+            this.profiles.AddInvitation(profile.Server, profile.Invitation, profile.Label!);
+            if (copy) Clipboard.SetText(PlayerInvitation.Encode(profile));
             this.feedback.ForeColor = DashboardTheme.Accent;
-            this.feedback.Text = package ? "Die Spielerdatei ist bereit." : "Der Run steht jetzt unter „Run wechseln“.";
+            this.feedback.Text = copy ? "Einladung kopiert. Deine Mitspieler können sie in ihrer EXE einfügen."
+                : "Der Run steht jetzt unter „Run beitreten / wechseln“.";
         }
-        catch (Exception error) when (RunDialogs.IsActionError(error) || error is FormatException)
+        catch (Exception error) when (RunDialogs.IsActionError(error) || error is FormatException or System.Runtime.InteropServices.ExternalException)
         {
             this.feedback.ForeColor = DashboardTheme.Danger;
             this.feedback.Text = error.Message;
@@ -343,23 +333,32 @@ internal sealed class ProfilePicker : Form
 {
     private readonly ComboBox choices = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = nameof(Row.Name) };
 
-    public ProfilePicker(PlayerProfileLibrary profiles, Guid current, string serverAddress)
+    public ProfilePicker(PlayerProfileLibrary profiles, Guid current, ClientView view)
     {
-        RunDialogs.Configure(this, "Run wechseln", new Size(520, 260));
-        var server = new TextBox { Dock = DockStyle.Top, Text = serverAddress, AccessibleName = "Serveradresse" };
-        var invite = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Einladungscode", AccessibleName = "Einladungscode" };
-        var name = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Name für die Run-Liste", AccessibleName = "Name für die Run-Liste", MaxLength = 140 };
-        var add = DashboardTheme.Button("Einladung merken");
+        RunDialogs.Configure(this, "Run beitreten / wechseln", new Size(540, 310));
+        var invite = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Einladung einfügen", AccessibleName = "Einladung", MaxLength = 4096 };
+        var server = new TextBox { Dock = DockStyle.Top, Text = view.Server, PlaceholderText = "Serveradresse", AccessibleName = "Serveradresse für einen alten Code", Visible = false };
+        var join = DashboardTheme.Button("Beitreten");
         var open = DashboardTheme.Button("Run öffnen");
         var feedback = new Label { Dock = DockStyle.Bottom, Height = 35, ForeColor = DashboardTheme.Danger };
-        add.Click += (_, _) =>
+        join.Enabled = false;
+        invite.TextChanged += (_, _) =>
+        {
+            join.Enabled = !string.IsNullOrWhiteSpace(invite.Text);
+            server.Visible = join.Enabled && !PlayerInvitation.ContainsServer(invite.Text);
+            this.AcceptButton = join.Enabled ? join : open;
+            feedback.Text = "";
+        };
+        join.Click += (_, _) =>
         {
             try
             {
-                var added = profiles.AddInvitation(server.Text, invite.Text, name.Text);
-                this.LoadProfiles(profiles, added.Id);
-                invite.Clear();
-                feedback.Text = "";
+                var details = PlayerInvitation.Read(invite.Text, server.Text);
+                var added = profiles.AddInvitation(details.Server, details.Invitation, details.Label ?? "");
+                if (added.Name is null && !string.IsNullOrWhiteSpace(view.Player))
+                    profiles.Remember(added with { Name = view.Player, Marker = view.Marker });
+                this.SelectedProfile = added.Id;
+                this.DialogResult = DialogResult.OK;
             }
             catch (Exception error) when (RunDialogs.IsActionError(error) || error is FormatException) { feedback.Text = error.Message; }
         };
@@ -369,16 +368,17 @@ internal sealed class ProfilePicker : Form
             this.SelectedProfile = row.Id;
             this.DialogResult = DialogResult.OK;
         };
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40 };
-        actions.Controls.AddRange([open, add]);
         this.Controls.Add(feedback);
-        this.Controls.Add(name);
-        this.Controls.Add(invite);
-        this.Controls.Add(server);
-        this.Controls.Add(new Label { Text = "Eine weitere Einladung hinzufügen", Dock = DockStyle.Top, Height = 30 });
-        this.Controls.Add(actions);
+        this.Controls.Add(ButtonRow(open));
         this.Controls.Add(this.choices);
+        this.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
+        this.Controls.Add(ButtonRow(join));
+        this.Controls.Add(server);
+        this.Controls.Add(invite);
+        this.Controls.Add(new Label { Text = "Neue Einladung", Dock = DockStyle.Top, Height = 30 });
         this.LoadProfiles(profiles, current);
+        this.AcceptButton = open;
+        this.Shown += (_, _) => invite.Focus();
     }
 
     internal Guid SelectedProfile { get; private set; }
@@ -388,6 +388,13 @@ internal sealed class ProfilePicker : Form
         Row[] rows = [new(Guid.Empty, "Lokaler Spieltest"), .. profiles.List().Select(p => new Row(p.Id, p.Label ?? p.Server))];
         this.choices.DataSource = rows;
         this.choices.SelectedIndex = Math.Max(0, Array.FindIndex(rows, row => row.Id == selected));
+    }
+
+    private static FlowLayoutPanel ButtonRow(Button button)
+    {
+        var row = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42 };
+        row.Controls.Add(button);
+        return row;
     }
 
     private sealed record Row(Guid Id, string Name);

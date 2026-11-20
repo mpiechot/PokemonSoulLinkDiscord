@@ -32,6 +32,8 @@ Before accepting a frame, the bridge validates title/code, party count, current 
 
 The owned bridge confirms script startup separately from the first snapshot. An empty party is valid once the player object and map layout provide a live field position. The reference profile reports the window from the starter script to the Pokédex award using system flags 0x800 and 0x801. A sole first party Pokémon from Route 101 observed during this window joins a separate starter link. [Route 101 starter event](https://github.com/pret/pokeruby/blob/master/data/maps/Route101/scripts.inc) · [Pokédex and Poké Ball award](https://github.com/pret/pokeruby/blob/master/data/maps/LittlerootTown_ProfessorBirchsLab/scripts.inc)
 
+During battle, the bridge uses live HP for player battlers whose PID, original trainer ID and maximum HP match their party records. A rejected snapshot preserves the last valid inventory and the loopback connection. The diagnostic log identifies the team or box slot and reports when valid data resumes.
+
 If your ROM uses relocated structures, configure a verified layout before loading the Lua file:
 
 ```lua

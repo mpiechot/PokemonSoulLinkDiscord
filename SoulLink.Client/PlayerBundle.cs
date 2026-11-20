@@ -4,7 +4,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null, string? Label = null);
+public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null, string? Label = null, PlayerMarker? Marker = null);
 
 /// <summary>A host may append join details to a copy of the published app; bearer tokens are never bundled.</summary>
 public static class PlayerBundle
@@ -59,7 +59,8 @@ public static class PlayerBundle
             (profile.Name is not null &&
             (string.IsNullOrWhiteSpace(profile.Name) || profile.Name.Length > 64 ||
              profile.Name.Any(c => char.IsControl(c) || c is '@' or '`' or '<' or '>'))) ||
-            string.IsNullOrWhiteSpace(profile.Invitation) || profile.Invitation.Length > 128 ||
+            (profile.Marker is { } marker && !Enum.IsDefined(marker)) ||
+            string.IsNullOrWhiteSpace(profile.Invitation) || profile.Invitation.Length > 128 || profile.Invitation.Any(char.IsControl) ||
             !Uri.TryCreate(profile.Server, UriKind.Absolute, out var uri) ||
             (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)) ||
             uri.UserInfo.Length > 0 || uri.Query.Length > 0 || uri.Fragment.Length > 0)
