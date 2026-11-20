@@ -270,6 +270,48 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public void EmptyTeamRequiresAValidOverworldPositionAndCompleteInventory()
+    {
+        var title = SyntheticPokemon.Frame(1);
+        Assert.Throws<InvalidDataException>(() => title.Parse());
+        var field = title with { Position = new MapPosition(5, 7, 28, 24, true) };
+        Assert.Empty(field.Parse().Pokemon);
+        Assert.Throws<InvalidDataException>(() => (field with { InBattle = true }).Parse());
+        Assert.Throws<InvalidDataException>(() => (field with { CompleteInventory = false }).Parse());
+        Assert.Throws<InvalidDataException>(() => (field with { Pokemon = [new RawPokemon(new string('0', 200), Placement.Party, 0)] }).Parse());
+    }
+
+    [Fact]
+    public async Task OwnedScriptingBridgeIsReadyBeforeTheFirstGameSnapshot()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = Path.Combine(this.directory, "startup.json"),
+            ["BridgePort"] = "0",
+        }).Build();
+        using var client = new ClientRuntime(configuration);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await client.StartAsync(timeout.Token);
+        try
+        {
+            string session = client.BeginLocalItemSession();
+            using var peer = new System.Net.Sockets.TcpClient();
+            await peer.ConnectAsync(System.Net.IPAddress.Loopback, client.Status().BridgePort, timeout.Token);
+            using var sender = new StreamWriter(peer.GetStream()) { AutoFlush = true };
+            string ready = Protocol.Serialize(new BridgeFrame { Type = "bridge-ready", ItemSession = session });
+            await sender.WriteLineAsync(ready.AsMemory(), timeout.Token);
+            while (!client.OwnedBridgeReady) await Task.Delay(25, timeout.Token);
+            Assert.Null(client.Status().Snapshot);
+            _ = client.BeginLocalItemSession();
+            Assert.False(client.OwnedBridgeReady);
+        }
+        finally
+        {
+            await client.StopAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
     public async Task ClosingClientCancelsAnInFlightJoinAndReleasesItsBridge()
     {
         var builder = WebApplication.CreateBuilder();

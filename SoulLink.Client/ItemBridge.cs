@@ -38,12 +38,18 @@ internal sealed class ItemBridge
         }
     }
 
+    public bool MatchesSession(string? value)
+    {
+        lock (this.gate) return this.session is not null && value == this.session;
+    }
+
     public void Observe(NetworkStream stream, BridgeFrame frame)
     {
         lock (this.gate)
         {
             this.ready = this.session is { } expected && frame.ItemSession == expected &&
                 frame.LayoutId == "ruby-axvd-reference-v2" && frame.TrainerId is uint trainer &&
+                frame.Pokemon.Any(p => p.Container == Placement.Party) &&
                 frame.Epoch is { Length: > 0 and <= 48 } epoch && epoch.All(char.IsAsciiLetterOrDigit)
                 ? new ReadyBridge(stream, expected, epoch, trainer, frame.InBattle, DateTimeOffset.UtcNow)
                 : null;

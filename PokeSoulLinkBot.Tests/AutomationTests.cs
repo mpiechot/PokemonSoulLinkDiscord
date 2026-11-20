@@ -57,6 +57,32 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void RubyStartersObservedInLobbyAndActiveRunCompleteOneSeparateLink()
+    {
+        var run = this.engine.Initialize("fresh", 0, "Rubin");
+        var first = this.Join(run, "First");
+        Assert.True(this.Send(first, 1, true, Snapshot(1)).Accepted);
+        Assert.True(this.Send(first, 2, false, Snapshot(2, Mon(1)) with { RubyStarterWindow = true }).Accepted);
+        var lobby = this.engine.View(first.Registration);
+        Assert.Null(Assert.Single(lobby.Encounters).GroupId);
+        Assert.Empty(lobby.History);
+
+        var second = this.Join(run, "Second");
+        Assert.True(this.Send(second, 1, true, Snapshot(1)).Accepted);
+        this.engine.ChangeRun("fresh", run.Id, "start");
+        Assert.Null(Assert.Single(this.engine.View(first.Registration).Encounters).GroupId);
+        Assert.True(this.Send(second, 2, false, Snapshot(2, Mon(1)) with { RubyStarterWindow = true }).Accepted);
+
+        var active = this.engine.View(second.Registration);
+        var starter = Assert.Single(active.Encounters);
+        Assert.Equal(Encounter.StarterArea, starter.Area);
+        Assert.NotNull(starter.GroupId);
+        Assert.Equal(2, starter.Members.Count);
+        Assert.Equal("linked", Assert.Single(active.History).Kind);
+        Assert.All(active.Players, p => Assert.True(Assert.Single(p.Pokemon).Imported));
+    }
+
+    [Fact]
     public void ExplicitStarterLinkPreservesRoute101AndSharesConfirmedDeaths()
     {
         var group = this.engine.CreateGroup("Three players");

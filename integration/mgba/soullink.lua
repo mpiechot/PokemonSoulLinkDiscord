@@ -250,7 +250,7 @@ local function sendPending()
     end
 end
 
-local function snapshot(frame)
+local function readProfile()
     -- Header identity tolerates randomization; structural checks reject invalid memory reads.
     local code = readRange(0x080000AC, 4)
     local title = readRange(0x080000A0, 12):gsub("%z", "")
@@ -259,7 +259,11 @@ local function snapshot(frame)
     if not reference or title:gsub("%s+$", "") ~= reference.title or not reference.revisions[revision] then
         error(string.format("No read-only profile for ROM %q revision %d.", code, revision), 0)
     end
-    local profile = SOULLINK_PROFILE or reference
+    return code, SOULLINK_PROFILE or reference, reference
+end
+
+local function snapshot(frame)
+    local code, profile, reference = readProfile()
     activeProfile = profile
     local count = read8(profile.partyCount)
     local currentBox = read8(profile.storage)
@@ -271,8 +275,14 @@ local function snapshot(frame)
         error(string.format("Invalid %s memory layout: party=%d, box=%d, play time=%d:%02d:%02d.",
             code, count, currentBox, hours, minutes, seconds), 0)
     end
-    if count == 0 then
-        error("Waiting for a loaded game with at least one party Pokémon.", 0)
+    local battle = (read8(profile.main + 0x43D) & 2) ~= 0
+    local group, number = read8(profile.save1 + 4), read8(profile.save1 + 5)
+    if not battle then
+        local positionOk, currentPosition = pcall(readPosition, profile, group)
+        lastPosition = positionOk and currentPosition or "null"
+    end
+    if count == 0 and (battle or lastPosition == "null") then
+        error("Waiting for a loaded save or a new game on the field.", 0)
     end
     local pokemon = {}
     for slot = 0, count - 1 do
@@ -288,12 +298,6 @@ local function snapshot(frame)
             end
         end
     end
-    local battle = (read8(profile.main + 0x43D) & 2) ~= 0
-    local group, number = read8(profile.save1 + 4), read8(profile.save1 + 5)
-    if not battle then
-        local positionOk, currentPosition = pcall(readPosition, profile, group)
-        lastPosition = positionOk and currentPosition or "null"
-    end
     local faints = {}
     for slot = 0, count - 1 do
         local hp = read16(profile.party + slot * 100 + 86)
@@ -306,7 +310,10 @@ local function snapshot(frame)
         end
     end
     -- Badges are eight consecutive flags starting at FLAG_BADGE01_GET (0x807).
-    local badges = (read16(profile.save1 + 0x1220 + 0x100) >> 7) & 0xFF
+    local systemFlags = read16(profile.save1 + 0x1220 + 0x100)
+    local badges = (systemFlags >> 7) & 0xFF
+    -- The Route 101 starter script sets Pokémon Get before the lab awards the Pokédex.
+    local starterWindow = profile == reference and (systemFlags & 3) == 1
     if not gymLineups then
         gymLineups = {}
         for index = 0, 7 do
@@ -323,10 +330,10 @@ local function snapshot(frame)
         rubyTypes = typesOk and types or ""
     end
     local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId, itemCapability,
         group, number, lastPosition, tostring(battle), table.concat(faints, ","), badges,
-        gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
+        tostring(starterWindow), gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
 
 local function reset()
@@ -350,9 +357,16 @@ local function onFrame()
     end
     if (tick % 30 ~= 0 and not faintDirty) or pending then return end
     if not peer then
+        local valid, profileOrError = pcall(readProfile)
+        if not valid then report(tostring(profileOrError)); return end
         peer = socket.tcp()
         peer:add("error", function() stop() end)
         if not peer:connect("127.0.0.1", port) then stop(); report("Local client unavailable; retrying."); return end
+        if itemSession then
+            pending = string.format('{"version":1,"type":"bridge-ready","itemSession":"%s"}\n', itemSession)
+            sendPending()
+            if not peer or pending then return end
+        end
     end
     local ok, result = pcall(snapshot, frame)
     if not ok then report(tostring(result)); return end

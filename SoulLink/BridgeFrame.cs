@@ -25,6 +25,7 @@ public sealed record BridgeFrame
     public MapPosition? Position { get; init; }
     public RawBattleTrace[]? Faints { get; init; }
     public byte? BadgeMask { get; init; }
+    public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
     public int[]?[]? GymLineups { get; init; }
     public string? RubyTypesHex { get; init; }
@@ -52,8 +53,9 @@ public sealed record BridgeFrame
                 pokemon.Add(parsed);
             }
         }
-        if (!pokemon.Any(p => p.Container == Placement.Party))
-            throw new InvalidDataException("No valid party; wait for a loaded save or verify the memory profile.");
+        if (!pokemon.Any(p => p.Container == Placement.Party) &&
+            (this.InBattle || this.Position is not { Valid: true } || this.Pokemon.Any(p => p.Container == Placement.Party)))
+            throw new InvalidDataException("No valid party or live field position; wait for a loaded save or verify the memory profile.");
         return new GameSnapshot
         {
             GameCode = this.GameCode,
@@ -72,6 +74,7 @@ public sealed record BridgeFrame
                     .DistinctBy(f => f.PartySlot).ToArray()
                 : null,
             BadgeMask = this.BadgeMask,
+            RubyStarterWindow = this.RubyStarterWindow,
             GymLevels = ValidateLevels(this.GymLevels),
             GymLineups = this.GymLineups is { Length: 8 } ? this.GymLineups.Select(ValidateLevels).ToArray() : null,
             Pokemon = pokemon,

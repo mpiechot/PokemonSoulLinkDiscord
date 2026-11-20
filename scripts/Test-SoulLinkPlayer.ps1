@@ -56,7 +56,7 @@ function New-CompressedFill([int]$Length, [byte]$Value) {
     return ,$bytes.ToArray()
 }
 
-function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species) {
+function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species, [switch]$EmptyParty) {
     # A cartridge-sized image keeps mGBA from treating an intentionally small stub as a multiboot ROM.
     $rom = [byte[]]::new(4 * 1024 * 1024)
     [Text.Encoding]::ASCII.GetBytes('POKEMON RUBYAXVD').CopyTo($rom, 0xA0)
@@ -69,6 +69,7 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species) {
     $entry.CopyTo($rom, 0)
     $program = [Convert]::FromHexString('24009FE50110A0E30010C0E51C009FE528108FE21920A0E3043091E4043080E4012052E2FBFFFF1AFEFFFFEA6043000370430003')
     $program.CopyTo($rom, 0xC0)
+    if ($EmptyParty) { $rom[0xC4] = 0 }
     $rom[0x108] = 0xBB
     $rom[0x109] = 0xFF
     $rom[0x113] = 2
@@ -168,9 +169,14 @@ try {
         Write-Host 'One close exited the owned emulator and released the bridge port in both docked and detached states.'
         return
     }
+    $emptyRom = Join-Path $testRoot 'Ruby empty party.gba'
+    New-TestRom $emptyRom 0 25 -EmptyParty
+    $emptyHome = Join-Path $testRoot 'empty-party'
+    Run-Player $Executable @('--smoke-close', $emptyHome, $emptyRom, 'empty')
+    if (-not (Test-Path -LiteralPath (Join-Path $emptyHome 'shutdown-result.txt'))) { throw 'Empty-party startup was not verified.' }
     $romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
     if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }
-    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, dock, detach and PC item checks for German Ruby.'
+    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, empty-party startup, dock, detach and PC item checks for German Ruby.'
 } finally {
     $directory = Get-Item -LiteralPath $testRoot
     if ($directory.FullName -eq $testRoot -and $directory.Name -match '^soullink-player-check-[a-f0-9]{32}$' -and

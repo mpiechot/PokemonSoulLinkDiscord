@@ -67,6 +67,7 @@ public sealed record GameSnapshot
     public bool InBattle { get; init; }
     public BattleTrace[]? Faints { get; init; }
     public byte? BadgeMask { get; init; }
+    public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
     public int[]?[]? GymLineups { get; init; }
     public List<PokemonState> Pokemon { get; init; } = [];

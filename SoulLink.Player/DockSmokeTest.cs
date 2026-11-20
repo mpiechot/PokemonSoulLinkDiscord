@@ -9,7 +9,7 @@ namespace SoulLink.Player;
 
 internal static class DockSmokeTest
 {
-    public static void RunClose(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, bool detached)
+    public static void RunClose(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, bool detached, bool emptyParty)
     {
         using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), path, null, home);
         int port = 0;
@@ -36,6 +36,13 @@ internal static class DockSmokeTest
                 port = runtime.Status().BridgePort;
                 File.WriteAllText(progress, $"The emulator is docked with bridge port {port}.");
                 VerifySidebar(form);
+                if (emptyParty)
+                {
+                    while (!runtime.OwnedBridgeReady || runtime.Status().Snapshot is null || EmulatorDock.HasScriptingWindow(game))
+                        await Task.Delay(50, timeout.Token);
+                    if (runtime.Status().Snapshot is not { Pokemon.Count: 0, Position.Valid: true })
+                        throw new InvalidOperationException("The startup script must close while an empty team on the field is readable.");
+                }
                 if (detached)
                 {
                     form.ChangeDock();

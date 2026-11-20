@@ -36,6 +36,7 @@ public sealed class ClientRuntime : BackgroundService
     private DateTimeOffset nextJoinAttempt;
     private readonly object stateGate = new();
     private readonly ItemBridge items = new();
+    private string? startedBridgeSession;
     private readonly Queue<string> log = new();
     private HubConnection? connection;
     private SessionInfo? session;
@@ -170,6 +171,8 @@ public sealed class ClientRuntime : BackgroundService
         this.RunActionAsync(runId, t => t.AddRule(text), c => c.InvokeAsync("AddRule", text));
 
     public string BeginLocalItemSession() => this.items.Begin();
+
+    public bool OwnedBridgeReady => this.items.MatchesSession(Volatile.Read(ref this.startedBridgeSession));
 
     public bool CanAddPcItems => this.items.Ready;
 
@@ -386,7 +389,8 @@ public sealed class ClientRuntime : BackgroundService
                 snapshot.InBattle,
                 snapshot.Faints,
                 snapshot.Epoch,
-                snapshot.BadgeMask
+                snapshot.BadgeMask,
+                snapshot.RubyStarterWindow
             });
             bool pendingDeath = snapshot.Pokemon.Any(p => p.Hp == 0 && p.Container == Placement.Party);
             if (this.baseline || fingerprint != this.lastFingerprint || pendingDeath)
@@ -438,6 +442,11 @@ public sealed class ClientRuntime : BackgroundService
                     await foreach (string line in JsonLines.ReadAsync(stream, cancellationToken))
                     {
                         var frame = Protocol.Deserialize<BridgeFrame>(line);
+                        if (frame is { Version: Protocol.Version, Type: "bridge-ready" })
+                        {
+                            if (this.items.MatchesSession(frame.ItemSession)) Volatile.Write(ref this.startedBridgeSession, frame.ItemSession);
+                            continue;
+                        }
                         if (frame is { Version: Protocol.Version, Type: "pc-item-result" })
                         {
                             this.items.AcceptResult(stream, frame);
@@ -453,7 +462,11 @@ public sealed class ClientRuntime : BackgroundService
                     this.Note("Bridge rejected: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
-                finally { this.items.Disconnect(stream); }
+                finally
+                {
+                    Volatile.Write(ref this.startedBridgeSession, null);
+                    this.items.Disconnect(stream);
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }

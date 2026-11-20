@@ -66,30 +66,43 @@ try
         await hub.StartAsync(lifetime.Token);
         var session = await hub.InvokeAsync<SessionInfo>("Hello", new Hello(id), lifetime.Token);
         sessions.Add(session);
-        var baseline = (SyntheticPokemon.Frame(1, SyntheticPokemon.Raw((uint)(100 + hubs.Count), 1)) with
+        var baseline = (SyntheticPokemon.Frame(1) with
         {
             MapNumber = 15 + hubs.Count,
+            Position = new MapPosition(5, 7, 28, 24, true),
         }).Parse();
         await hub.InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), session.SessionId, 1, true, baseline), lifetime.Token);
     }
     using var bridge = new TcpClient();
     await bridge.ConnectAsync(IPAddress.Loopback, bridgePort, lifetime.Token);
     long frame = 1;
-    var current = SyntheticPokemon.Frame(frame, SyntheticPokemon.Raw(100, 1)) with { BadgeMask = 0 };
+    var current = SyntheticPokemon.Frame(frame) with { BadgeMask = 0, Position = new MapPosition(5, 7, 28, 24, true) };
     await Send(current);
     await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].Players.All(p => p.LastSnapshot is not null));
     await Post<AutomationRun>(admin, $"/api/soullink/admin/runs/{run.Id}/start", new RunAction("demo"));
-    Console.WriteLine("Baseline accepted for all three players. Run started.");
+    Console.WriteLine("Verified: all three players can start with an empty party on the field.");
     for (int i = 0; i < 2; i++)
     {
-        var snapshot = (SyntheticPokemon.Frame(2, SyntheticPokemon.Raw((uint)(101 + i), 1),
+        var starter = (SyntheticPokemon.Frame(2, SyntheticPokemon.Raw((uint)(101 + i), 1)) with
+        { RubyStarterWindow = true }).Parse();
+        await hubs[i].InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), sessions[i].SessionId, 2, false, starter), lifetime.Token);
+    }
+    current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1)) with { BadgeMask = 0, RubyStarterWindow = true };
+    await Send(current);
+    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0]
+        .Encounters.Any(e => e.Area == Encounter.StarterArea && e.GroupId is not null && e.Members.Count == 3));
+    Console.WriteLine("Verified: the three starters form their own link without occupying Route 101.");
+    for (int i = 0; i < 2; i++)
+    {
+        var snapshot = (SyntheticPokemon.Frame(3, SyntheticPokemon.Raw((uint)(101 + i), 1),
             SyntheticPokemon.Raw((uint)(201 + i), 280, 1, box: i == 1)) with
         { MapNumber = 16 + i }).Parse();
-        await hubs[i].InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), sessions[i].SessionId, 2, false, snapshot), lifetime.Token);
+        await hubs[i].InvokeAsync<ObservationResult>("Observe", new Observation(Guid.NewGuid(), sessions[i].SessionId, 3, false, snapshot), lifetime.Token);
     }
     current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 280, 1)) with { BadgeMask = 0 };
     await Send(current);
-    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].Encounters.Any(e => e.GroupId is not null));
+    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0]
+        .Encounters.Any(e => e.Area == 16 && e.GroupId is not null && e.Members.Count == 3));
     Console.WriteLine("Verified: catch → client → authenticated SignalR → SQLite → three-player link (including direct-to-box catch).");
     Console.WriteLine("Client UI: " + ui);
     Console.WriteLine("Isolated demo data: " + data);
@@ -110,10 +123,18 @@ try
             && players.Any(p => p.GetProperty("marker").GetString() == "Star" && p.GetProperty("area").GetInt32() == 16)
             && players.Any(p => p.GetProperty("marker").GetString() == "Diamond" && p.GetProperty("area").GetInt32() == 17
                 && p.GetProperty("connection").GetString() == "Stale")
-            && state.GetProperty("links").GetArrayLength() == 1
+            && state.GetProperty("links").GetArrayLength() == 2
+            && state.GetProperty("history").EnumerateArray().Count(entry => entry.GetProperty("kind").GetString() == "caught") == 3
+            && state.GetProperty("history").EnumerateArray().Count(entry => entry.GetProperty("kind").GetString() == "linked") == 2
             && state.GetProperty("history").EnumerateArray().Any(entry => entry.GetProperty("kind").GetString() == "badge");
     });
-    Console.WriteLine("Verified: dashboard transmits player-selected markers, distinct map regions, stale positions, links and badge events.");
+    var rosterView = (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!;
+    var teamRows = RosterGridData.From(rosterView, RosterView.Team).Rows;
+    if (!teamRows.Any(row => row.Linked && row.Slots.Count(mon => mon?.State.Species == 1) == 3) ||
+        !teamRows.Any(row => row.Linked && row.Slots.Count(mon => mon?.State.Species is 280 or 281) == 2) ||
+        !RosterGridData.From(rosterView, RosterView.Box).Rows.Any(row => row.Linked && row.Slots.Any(mon => mon?.State.Species == 280)))
+        throw new InvalidDataException("Starter and caught links did not appear as shared roster rows.");
+    Console.WriteLine("Verified: the shared feed reports all three catches, and starter and catch links appear as rows in the team and box grids.");
     if (verifyOnly)
     {
         const string rule = "Keine Heilitems im Arenakampf.";
@@ -131,13 +152,13 @@ try
             throw new InvalidDataException("Arena completion did not reach the shared feed.");
         await hub.InvokeAsync("ChangeArena", 1, false, lifetime.Token);
         var trace = new BattleTrace(1, 25, 33, "MAX");
-        for (int sequence = 3; sequence <= 5; sequence++)
+        for (int sequence = 4; sequence <= 6; sequence++)
         {
             await Task.Delay(200, lifetime.Token);
             var snapshot = SyntheticPokemon.Frame(sequence, SyntheticPokemon.Raw(101, 1), SyntheticPokemon.Raw(201, 280, 1, hp: 0)).Parse() with
             {
-                InBattle = sequence == 3,
-                Faints = sequence == 3 ? [trace] : null,
+                InBattle = sequence == 4,
+                Faints = sequence == 4 ? [trace] : null,
             };
             var observed = await hub.InvokeAsync<ObservationResult>("Observe",
                 new Observation(Guid.NewGuid(), session.SessionId, sequence, false, snapshot), lifetime.Token);
@@ -150,7 +171,8 @@ try
             throw new InvalidDataException("Pending battle context was not scoped to the affected player.");
         await hub.InvokeAsync("ResolveFaint", pending.PokemonId, pending.IncidentId, true, "Volltreffer", lifetime.Token);
         var resolved = await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token);
-        if (!resolved.Encounters.Single().Dead || !resolved.History.Any(e => e.Kind == "death" && e.Message.Contains("Volltreffer")))
+        if (!resolved.Encounters.Single(e => e.Area == 16).Dead || resolved.Encounters.Single(e => e.Area == Encounter.StarterArea).Dead ||
+            !resolved.History.Any(e => e.Kind == "death" && e.Message.Contains("Volltreffer")))
             throw new InvalidDataException("The shared link death or reason was not saved.");
         Console.WriteLine("Verified: bilingual catch check, player-scoped arena changes, and battle context and death confirmation cross SignalR.");
     }

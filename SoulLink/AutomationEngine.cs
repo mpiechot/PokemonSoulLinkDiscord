@@ -73,7 +73,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         var run = RequireGroupRun(tx, groupId, runId);
         var members = request.Members ?? throw new InvalidDataException("Wähle einen Starter pro Spieler aus.");
         var existing = run.Encounters.SingleOrDefault(link => link.Area == Encounter.StarterArea);
-        if (existing is not null)
+        if (existing is { GroupId: not null })
         {
             if (members.Count == existing.Members.Count && members.All(pair =>
                 existing.Members.TryGetValue(pair.Key, out Guid pokemon) && pokemon == pair.Value)) return true;
@@ -85,9 +85,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             !members.TryGetValue(p.Id, out Guid selected) || !p.Pokemon.Any(m => m.Id == selected)))
             throw new InvalidDataException("Wähle für jeden Spieler ein unverlinktes Pokémon aus dem Startbestand.");
 
-        var starter = new Encounter { Area = Encounter.StarterArea, GroupId = Guid.NewGuid(), Members = new(members) };
-        run.Encounters.Insert(0, starter);
-        this.RecordCompletedLink(tx, run, starter);
+        var starter = existing ?? InsertStarterLink(run);
+        starter.Members = new(members);
+        this.CompleteLink(tx, run, starter);
         tx.Save(run);
         return true;
     });
@@ -103,12 +103,16 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (run.Phase is not (RunPhase.Active or RunPhase.Paused) || run.Players.Count < 2)
             throw new InvalidOperationException("Der Starter-Link ist nach dem Run-Start mit mindestens zwei Spielern verfügbar.");
-        if (run.Encounters.Any(link => link.Area == Encounter.StarterArea))
+        var starter = run.Encounters.SingleOrDefault(link => link.Area == Encounter.StarterArea);
+        if (starter is { GroupId: not null })
             throw new InvalidOperationException("Für diesen Run gibt es bereits einen Starter-Link.");
+        if (starter is { Dead: true })
+            throw new InvalidOperationException("Für den Starter-Link wurde bereits ein Todesfall erfasst.");
 
-        var linked = run.Encounters.SelectMany(link => link.Members.Values).ToHashSet();
+        var linked = run.Encounters.Where(link => link.Area != Encounter.StarterArea).SelectMany(link => link.Members.Values).ToHashSet();
         return run.Players.Select(p => new HostStarterPlayer(p.Id, p.Name, p.Pokemon
-            .Where(m => m.Imported && m.Present && !m.Dead && !m.State.IsEgg && !linked.Contains(m.Id))
+            .Where(m => m.Imported && m.Present && !m.Dead && !m.State.IsEgg && !linked.Contains(m.Id) &&
+                (starter is null || !starter.Members.TryGetValue(p.Id, out Guid identified) || m.Id == identified))
             .Select(m => new HostStarterPokemon(m.Id, m.State.Species, m.State.Nickname, m.State.Level)).ToArray())).ToArray();
     }
 
@@ -160,6 +164,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                         throw new InvalidOperationException("Every player must send a valid baseline before starting.");
                     run.Phase = RunPhase.Active;
                     run.Invitation = "";
+                    if (run.Encounters.SingleOrDefault(link => link.Area == Encounter.StarterArea) is { } starter)
+                        this.CompleteLink(tx, run, starter);
                     break;
                 case "load":
                     if (run.Phase == RunPhase.Finished) throw new InvalidOperationException("Finished runs cannot be resumed.");
@@ -316,9 +322,13 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 var tracked = player.Pokemon.SingleOrDefault(p => p.State.Identity == state.Identity);
                 if (tracked is null)
                 {
-                    tracked = new TrackedPokemon { State = state, Imported = import };
+                    // The verified Ruby bridge reports the interval from choosing the starter to receiving the Pokédex.
+                    bool starter = player.Pokemon.Count == 0 && snapshot.RubyStarterWindow && snapshot.Pokemon.Count == 1 &&
+                        state is { Container: Placement.Party, Slot: 0, MetArea: 16, IsEgg: false };
+                    tracked = new TrackedPokemon { State = state, Imported = import || starter };
                     player.Pokemon.Add(tracked);
-                    if (!import && !state.IsEgg) this.Catch(tx, run, player, tracked, snapshot);
+                    if (starter) this.RecordStarter(tx, run, player, tracked);
+                    else if (!import && !state.IsEgg) this.Catch(tx, run, player, tracked, snapshot);
                 }
                 else if (!import && tracked.State.Species != state.Species)
                 {
@@ -553,15 +563,28 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         encounter.Members[player.Id] = pokemon.Id;
         this.Event(tx, run, "caught", $"{player.Name}: {species} in {place} gefangen ({encounter.Members.Count}/{run.Players.Count}).",
             player: player, area: area, snapshot: snapshot, details: details);
-        if (encounter.Members.Count == run.Players.Count && encounter.GroupId is null)
-        {
-            encounter.GroupId = Guid.NewGuid();
-            this.RecordCompletedLink(tx, run, encounter);
-        }
+        this.CompleteLink(tx, run, encounter);
     }
 
-    private void RecordCompletedLink(AutomationStore.StoreTransaction tx, AutomationRun run, Encounter encounter)
+    private static Encounter InsertStarterLink(AutomationRun run)
     {
+        var starter = new Encounter { Area = Encounter.StarterArea };
+        run.Encounters.Insert(0, starter);
+        return starter;
+    }
+
+    private void RecordStarter(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, TrackedPokemon pokemon)
+    {
+        var starter = run.Encounters.SingleOrDefault(link => link.Area == Encounter.StarterArea) ?? InsertStarterLink(run);
+        starter.Members.Add(player.Id, pokemon.Id);
+        pokemon.Dead = starter.Dead;
+        if (run.Phase == RunPhase.Active) this.CompleteLink(tx, run, starter);
+    }
+
+    private void CompleteLink(AutomationStore.StoreTransaction tx, AutomationRun run, Encounter encounter)
+    {
+        if (encounter.GroupId is not null || encounter.Members.Count != run.Players.Count) return;
+        encounter.GroupId = Guid.NewGuid();
         var members = DescribeLink(run, encounter).ToArray();
         string memberList = string.Join(" · ", members.Select(m => $"{m.Player}: {RubyNames.Pokemon(m.Species)}"));
         this.Event(tx, run, "linked", $"{RubyNames.Area(encounter.Area)} · {memberList}.", area: encounter.Area,

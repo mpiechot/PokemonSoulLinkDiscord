@@ -488,10 +488,10 @@ internal sealed class CompanionForm : Form
         {
             if (this.dock.TryAttach(this.game)) this.dock.FocusGame();
         }
-        if (!this.startupScriptingClosed && this.game is { HasExited: false } game && this.runtime.Status().Snapshot is not null)
+        if (!this.startupScriptingClosed && this.game is { HasExited: false } game && DateTimeOffset.UtcNow < this.dockUntil &&
+            this.runtime.OwnedBridgeReady)
         {
-            this.startupScriptingClosed = true;
-            EmulatorDock.CloseStartupScriptingWindow(game);
+            this.startupScriptingClosed = EmulatorDock.CloseStartupScriptingWindow(game);
         }
         this.Render();
         var view = this.runtime.Status();
@@ -537,7 +537,9 @@ internal sealed class CompanionForm : Form
         this.status.Text = this.shutdownError ?? this.joinError ?? registration;
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
             view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
-        this.SetConnection(this.gameConnection, view.Snapshot is not null, "Offline. Spielstand in mGBA laden.");
+        this.SetConnection(this.gameConnection, view.Snapshot is not null, this.runtime.OwnedBridgeReady
+            ? "mGBA verbunden. Neues Spiel beginnen oder Spielstand laden."
+            : "Offline. Spiel in mGBA öffnen.");
         this.gameStatus.Visible = !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
             : running ? "mGBA läuft separat. Im SoulLink-Menü einbetten."
@@ -552,7 +554,7 @@ internal sealed class CompanionForm : Form
         this.team.Render(view, RosterView.Team);
         this.openRoster?.Render(view, this.openRosterFilter);
         this.feed.Render(view.Run?.History ?? [], view.Run is { Phase: RunPhase.Lobby }
-            ? "Der Feed startet mit dem Run." : "Noch keine Ereignisse.");
+            ? "Lobby. Fänge werden erfasst, sobald der Gastgeber auf „Starten“ klickt." : "Noch keine Ereignisse.");
     }
 
     private static PendingDeath[] OwnDeaths(ClientView view) =>

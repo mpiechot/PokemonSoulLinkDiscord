@@ -125,7 +125,8 @@ internal static class Program
         }
         if (smokeClose)
         {
-            DockSmokeTest.RunClose(runtime, emulator, rom, home, args[2], detached: args.Length == 4 && args[3] == "detached");
+            DockSmokeTest.RunClose(runtime, emulator, rom, home, args[2], detached: args.Length == 4 && args[3] == "detached",
+                emptyParty: args.Length == 4 && args[3] == "empty");
             return;
         }
         string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
