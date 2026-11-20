@@ -107,9 +107,11 @@ internal sealed class RosterGrid : DashboardScrollView
         int rightWidth = Math.Clamp(width / 3, 64, 90);
         int leftWidth = width - rightWidth - 7;
         int right = left + leftWidth + 7;
-        string name = state.IsEgg ? "Ei" : (state.IsShiny ? "★ " : "") + RubyNames.Pokemon(state.Species);
-        TextRenderer.DrawText(canvas, name, this.heading, new Rectangle(left, box.Y + 4, leftWidth, 21),
-            state.IsShiny ? DashboardTheme.Gold : DashboardTheme.Text, flags);
+        string name = (state.IsShiny && !state.IsEgg ? "★ " : "") + RubyNames.PokemonWithNickname(state);
+        var nameBounds = new Rectangle(left, box.Y + 3, width, 21);
+        TextRenderer.DrawText(canvas, name, this.heading, nameBounds, state.IsShiny ? DashboardTheme.Gold : DashboardTheme.Text,
+            flags | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        if (TextRenderer.MeasureText(name, this.heading).Width > nameBounds.Width) this.hints.Add((nameBounds, name));
         var portrait = new Rectangle(left + (leftWidth - 58) / 2, box.Y + 25, 58, 58);
         if (appearance is not null && this.sprites.Find(appearance, state.IsShiny) is { } sprite)
         {
@@ -132,9 +134,9 @@ internal sealed class RosterGrid : DashboardScrollView
         var details = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
         bool inTeam = state.Container == Placement.Party;
         TextRenderer.DrawText(canvas, inTeam ? $"Level: {state.Level}" : $"Box: {(state.Box ?? 0) + 1}", this.small,
-            new Rectangle(right, box.Y + 12, rightWidth, 19), DashboardTheme.Text, details);
+            new Rectangle(right, box.Y + 25, rightWidth, 19), DashboardTheme.Text, details);
         TextRenderer.DrawText(canvas, inTeam ? $"KP: {state.Hp}/{state.MaxHp}" : $"Platz: {state.Slot + 1}", this.small,
-            new Rectangle(right, box.Y + 31, rightWidth, 19), DashboardTheme.Muted, details);
+            new Rectangle(right, box.Y + 44, rightWidth, 19), DashboardTheme.Muted, details);
         if (appearance is null) return;
         var types = new[] { DashboardTheme.RubyType(state.RubyType1) ?? appearance.Type1, DashboardTheme.RubyType(state.RubyType2) ?? appearance.Type2 }.Distinct().ToArray();
         int iconLeft = right + 2;
@@ -144,7 +146,7 @@ internal sealed class RosterGrid : DashboardScrollView
             var (icon, label) = this.sprites.TypeIcon(type);
             if (icon is not null)
             {
-                var slot = new Rectangle(iconLeft, box.Y + 56, size, size);
+                var slot = new Rectangle(iconLeft, box.Y + 68, size, size);
                 double scale = Math.Min((double)size / icon.Width, (double)size / icon.Height);
                 int badgeWidth = (int)Math.Round(icon.Width * scale);
                 int badgeHeight = (int)Math.Round(icon.Height * scale);

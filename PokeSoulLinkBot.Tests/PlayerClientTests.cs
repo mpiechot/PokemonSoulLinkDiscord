@@ -133,6 +133,16 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public void RosterNamesAppendCustomNicknamesAndKeepDefaultNamesAndEggsCompact()
+    {
+        var charmander = new PokemonState { Species = 4 };
+        Assert.Equal("Glumanda (Flamme)", RubyNames.PokemonWithNickname(charmander with { Nickname = " Flamme " }));
+        Assert.Equal("Glumanda", RubyNames.PokemonWithNickname(charmander with { Nickname = "GLUMANDA" }));
+        Assert.Equal("Glumanda", RubyNames.PokemonWithNickname(charmander));
+        Assert.Equal("Ei", RubyNames.PokemonWithNickname(charmander with { IsEgg = true, Nickname = "Ei" }));
+    }
+
+    [Fact]
     public void RosterProjectsActualLinksIntoPlayerColumnsAndKeepsUnlinkedPokemonSeparate()
     {
         Guid first = Guid.NewGuid(), second = Guid.NewGuid();

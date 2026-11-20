@@ -58,6 +58,15 @@ public static partial class RubyNames
 
     public static string Pokemon(int id) => ForSpecies(id)?.German ?? SpeciesCatalog.Name(id);
 
+    public static string PokemonWithNickname(PokemonState state)
+    {
+        if (state.IsEgg) return "Ei";
+        string species = Pokemon(state.Species);
+        string? nickname = state.Nickname?.Trim();
+        return string.IsNullOrEmpty(nickname) || string.Equals(species, nickname, StringComparison.OrdinalIgnoreCase)
+            ? species : $"{species} ({nickname})";
+    }
+
     public static string? Move(int? id) => id is > 0 and < 355 ? MoveById[id.Value] : null;
 
     public static string Area(int id) => id == Encounter.StarterArea ? "Starter" : id >= 0 && id < Places.Length ? Places[id]
