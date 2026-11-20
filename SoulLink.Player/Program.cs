@@ -86,6 +86,7 @@ internal static class Program
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();
                 DockSmokeTest.VerifyFirstHostConnection(home);
+                DockSmokeTest.VerifyLinkEditor();
             }
             catch (Exception error)
             {

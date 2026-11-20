@@ -34,7 +34,7 @@ Für einen neuen Run bekommst du eine Einladung als Text. Derselbe Dialog öffne
 
 Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Lege eine Gruppe und darin einen Run an. Über **Einladung kopieren** erhältst du den Text zum Weitergeben. Der Run wird dabei auch für dich gemerkt. Sobald alle Mitspieler gültige Spieldaten übertragen haben, aktualisierst du die Ansicht und klickst auf **Starten**. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
 
-Beginnt ihr gemeinsam ein neues Spiel, kannst du den Run starten, sobald alle im Spielfeld angekommen sind. SoulLink erfasst die frisch gewählten Starter automatisch. Bei älteren Spielständen kannst du aus dem übernommenen Bestand pro Spieler einen Starter auswählen. Öffne dafür nach dem Run-Start **Starter verlinken**. Der Starter-Link erscheint als gemeinsame Zeile im Team und lässt Route 101 für einen regulären Fang frei.
+Beginnt ihr gemeinsam ein neues Spiel, kannst du den Run starten, sobald alle im Spielfeld angekommen sind. SoulLink erfasst die frisch gewählten Starter automatisch. Mit **Links bearbeiten** kannst du Starter und Fänge im aktiven oder pausierten Run nachträglich zuordnen. Ziehe jedes Pokémon in seiner Spielerspalte zur gewünschten Zeile oder zu **Unverlinkt**. **Links speichern** übernimmt die Zuordnung für alle. Der Starter-Link lässt Route 101 für einen regulären Fang frei.
 
 Unter **SoulLink → Run beitreten / wechseln** findest du die gemerkten Einladungen. Beim Wechsel bitte vorher im Spiel speichern. SoulLink beendet mGBA und öffnet dieselbe EXE mit dem gewählten Run-Profil.
 

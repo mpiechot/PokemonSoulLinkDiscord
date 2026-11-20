@@ -5,6 +5,7 @@ namespace SoulLink.Player;
 
 internal sealed class HostingForm : Form
 {
+    private const string Connecting = "Verbinde mit dem Run-Server …";
     private readonly PlayerProfileLibrary profiles;
     private readonly TextBox server = Input("HTTPS-Serveradresse");
     private readonly TextBox key = Input("Admin-Schlüssel");
@@ -21,7 +22,7 @@ internal sealed class HostingForm : Form
     private readonly Button saveProfile;
     private readonly Button invite;
     private readonly Button players;
-    private readonly Button linkStarters;
+    private readonly Button editLinks;
     private bool busy;
 
     public HostingForm(PlayerProfileLibrary profiles, string currentServer)
@@ -63,8 +64,8 @@ internal sealed class HostingForm : Form
         this.invite.Click += (_, _) => this.SaveInvitation(copy: true);
         this.players = DashboardTheme.Button("Spieler und Spielstände");
         this.players.Click += async (_, _) => await this.UseServerAsync(this.ShowPlayersAsync);
-        this.linkStarters = DashboardTheme.Button("Starter verlinken");
-        this.linkStarters.Click += async (_, _) => await this.UseServerAsync(this.ShowStartersAsync);
+        this.editLinks = DashboardTheme.Button("Links bearbeiten");
+        this.editLinks.Click += async (_, _) => await this.UseServerAsync(this.ShowLinkEditorAsync);
         this.groups.SelectedIndexChanged += async (_, _) =>
         {
             if (this.busy) return;
@@ -89,7 +90,7 @@ internal sealed class HostingForm : Form
         layout.Controls.Add(Line(this.runName, this.createRun), 0, 2);
         layout.Controls.Add(this.runs, 0, 3);
         layout.Controls.Add(Line(this.start, this.pause, this.resume, this.end, this.players), 0, 4);
-        layout.Controls.Add(Line(this.invite, this.saveProfile, this.linkStarters), 0, 5);
+        layout.Controls.Add(Line(this.invite, this.saveProfile, this.editLinks), 0, 5);
         layout.Controls.Add(this.feedback, 0, 6);
         this.Controls.Add(layout);
         this.ClearServerView();
@@ -132,14 +133,14 @@ internal sealed class HostingForm : Form
         if (this.busy) return;
         this.busy = true;
         this.feedback.ForeColor = DashboardTheme.Muted;
-        this.feedback.Text = "Verbinde mit dem Run-Server …";
+        this.feedback.Text = Connecting;
         this.UpdateActions();
         this.groups.Enabled = this.server.Enabled = this.key.Enabled = false;
         try
         {
             using var client = new HostAdminClient(this.server.Text, this.key.Text);
             await action(client);
-            if (!this.IsDisposed)
+            if (!this.IsDisposed && this.feedback.Text == Connecting)
             {
                 this.feedback.ForeColor = DashboardTheme.Accent;
                 this.feedback.Text = this.Group is null
@@ -208,49 +209,21 @@ internal sealed class HostingForm : Form
         this.resume.Enabled = !this.busy && (run is { Phase: RunPhase.Paused } or { Phase: RunPhase.Lobby, Selected: false });
         this.end.Enabled = !this.busy && run is { Phase: not RunPhase.Finished };
         this.players.Enabled = !this.busy && run is { Players: > 0 };
-        this.linkStarters.Enabled = !this.busy && run is { Players: >= 2, Phase: RunPhase.Active or RunPhase.Paused };
+        this.editLinks.Enabled = !this.busy && run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
         this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
     }
 
-    private async Task ShowStartersAsync(HostAdminClient client)
+    private async Task ShowLinkEditorAsync(HostAdminClient client)
     {
         if (this.Group is not { } group || this.Run is not { } run) return;
-        var players = await client.StarterCandidatesAsync(group.Id, run.Id);
+        var editor = await client.LinkEditorAsync(group.Id, run.Id);
         if (this.IsDisposed) return;
-        var missing = players.Where(player => player.Pokemon.Length == 0).Select(player => player.Name).ToArray();
-        if (missing.Length > 0)
-            throw new InvalidOperationException($"Kein unverlinktes Starter-Pokémon im Startbestand von {string.Join(", ", missing)}.");
-
-        using var dialog = new Form();
-        RunDialogs.Configure(dialog, $"Starter in {run.Name} verlinken", new Size(610, 360));
-        var confirm = DashboardTheme.Button("Starter-Link speichern");
-        confirm.Dock = DockStyle.Bottom;
-        confirm.Height = 36;
-        confirm.DialogResult = DialogResult.OK;
-        var rows = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, WrapContents = false, FlowDirection = FlowDirection.TopDown };
-        var choices = new Dictionary<Guid, ComboBox>();
-        foreach (var player in players)
+        using var dialog = new LinkEditorForm(run.Name, editor, changes => client.SaveLinksAsync(group.Id, run.Id, changes));
+        if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            var choice = new ComboBox { Width = 330, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = player.Name };
-            choice.DisplayMember = nameof(StarterRow.Label);
-            choice.Items.AddRange(player.Pokemon.Select(p => new StarterRow(p)).ToArray());
-            choice.SelectedIndex = player.Pokemon.Length == 1 ? 0 : -1;
-            choice.SelectedIndexChanged += (_, _) => UpdateConfirm();
-            choices.Add(player.Id, choice);
-            var row = Line(new Label { Text = player.Name, Width = 155, AutoEllipsis = true }, choice);
-            row.Dock = DockStyle.None;
-            row.Size = new Size(520, 40);
-            rows.Controls.Add(row);
+            this.feedback.ForeColor = DashboardTheme.Accent;
+            this.feedback.Text = "Links gespeichert.";
         }
-        UpdateConfirm();
-        dialog.Controls.Add(rows);
-        dialog.Controls.Add(confirm);
-        if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-        await client.LinkStartersAsync(group.Id, run.Id, choices.ToDictionary(pair => pair.Key, pair => ((StarterRow)pair.Value.SelectedItem!).Pokemon.Id));
-        if (!this.IsDisposed) MessageBox.Show(this, "Die Starter wurden verlinkt.", "Starter-Link");
-
-        void UpdateConfirm() => confirm.Enabled = choices.Values.All(choice => choice.SelectedIndex >= 0);
     }
 
     private async Task ShowPlayersAsync(HostAdminClient client)
@@ -319,13 +292,6 @@ internal sealed class HostingForm : Form
     private sealed record PlayerRow(HostPlayer Player)
     {
         public string Label => $"{this.Player.Name}  |  {this.Player.Connection}  |  {this.Player.Diagnostic}";
-    }
-
-    private sealed record StarterRow(HostStarterPokemon Pokemon)
-    {
-        public string Label => RubyNames.Pokemon(this.Pokemon.Species) +
-            (string.IsNullOrWhiteSpace(this.Pokemon.Nickname) ? "" : $" ({this.Pokemon.Nickname})") +
-            (this.Pokemon.Level is int level ? $" · Level {level}" : "");
     }
 }
 

@@ -34,9 +34,9 @@ try
 {
     await WaitFor(server + "/health/soullink");
     await WaitFor(ui + "/api/status");
+    using var hostTools = new HostAdminClient(server, adminKey);
     if (verifyOnly)
     {
-        using var hostTools = new HostAdminClient(server, adminKey);
         var monday = await hostTools.CreateGroupAsync("Monday group");
         var friday = await hostTools.CreateGroupAsync("Friday group");
         var mondayRun = await hostTools.CreateRunAsync(monday.Id, "Monday Ruby");
@@ -47,7 +47,9 @@ try
             throw new InvalidOperationException("Discord-free groups did not retain separate runs.");
         Console.WriteLine("Verified: host API creates and lists isolated groups with Discord disabled.");
     }
-    var run = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("demo", "Three-player Ruby demo"));
+    var demoGroup = await hostTools.CreateGroupAsync("Demo group");
+    var run = await hostTools.CreateRunAsync(demoGroup.Id, "Three-player Ruby demo");
+    string runList = $"/api/soullink/admin/runs/group:{demoGroup.Id:N}";
     await Post<object>(http, ui + "/api/join", new { server, invitation = run.Invitation, name = "Marco (demo)", marker = "Star" });
     var sessions = new List<SessionInfo>();
     foreach (string name in new[] { "Alex (demo)", "Sam (demo)" })
@@ -78,8 +80,8 @@ try
     long frame = 1;
     var current = SyntheticPokemon.Frame(frame) with { BadgeMask = 0, Position = new MapPosition(5, 7, 28, 24, true) };
     await Send(current);
-    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].Players.All(p => p.LastSnapshot is not null));
-    await Post<AutomationRun>(admin, $"/api/soullink/admin/runs/{run.Id}/start", new RunAction("demo"));
+    await WaitUntil(async () => (await hostTools.RunsAsync(demoGroup.Id)).Single().Ready == 3);
+    await hostTools.ChangeRunAsync(demoGroup.Id, run.Id, "start");
     Console.WriteLine("Verified: all three players can start with an empty party on the field.");
     for (int i = 0; i < 2; i++)
     {
@@ -89,7 +91,7 @@ try
     }
     current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1)) with { BadgeMask = 0, RubyStarterWindow = true };
     await Send(current);
-    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0]
+    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>(runList, Protocol.Json))![0]
         .Encounters.Any(e => e.Area == Encounter.StarterArea && e.GroupId is not null && e.Members.Count == 3));
     Console.WriteLine("Verified: the three starters form their own link without occupying Route 101.");
     for (int i = 0; i < 2; i++)
@@ -101,7 +103,7 @@ try
     }
     current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 280, 1)) with { BadgeMask = 0 };
     await Send(current);
-    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0]
+    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>(runList, Protocol.Json))![0]
         .Encounters.Any(e => e.Area == 16 && e.GroupId is not null && e.Members.Count == 3));
     Console.WriteLine("Verified: catch → client → authenticated SignalR → SQLite → three-player link (including direct-to-box catch).");
     Console.WriteLine("Client UI: " + ui);
@@ -109,7 +111,7 @@ try
     if (!args.Contains("--headless") && !verifyOnly) Process.Start(new ProcessStartInfo(ui) { UseShellExecute = true });
     current = SyntheticPokemon.Frame(++frame, SyntheticPokemon.Raw(100, 1), SyntheticPokemon.Raw(200, 281, 1, experience: 126)) with { BadgeMask = 0 };
     await Send(current);
-    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>("/api/soullink/admin/runs/demo", Protocol.Json))![0].History.Any(e => e.Kind == "evolved"));
+    await WaitUntil(async () => (await admin.GetFromJsonAsync<List<AutomationRun>>(runList, Protocol.Json))![0].History.Any(e => e.Kind == "evolved"));
     Console.WriteLine("Verified: evolution preserves identity and link membership.");
     current = current with { Frame = ++frame, PlaySeconds = frame, BadgeMask = 1 };
     await Send(current);
@@ -137,6 +139,20 @@ try
     Console.WriteLine("Verified: the shared feed reports all three catches, and starter and catch links appear as rows in the team and box grids.");
     if (verifyOnly)
     {
+        var originalLinks = await hostTools.LinkEditorAsync(demoGroup.Id, run.Id);
+        var originalEdits = originalLinks.Links.Select(link => new HostLinkEdit(link.Area, link.Members)).ToArray();
+        var route = new Dictionary<Guid, Guid>(originalEdits.Single(link => link.Area == 16).Members);
+        Guid boxedPlayer = sessions[1].PlayerId;
+        var moved = new HostLinkEdit(17, new() { [boxedPlayer] = route[boxedPlayer] });
+        route.Remove(boxedPlayer);
+        await hostTools.SaveLinksAsync(demoGroup.Id, run.Id, new EditLinksRequest(originalLinks.Revision,
+            [originalEdits.Single(link => link.Area == Encounter.StarterArea), new(16, route), moved]));
+        await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
+            .Run?.Links?.Any(link => link.Area == "Route 102" && link.Members.Single().PlayerId == boxedPlayer) == true);
+        var changedLinks = await hostTools.LinkEditorAsync(demoGroup.Id, run.Id);
+        await hostTools.SaveLinksAsync(demoGroup.Id, run.Id, new EditLinksRequest(changedLinks.Revision, originalEdits));
+        Console.WriteLine("Verified: a host correction reaches an already connected player's existing status feed.");
+
         byte[] invalid = Convert.FromHexString(current.Pokemon[0].Hex);
         invalid[40] ^= 0x20;
         await Send(current with { Pokemon = [current.Pokemon[0] with { Hex = Convert.ToHexString(invalid) }, current.Pokemon[1]] });
@@ -166,7 +182,7 @@ try
         await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
             .Single(player => player.Id == localPlayer).Connection == "OutOfSync");
         await WaitUntil(async () => await SharedLocalConnection() == "OutOfSync");
-        await Post<object>(admin, $"/api/soullink/admin/runs/{run.Id}/players/{localPlayer}/rebaseline", new RunAction("demo"));
+        await hostTools.RebaselineAsync(demoGroup.Id, run.Id, localPlayer);
         current = current with { Frame = ++frame, PlaySeconds = frame };
         await Send(current);
         await WaitUntil(async () => await SharedLocalConnection() == "Ready");

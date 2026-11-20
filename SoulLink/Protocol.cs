@@ -171,3 +171,9 @@ public sealed record HostPlayer(Guid Id, string Name, string Connection, string 
 public sealed record HostStarterPlayer(Guid Id, string Name, HostStarterPokemon[] Pokemon);
 public sealed record HostStarterPokemon(Guid Id, int Species, string Nickname, int? Level);
 public sealed record StarterLinkRequest(Dictionary<Guid, Guid>? Members);
+public sealed record HostLinkEditor(string Revision, HostLinkPlayer[] Players, HostLinkRow[] Links);
+public sealed record HostLinkPlayer(Guid Id, string Name, HostLinkPokemon[] Pokemon);
+public sealed record HostLinkPokemon(Guid Id, int Species, string Nickname, int? Level, int MetArea, Placement Container);
+public sealed record HostLinkRow(int Area, bool Locked, Dictionary<Guid, Guid> Members);
+public sealed record HostLinkEdit(int Area, Dictionary<Guid, Guid> Members);
+public sealed record EditLinksRequest(string Revision, HostLinkEdit[]? Links);

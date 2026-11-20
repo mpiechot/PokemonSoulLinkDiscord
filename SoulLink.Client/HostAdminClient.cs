@@ -37,12 +37,12 @@ public sealed class HostAdminClient : IDisposable
     public Task<HostPlayer[]> PlayersAsync(Guid group, Guid run) =>
         this.SendAsync<HostPlayer[]>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/players");
 
-    public Task<HostStarterPlayer[]> StarterCandidatesAsync(Guid group, Guid run) =>
-        this.SendAsync<HostStarterPlayer[]>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/starters");
+    public Task<HostLinkEditor> LinkEditorAsync(Guid group, Guid run) =>
+        this.SendAsync<HostLinkEditor>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/links");
 
-    public async Task LinkStartersAsync(Guid group, Guid run, Dictionary<Guid, Guid> members)
+    public async Task SaveLinksAsync(Guid group, Guid run, EditLinksRequest changes)
     {
-        using var result = await this.SendAsync<JsonDocument>(HttpMethod.Post, $"groups/{group:D}/runs/{run:D}/starters", new StarterLinkRequest(members));
+        using var result = await this.SendAsync<JsonDocument>(HttpMethod.Put, $"groups/{group:D}/runs/{run:D}/links", changes);
     }
 
     public async Task RebaselineAsync(Guid group, Guid run, Guid player)
@@ -67,7 +67,9 @@ public sealed class HostAdminClient : IDisposable
             string? message = null;
             try { message = (await response.Content.ReadFromJsonAsync<HostError>(Protocol.Json))?.Error; }
             catch (Exception error) when (error is JsonException or NotSupportedException) { }
-            throw new InvalidOperationException(message ?? $"Der Server antwortet mit HTTP {(int)response.StatusCode}.");
+            throw new InvalidOperationException(message ?? (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotFound
+                ? "Diese Funktion fehlt auf dem Run-Server. Bitte den Server aktualisieren."
+                : $"Der Server antwortet mit HTTP {(int)response.StatusCode}."));
         }
         return await response.Content.ReadFromJsonAsync<T>(Protocol.Json) ?? throw new InvalidDataException("Die Serverantwort ist leer.");
     }

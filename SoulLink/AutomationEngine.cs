@@ -65,6 +65,78 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public void RebaselineGroupRun(Guid groupId, Guid runId, Guid playerId) => this.Rebaseline(GroupScope(groupId), runId, playerId);
 
+    public HostLinkEditor GroupLinkEditor(Guid groupId, Guid runId) => store.Execute(tx =>
+        BuildLinkEditor(RequireGroupRun(tx, groupId, runId)));
+
+    public void EditGroupLinks(Guid groupId, Guid runId, EditLinksRequest request) => store.Execute(tx =>
+    {
+        var run = RequireGroupRun(tx, groupId, runId);
+        var editor = BuildLinkEditor(run);
+        if (editor.Revision != request.Revision)
+            throw new InvalidOperationException("Die Links haben sich geändert. Öffne das Menü erneut, bevor du speicherst.");
+
+        var edits = request.Links ?? throw new InvalidDataException("Keine Link-Daten erhalten.");
+        var locked = editor.Links.Where(row => row.Locked).ToArray();
+        var lockedAreas = locked.Select(row => row.Area).ToHashSet();
+        if (edits.Length > Encounter.StarterArea + 1 || edits.Any(row => row is null || row.Members is null ||
+            row.Area is < 0 or > Encounter.StarterArea || lockedAreas.Contains(row.Area)) ||
+            edits.Select(row => row.Area).Distinct().Count() != edits.Length)
+            throw new InvalidDataException("Link-Daten enthalten einen ungültigen, geschützten oder doppelten Fangort.");
+
+        var protectedPokemon = locked.SelectMany(row => row.Members.Values).ToHashSet();
+        var eligible = editor.Players.ToDictionary(player => player.Id, player => player.Pokemon
+            .Where(mon => !protectedPokemon.Contains(mon.Id)).Select(mon => mon.Id).ToHashSet());
+        var assigned = new HashSet<Guid>();
+        foreach (var pair in edits.SelectMany(row => row.Members))
+        {
+            if (!eligible.TryGetValue(pair.Key, out var available) || !available.Contains(pair.Value) || !assigned.Add(pair.Value))
+                throw new InvalidDataException("Jedes Pokémon kann nur einem Link und seinem eigenen Spieler zugeordnet werden.");
+        }
+
+        var desired = edits.Where(row => row.Members.Count > 0).ToDictionary(row => row.Area);
+        bool changed = run.Encounters.RemoveAll(link => !lockedAreas.Contains(link.Area) && !desired.ContainsKey(link.Area)) > 0;
+        foreach (var row in desired.Values)
+        {
+            var encounter = run.Encounters.SingleOrDefault(link => link.Area == row.Area);
+            if (encounter is not null && encounter.Members.Count == row.Members.Count && encounter.Members.All(pair =>
+                row.Members.TryGetValue(pair.Key, out Guid id) && id == pair.Value)) continue;
+            if (encounter is null)
+            {
+                encounter = row.Area == Encounter.StarterArea ? InsertStarterLink(run) : new Encounter { Area = row.Area };
+                if (row.Area != Encounter.StarterArea) run.Encounters.Add(encounter);
+            }
+
+            encounter.Members = new(row.Members);
+            if (encounter.Members.Count != run.Players.Count) encounter.GroupId = null;
+            this.CompleteLink(tx, run, encounter);
+            changed = true;
+        }
+
+        if (!changed) return false;
+        this.Event(tx, run, "links-corrected", "Der Gastgeber hat die Link-Zuordnungen korrigiert.", notify: false);
+        tx.Save(run);
+        return true;
+    });
+
+    private static HostLinkEditor BuildLinkEditor(AutomationRun run)
+    {
+        if (run.Phase is not (RunPhase.Active or RunPhase.Paused))
+            throw new InvalidOperationException("Link-Zuordnungen sind in aktiven und pausierten Runs bearbeitbar.");
+
+        var editable = run.Players.SelectMany(player => player.Pokemon)
+            .Where(pokemon => pokemon.Present && !pokemon.Dead && !pokemon.State.IsEgg).Select(pokemon => pokemon.Id).ToHashSet();
+        var assigned = run.Encounters.SelectMany(link => link.Members.Values).ToHashSet();
+        var players = run.Players.Select(player => new HostLinkPlayer(player.Id, player.Name, player.Pokemon
+            .Where(mon => editable.Contains(mon.Id) || assigned.Contains(mon.Id))
+            .Select(mon => new HostLinkPokemon(mon.Id, mon.State.Species, mon.State.Nickname, mon.State.Level, mon.State.MetArea, mon.State.Container))
+            .ToArray())).ToArray();
+        var links = run.Encounters.OrderBy(link => link.Area == Encounter.StarterArea ? -1 : link.Area)
+            .Select(link => new HostLinkRow(link.Area, link.Dead || link.Failed || link.Members.Values.Any(id => !editable.Contains(id)),
+                link.Members.OrderBy(pair => pair.Key).ToDictionary())).ToArray();
+        string revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Protocol.Serialize(new { run.Phase, Links = links }))));
+        return new HostLinkEditor(revision, players, links);
+    }
+
     public HostStarterPlayer[] GroupStarterCandidates(Guid groupId, Guid runId) => store.Execute(tx =>
         StarterCandidates(RequireGroupRun(tx, groupId, runId)));
 

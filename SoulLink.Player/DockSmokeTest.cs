@@ -326,6 +326,22 @@ internal static class DockSmokeTest
             throw new InvalidOperationException("The distinct types displayed for Geodude and Pidgeot must have separate symbols.");
     }
 
+    internal static void VerifyLinkEditor()
+    {
+        Guid player = Guid.NewGuid(), first = Guid.NewGuid(), second = Guid.NewGuid(), third = Guid.NewGuid();
+        var snapshot = new HostLinkEditor("revision", [new(player, "Spieler", [new(first, 1, "", 5, 16, Placement.Party),
+            new(second, 4, "", 5, 17, Placement.Party), new(third, 7, "", null, 17, Placement.Box)])],
+            [new(16, false, new() { [player] = first }), new(17, false, new() { [player] = second })]);
+        using var editor = new LinkEditorForm("Rubin", snapshot, _ => Task.CompletedTask);
+        if (!editor.MovePokemon(player, first, 16, 17) || editor.Changes().Links!.Single(row => row.Area == 16).Members[player] != second)
+            throw new InvalidOperationException("Dropping onto an occupied link must swap that player's Pokémon.");
+        if (!editor.MovePokemon(player, first, 17, null) || !editor.MovePokemon(player, third, null, Encounter.StarterArea))
+            throw new InvalidOperationException("Unlinking a Pokémon or assigning a boxed Pokémon failed.");
+        var saved = editor.Changes().Links!;
+        if (saved.Any(row => row.Area == 17) || saved.Single(row => row.Area == Encounter.StarterArea).Members[player] != third)
+            throw new InvalidOperationException("The link editor did not produce the edited memberships.");
+    }
+
     internal static void VerifyFirstHostConnection(string home)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

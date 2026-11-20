@@ -83,6 +83,48 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void HostCanMoveAndRemoveLinkMembersAtomicallyWithoutChangingTheirInventories()
+    {
+        var group = this.engine.CreateGroup("Spielrunde");
+        var other = this.engine.CreateGroup("Andere Runde");
+        var run = this.engine.CreateGroupRun(group.Id, new GroupRunRequest("Rubin"));
+        var invitation = new AutomationRun { Invitation = run.Invitation };
+        var first = this.Join(invitation, "Erster");
+        var second = this.Join(invitation, "Zweiter");
+        foreach (var client in new[] { first, second })
+            this.Send(client, 1, true, Snapshot(1, Mon(1), Mon(2) with { MetArea = 17 }));
+        this.engine.ChangeGroupRun(group.Id, run.Id, "start");
+
+        var initial = this.engine.GroupLinkEditor(group.Id, run.Id);
+        var starters = initial.Players.ToDictionary(player => player.Id, player => player.Pokemon.Single(mon => mon.MetArea == 16).Id);
+        var route = initial.Players.ToDictionary(player => player.Id, player => player.Pokemon.Single(mon => mon.MetArea == 17).Id);
+        var changes = new EditLinksRequest(initial.Revision, [new(Encounter.StarterArea, starters), new(17, route)]);
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.EditGroupLinks(other.Id, run.Id, changes));
+        Assert.Throws<InvalidDataException>(() => this.engine.EditGroupLinks(group.Id, run.Id,
+            changes with { Links = [new(Encounter.StarterArea, starters), new(17, starters)] }));
+        Assert.Empty(this.engine.GroupLinkEditor(group.Id, run.Id).Links);
+
+        this.engine.EditGroupLinks(group.Id, run.Id, changes);
+        var saved = this.engine.View(second.Registration);
+        Assert.All(saved.Encounters, link => Assert.NotNull(link.GroupId));
+        Assert.All(saved.Players, player => Assert.Equal(2, player.Pokemon.Count));
+        Assert.Throws<InvalidOperationException>(() => this.engine.EditGroupLinks(group.Id, run.Id, changes));
+
+        this.engine.SetDeath($"group:{group.Id:N}", run.Id, 17, dead: true);
+        var locked = this.engine.GroupLinkEditor(group.Id, run.Id);
+        Assert.True(locked.Links.Single(link => link.Area == 17).Locked);
+        Assert.Throws<InvalidDataException>(() => this.engine.EditGroupLinks(group.Id, run.Id,
+            new EditLinksRequest(locked.Revision, [new(Encounter.StarterArea, route)])));
+        this.engine.EditGroupLinks(group.Id, run.Id, new EditLinksRequest(locked.Revision,
+            [new(Encounter.StarterArea, new Dictionary<Guid, Guid> { [first.Registration.PlayerId] = starters[first.Registration.PlayerId] })]));
+        var reopened = new AutomationEngine(new AutomationStore(Path.Combine(this.directory, "runs.sqlite")));
+        var restored = reopened.View(second.Registration);
+        Assert.Null(restored.Encounters.Single(link => link.Area == Encounter.StarterArea).GroupId);
+        Assert.True(restored.Encounters.Single(link => link.Area == 17).Dead);
+        Assert.DoesNotContain(restored.History, item => item.Kind == "caught");
+    }
+
+    [Fact]
     public void ExplicitStarterLinkPreservesRoute101AndSharesConfirmedDeaths()
     {
         var group = this.engine.CreateGroup("Three players");

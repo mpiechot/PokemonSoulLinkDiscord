@@ -96,6 +96,12 @@ public static class AutomationHosting
         admin.MapPost("/groups/{id:guid}/runs/{run:guid}/{action}", (Guid id, Guid run, string action, AutomationEngine engine) =>
             engine.ChangeGroupRun(id, run, action));
         admin.MapGet("/groups/{id:guid}/runs/{run:guid}/players", (Guid id, Guid run, AutomationEngine engine) => engine.GroupRunPlayers(id, run));
+        admin.MapGet("/groups/{id:guid}/runs/{run:guid}/links", (Guid id, Guid run, AutomationEngine engine) => engine.GroupLinkEditor(id, run));
+        admin.MapPut("/groups/{id:guid}/runs/{run:guid}/links", (Guid id, Guid run, EditLinksRequest request, AutomationEngine engine) =>
+        {
+            engine.EditGroupLinks(id, run, request);
+            return Results.Ok(new { accepted = true });
+        });
         admin.MapGet("/groups/{id:guid}/runs/{run:guid}/starters", (Guid id, Guid run, AutomationEngine engine) =>
             engine.GroupStarterCandidates(id, run));
         admin.MapPost("/groups/{id:guid}/runs/{run:guid}/starters", (Guid id, Guid run, StarterLinkRequest request, AutomationEngine engine) =>
