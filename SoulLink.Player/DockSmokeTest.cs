@@ -319,6 +319,40 @@ internal static class DockSmokeTest
             throw new InvalidOperationException("The distinct types displayed for Geodude and Pidgeot must have separate symbols.");
     }
 
+    internal static void VerifyFirstHostConnection(string home)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var response = ReplyWithEmptyGroupsAsync();
+        using var form = new HostingForm(new PlayerProfileLibrary(home), $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}");
+        var status = Descendants(form).OfType<Label>().Single();
+        Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar).Text = new string('a', 64);
+        var connection = Task.WhenAll(response, form.ConnectAsync()).WaitAsync(timeout.Token);
+        while (!connection.IsCompleted)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+        connection.GetAwaiter().GetResult();
+        if (status.ForeColor != DashboardTheme.Accent || !status.Text.StartsWith("Verbunden.", StringComparison.Ordinal) ||
+            !status.Text.Contains("Gruppe anlegen", StringComparison.Ordinal))
+            throw new InvalidOperationException("An empty groups response must confirm the connection and explain how to create the first group.");
+
+        async Task ReplyWithEmptyGroupsAsync()
+        {
+            using var request = await listener.AcceptTcpClientAsync(timeout.Token).ConfigureAwait(false);
+            using var stream = request.GetStream();
+            using var headers = new StreamReader(stream, leaveOpen: true);
+            var line = await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false);
+            if (line != "GET /api/soullink/admin/groups HTTP/1.1")
+                throw new InvalidOperationException("The host dialog requested an unexpected URL.");
+            while (!string.IsNullOrEmpty(await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false))) { }
+            await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"u8.ToArray(), timeout.Token)
+                .ConfigureAwait(false);
+        }
+    }
+
     internal static void VerifyScrollDesign()
     {
         using var sample = new ScrollProbe { Size = new Size(250, 150), ContentSize = new Size(750, 600) };

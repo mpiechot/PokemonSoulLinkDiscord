@@ -37,7 +37,7 @@ internal sealed class HostingForm : Form
         this.runs.ForeColor = DashboardTheme.Text;
 
         var connect = DashboardTheme.Button("Verbinden / aktualisieren");
-        connect.Click += async (_, _) => await this.UseServerAsync(client => this.LoadGroupsAsync(client));
+        connect.Click += async (_, _) => await this.ConnectAsync();
         var addGroup = DashboardTheme.Button("Gruppe anlegen");
         addGroup.Click += async (_, _) => await this.UseServerAsync(async client =>
         {
@@ -95,12 +95,14 @@ internal sealed class HostingForm : Form
         layout.Controls.Add(Line(this.saveProfile, this.package, this.invite), 0, 5);
         layout.Controls.Add(this.feedback, 0, 6);
         this.Controls.Add(layout);
-        this.UpdateActions();
+        this.ClearServerView();
     }
 
     private RunGroup? Group => this.groups.SelectedItem as RunGroup;
 
     private HostRun? Run => (this.runs.SelectedItem as Row)?.Run;
+
+    internal Task ConnectAsync() => this.UseServerAsync(client => this.LoadGroupsAsync(client));
 
     private static TextBox Input(string label) => new() { PlaceholderText = label, AccessibleName = label, Width = 200 };
 
@@ -140,7 +142,15 @@ internal sealed class HostingForm : Form
         {
             using var client = new HostAdminClient(this.server.Text, this.key.Text);
             await action(client);
-            if (!this.IsDisposed) this.feedback.Text = "";
+            if (!this.IsDisposed)
+            {
+                this.feedback.ForeColor = DashboardTheme.Accent;
+                this.feedback.Text = this.Group is null
+                    ? "Verbunden. Gib einen Gruppennamen ein und klicke auf „Gruppe anlegen“."
+                    : this.Run is null
+                        ? "Verbunden. Gib einen Run-Namen ein und klicke auf „Run anlegen“."
+                        : "Mit dem Run-Server verbunden.";
+            }
         }
         catch (Exception error) when (RunDialogs.IsActionError(error) || error is HttpRequestException or System.Text.Json.JsonException)
         {
@@ -187,6 +197,8 @@ internal sealed class HostingForm : Form
     {
         this.groups.DataSource = null;
         this.runs.DataSource = null;
+        this.feedback.ForeColor = DashboardTheme.Muted;
+        this.feedback.Text = "Gib die Serveradresse und den Admin-Schlüssel ein und klicke auf „Verbinden / aktualisieren“.";
         this.UpdateActions();
     }
 

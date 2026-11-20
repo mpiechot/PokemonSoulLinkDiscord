@@ -98,6 +98,7 @@ internal static class Program
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();
+                DockSmokeTest.VerifyFirstHostConnection(home);
             }
             catch (Exception error)
             {
