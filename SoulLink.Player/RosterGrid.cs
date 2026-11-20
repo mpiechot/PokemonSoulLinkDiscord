@@ -12,11 +12,11 @@ internal sealed class RosterGrid : DashboardScrollView
     private readonly RubySprites sprites;
     private readonly Font heading = new("Segoe UI Semibold", 10);
     private readonly Font small = new("Segoe UI", 8.5f);
-    private readonly ToolTip typeHint = new();
-    private readonly List<(Rectangle Bounds, string Label)> typeIcons = [];
+    private readonly ToolTip cellHint = new();
+    private readonly List<(Rectangle Bounds, string Label)> hints = [];
     private RosterGridData data = new([], []);
     private int cellWidth;
-    private string? hoveredType;
+    private string? hoveredLabel;
 
     public RosterGrid(RubySprites sprites)
     {
@@ -59,7 +59,7 @@ internal sealed class RosterGrid : DashboardScrollView
     {
         var canvas = e.Graphics;
         var scroll = new Point(-this.ScrollPosition.X, -this.ScrollPosition.Y);
-        this.typeIcons.Clear();
+        this.hints.Clear();
         var center = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
             TextFormatFlags.PreserveGraphicsClipping;
         if (this.data.Rows.Length == 0)
@@ -84,7 +84,7 @@ internal sealed class RosterGrid : DashboardScrollView
             {
                 int x = scroll.X + col * (this.cellWidth + Gap);
                 var box = new Rectangle(x, y, this.cellWidth, RowHeight - 7);
-                if (group.Slots[col] is { } pokemon) this.DrawPokemon(canvas, box, pokemon);
+                if (group.Slots[col] is { } pokemon) this.DrawPokemon(canvas, box, pokemon, group.LinkName);
                 else
                 {
                     DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
@@ -96,7 +96,7 @@ internal sealed class RosterGrid : DashboardScrollView
         }
     }
 
-    private void DrawPokemon(Graphics canvas, Rectangle box, DashboardPokemon pokemon)
+    private void DrawPokemon(Graphics canvas, Rectangle box, DashboardPokemon pokemon, string? linkName)
     {
         var state = pokemon.State;
         var appearance = state.IsEgg ? null : RubyDashboardCatalog.Appearance(state.Species);
@@ -121,11 +121,13 @@ internal sealed class RosterGrid : DashboardScrollView
             TextRenderer.DrawText(canvas, appearance is null ? "–" : $"#{appearance.NationalDex}", this.heading,
                 portrait, DashboardTheme.Muted, flags);
         }
-        if (!state.IsEgg && state.MetArea != 255)
+        string? metArea = state.MetArea == 255 ? null : RubyNames.Area(state.MetArea);
+        if (!state.IsEgg && (linkName ?? metArea) is { } tag)
         {
-            string area = RubyNames.Area(state.MetArea);
-            int tagWidth = Math.Min(leftWidth, TextRenderer.MeasureText(area, this.small).Width + 15);
-            this.DrawTag(canvas, new Rectangle(left + (leftWidth - tagWidth) / 2, box.Y + 87, tagWidth, 19), area, DashboardTheme.Accent);
+            int tagWidth = Math.Min(leftWidth, TextRenderer.MeasureText(tag, this.small).Width + 15);
+            var tagBounds = new Rectangle(left + (leftWidth - tagWidth) / 2, box.Y + 87, tagWidth, 19);
+            this.DrawTag(canvas, tagBounds, tag, DashboardTheme.Accent);
+            if (metArea is not null && metArea != tag) this.hints.Add((tagBounds, $"Ursprünglicher Fangort: {metArea}"));
         }
         var details = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
         bool inTeam = state.Container == Placement.Party;
@@ -148,7 +150,7 @@ internal sealed class RosterGrid : DashboardScrollView
                 int badgeHeight = (int)Math.Round(icon.Height * scale);
                 canvas.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 canvas.DrawImage(icon, new Rectangle(slot.X + (size - badgeWidth) / 2, slot.Y + (size - badgeHeight) / 2, badgeWidth, badgeHeight));
-                this.typeIcons.Add((slot, label));
+                this.hints.Add((slot, label));
             }
             iconLeft += size + 5;
         }
@@ -157,11 +159,11 @@ internal sealed class RosterGrid : DashboardScrollView
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        string? label = this.typeIcons.Find(icon => icon.Bounds.Contains(e.Location)).Label;
-        if (this.hoveredType == label) return;
-        this.hoveredType = label;
-        this.typeHint.Hide(this);
-        this.typeHint.SetToolTip(this, label);
+        string? label = this.hints.Find(hint => hint.Bounds.Contains(e.Location)).Label;
+        if (this.hoveredLabel == label) return;
+        this.hoveredLabel = label;
+        this.cellHint.Hide(this);
+        this.cellHint.SetToolTip(this, label);
     }
 
     private void DrawTag(Graphics canvas, Rectangle bounds, string text, Color color)
@@ -189,7 +191,7 @@ internal sealed class RosterGrid : DashboardScrollView
         if (disposing)
         {
             this.sprites.Changed -= this.Invalidate;
-            this.typeHint.Dispose();
+            this.cellHint.Dispose();
             this.heading.Dispose();
             this.small.Dispose();
         }

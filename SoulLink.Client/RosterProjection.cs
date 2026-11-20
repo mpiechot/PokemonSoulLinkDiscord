@@ -5,7 +5,7 @@ namespace SoulLink.Client;
 public enum RosterView { Team, Box, Dead, Shiny }
 
 public sealed record RosterColumn(Guid Id, string Name);
-public sealed record RosterRow(bool Linked, DashboardPokemon?[] Slots);
+public sealed record RosterRow(bool Linked, DashboardPokemon?[] Slots, string? LinkName = null);
 public sealed record RosterGridData(RosterColumn[] Columns, RosterRow[] Rows)
 {
     public static RosterGridData From(ClientView view, RosterView filter)
@@ -44,7 +44,7 @@ public sealed record RosterGridData(RosterColumn[] Columns, RosterRow[] Rows)
                     slots[index] = pokemon;
             }
             if (slots.Any(m => m is not null))
-                rows.Add(new RosterRow(link.Members.Length > 1 && link.State != "PARTIAL", slots));
+                rows.Add(new RosterRow(link.Members.Length > 1 && link.State != "PARTIAL", slots, link.Area));
         }
         for (int i = 0; i < eligible.Length; i++)
         {

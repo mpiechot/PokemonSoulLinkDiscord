@@ -142,15 +142,17 @@ public sealed class PlayerClientTests : IDisposable
         var inBox = new DashboardPokemon(new PokemonState { Identity = "D", Species = 7, Container = Placement.Box }, false, true);
         var run = new ClientRunView("Test", RunPhase.Active, Guid.NewGuid(),
             [new("Anne", first, "", "Ready", Pokemon: [linkLeft, unlinked]), new("Max", second, "", "Ready", Pokemon: [linkRight, inBox])],
-            [], [], [new("Route 101", "ACTIVE", [new("Anne", linkLeft, first), new("Max", linkRight, second)])]);
+            [], [], [new("Starter", "ACTIVE", [new("Anne", linkLeft, first), new("Max", linkRight, second)])]);
         var view = new ClientView("", "", true, "", 0, "", null, null, run, [], false);
 
         var team = RosterGridData.From(view, RosterView.Team);
         Assert.Equal(new[] { first, second }, team.Columns.Select(c => c.Id));
         Assert.Equal(2, team.Rows.Length);
         Assert.True(team.Rows[0].Linked);
+        Assert.Equal("Starter", team.Rows[0].LinkName);
         Assert.Equal(new[] { linkLeft, linkRight }, team.Rows[0].Slots);
         Assert.False(team.Rows[1].Linked);
+        Assert.Null(team.Rows[1].LinkName);
         Assert.Equal(unlinked, team.Rows[1].Slots[0]);
         Assert.Null(team.Rows[1].Slots[1]);
         Assert.Equal(inBox, Assert.Single(RosterGridData.From(view, RosterView.Box).Rows).Slots[1]);
