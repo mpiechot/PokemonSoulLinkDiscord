@@ -12,7 +12,9 @@ local profiles = {
         stats = 0x0820BBE8, trainers = 0x081FD478,
         mapHeader = 0x0202E828, avatar = 0x0202E858, objects = 0x030048B0,
         battle = {flags = 0x020239F8, count = 0x02024A68, slots = 0x02024A6A, sides = 0x02024A72,
-            mons = 0x02024A80, lastMoves = 0x02024C3C, lastHitBy = 0x02024C5C, trainer = 0x0202FF5E}
+            mons = 0x02024A80, lastMoves = 0x02024C3C, lastHitBy = 0x02024C5C, trainer = 0x0202FF5E,
+            active = 0x02024A60, move = 0x02024BE6, damage = 0x02024BEC, dealt = 0x02024BF0,
+            attacker = 0x02024C07, target = 0x02024C08, script = 0x02024C10, hitMarker = 0x02024C6C}
     }
 }
 local port = SOULLINK_PORT or 5091
@@ -22,6 +24,8 @@ local tick, lastFrame = 0, -1
 local lastError = ""
 local activeProfile
 local battleFaints, lastPosition = {}, "null"
+local faintDirty = false
+local nextHit
 local gymLineups, rubyTypes
 
 -- Resolve the core for each read because the newer bindings return a short-lived reference.
@@ -106,11 +110,31 @@ local function readPosition(profile, group)
     return string.format('{"x":%d,"y":%d,"width":%d,"height":%d,"outdoor":%s}', x, y, width, height, tostring(group == 0))
 end
 
-local function captureBattle(profile)
+local function pendingDirectHit(a, count, frame)
+    if not a.script then return nil end
+    local script = read32(a.script)
+    -- atk0C_datahpupdate with BS_TARGET and no passive HP update.
+    if script < 0x08000000 or script >= 0x09FFFFFF or read8(script) ~= 0x0C or read8(script + 1) ~= 0 or
+        (read32(a.hitMarker) & 0x100000) ~= 0 then return nil end
+    local attacker, target, move = read8(a.attacker), read8(a.target), read16(a.move)
+    if attacker >= count or target >= count or move < 1 or move > 354 or
+        (read8(a.sides + attacker) & 1) == 0 or (read8(a.sides + target) & 1) ~= 0 then return nil end
+    local mon = a.mons + target * 88
+    local hp, damage = read16(mon + 0x28), read32(a.damage)
+    local species = read16(a.mons + attacker * 88)
+    if hp == 0 or damage < hp or damage > 0x7FFFFFFF or species == 0 then return nil end
+    return {frame = frame, attacker = attacker, target = target, move = move, species = species,
+        hp = hp, pid = read32(mon + 0x48), ot = read32(mon + 0x54)}
+end
+
+local function captureBattle(profile, frame)
     local addresses = profile.battle
+    local prior = nextHit
+    nextHit = nil
     if not addresses or (read8(profile.main + 0x43D) & 2) == 0 then return end
     local count = read8(addresses.count)
     if count < 2 or count > 4 then return end
+    nextHit = pendingDirectHit(addresses, count, frame)
     local trainer = "null"
     if profile.trainers and (read32(addresses.flags) & 8) ~= 0 then
         local id = read16(addresses.trainer)
@@ -128,10 +152,17 @@ local function captureBattle(profile)
                 if attacker < count and (read8(addresses.sides + attacker) & 1) ~= 0 then
                     species = read16(addresses.mons + attacker * 88)
                 end
+                local pid, ot = read32(mon + 0x48), read32(mon + 0x54)
+                local finishing = prior and prior.frame + 1 == frame and prior.target == battler and prior.pid == pid and prior.ot == ot and
+                    read8(addresses.active) == battler and read8(addresses.attacker) == prior.attacker and
+                    read16(addresses.move) == prior.move and read32(addresses.dealt) == prior.hp
+                if finishing then species, move = prior.species, prior.move end
                 local earlier = battleFaints[partySlot]
-                if not earlier or (earlier.move == 0 and species > 0 and move > 0 and move < 355) then
+                if not earlier or earlier.pid ~= pid or earlier.ot ~= ot or (finishing and not earlier.finishing) or
+                    (earlier.move == 0 and species > 0 and move > 0 and move < 355) then
                     battleFaints[partySlot] = {species = species, move = move > 0 and move < 355 and species > 0 and move or 0,
-                        trainer = trainer, pid = read32(mon + 0x48), ot = read32(mon + 0x54)}
+                        trainer = trainer, pid = pid, ot = ot, finishing = finishing == true, frame = frame}
+                    faintDirty = true
                 end
             elseif hp > 0 then
                 battleFaints[partySlot] = nil
@@ -199,9 +230,10 @@ local function snapshot(frame)
         local hp = read16(profile.party + slot * 100 + 86)
         if hp > 0 and not battle then battleFaints[slot] = nil end
         local faint = battleFaints[slot]
-        if hp == 0 and faint and read32(profile.party + slot * 100) == faint.pid and read32(profile.party + slot * 100 + 4) == faint.ot then
-            faints[#faints + 1] = string.format('{"partySlot":%d,"opponentSpecies":%s,"move":%s,"trainerHex":%s}',
-                slot, faint.species > 0 and faint.species or "null", faint.move > 0 and faint.move or "null", faint.trainer)
+        if faint and (hp == 0 or (battle and frame - faint.frame < 120)) and
+            read32(profile.party + slot * 100) == faint.pid and read32(profile.party + slot * 100 + 4) == faint.ot then
+            faints[#faints + 1] = string.format('{"partySlot":%d,"opponentSpecies":%s,"move":%s,"trainerHex":%s,"finishingBlow":%s}',
+                slot, faint.species > 0 and faint.species or "null", faint.move > 0 and faint.move or "null", faint.trainer, tostring(faint.finishing))
         end
     end
     -- Badges are eight consecutive flags starting at FLAG_BADGE01_GET (0x807).
@@ -232,9 +264,9 @@ local function onFrame()
     local frame = readCore():currentFrame()
     if frame < lastFrame then epoch = tostring({}):gsub("[^%w]", "") end
     lastFrame = frame
-    if activeProfile then pcall(captureBattle, activeProfile) end
+    if activeProfile then pcall(captureBattle, activeProfile, frame) end
     sendPending()
-    if tick % 30 ~= 0 or pending then return end
+    if (tick % 30 ~= 0 and not faintDirty) or pending then return end
     if not peer then
         peer = socket.tcp()
         peer:add("error", function() stop() end)
@@ -243,6 +275,7 @@ local function onFrame()
     local ok, result = pcall(snapshot, frame)
     if not ok then report(tostring(result)); return end
     pending, position = result, 1
+    faintDirty = false
     sendPending()
     report("Streaming read-only reference profile. Check party and box contents in the client before starting the run.")
 end
@@ -253,6 +286,8 @@ local frameCallback = callbacks:add("frame", onFrame)
 local function reset()
     epoch = tostring({}):gsub("[^%w]", "")
     activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
+    faintDirty = false
+    nextHit = nil
     stop()
 end
 local resetCallback = callbacks:add("reset", reset)

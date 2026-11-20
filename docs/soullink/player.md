@@ -4,11 +4,11 @@ Du bekommst **eine Spielerdatei als EXE**. Beim ersten Start wählst du deinen S
 
 Andere Runs haben eigene Spielerdateien und eigene ROM-Auswahlen. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
-Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Über **mGBA lösen** kannst du zum separaten Emulatorfenster wechseln.
+Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Das Menü **SoulLink** oben links enthält **Spiel starten**, **mGBA lösen** und **Einrichtung**. Unten zeigen die farbigen Punkte den Status von Run-Server und Spieldaten an. Beim Darüberfahren erscheint ein kurzer Hinweis.
 
 Speichere wie gewohnt im Spiel. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
 
-Links zeigt der Newsfeed neue Fänge und weitere Ereignisse. Rechts stehen Team, Links, Box, Todesfälle, Shinies und die Übersicht **Fangorte**. Jedes Pokémon zeigt seinen im Spiel gespeicherten Fangort. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
+Links stehen Fänge, vollständige Links und Todesfälle im scrollbaren Newsfeed. Unter dem Spiel ordnet das Team-Grid die Spieler in Spalten und die verbundenen Pokémon in gemeinsamen Zeilen an. Oben öffnen **Box**, **Tot** und **Shinies** eigene Grids. **Fangorte** zeigt die bisher erfassten Fanggebiete als Tags. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
 
 Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird deine Position aus der aktuellen Spielfeldkachel auf die Weltkarte übertragen. In Gebäuden erscheint der Marker am zugehörigen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position.
 
@@ -16,7 +16,7 @@ Die nächste Arena richtet sich nach deinen Orden. **Abschließen** verbucht sie
 
 Nach den ersten gültigen Spieldaten schließt SoulLink das bei der automatischen Skripteinrichtung geöffnete Fenster. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Die allgemeine Spielerdatei zeigt den lokalen Feed auch bei einer gespeicherten Anmeldung, solange der Run-Server nicht verbunden ist. Die lokale Erfassung gilt nur für diese Sitzung. Sobald der Server wieder erreichbar ist, wechselt die Anzeige zum gemeinsamen Run. Dort erscheinen Fänge, sobald der Gastgeber den Run gestartet hat.
 
-Neue Runs fragen bei einem erkannten Kampfunfähigkeitsfall nach. Im Dialog kannst du den Tod bestätigen und einen Grund angeben. Erkannte Gegner und die zuletzt erfasste Attacke werden angezeigt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
+Neue Runs zeigen einen erkannten K. o. bereits im Kampf an. Das Popup öffnet sich ohne Tastaturfokus. Darin kannst du den Tod bestätigen und einen Grund angeben. SoulLink zeigt den Gegner und die K.-o.-Attacke, wenn die Lesebrücke den direkten Treffer zuordnen konnte. In anderen Fällen zeigt es die zuletzt erfasste Attacke, sofern bekannt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
 
 Für einen ROM-Wechsel mGBA schließen und in SoulLink **Einrichtung → Spiel → Andere ROM auswählen** öffnen. Falls mGBA bereits offen ist, fordert SoulLink vor dem Start zum Schließen auf. So läuft jeweils nur eine Emulatorinstanz.
 
@@ -34,4 +34,4 @@ Die Kopie enthält die Einladungsdaten und einen Profilbezeichner pro Run. Die E
 
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
 
-Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. Für den lokalen Bildtest liegen die optionalen Pokémon-Sprites neben der EXE unter `sprites/`. Ohne diesen Ordner zeigt die Leiste Typfarben und Pokédex-Nummern.
+Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. Die optionalen Pokémon-Sprites und originalen Typabzeichen liegen neben der EXE unter `sprites/`. Bei einer einzeln weitergegebenen EXE zeigt das Grid Typfarben und Pokédex-Nummern. Die Icons des Discord-Bots sind in der EXE enthalten.

@@ -65,6 +65,7 @@ internal sealed class LocalRunTracker : IDisposable
     private static bool Changed(GameSnapshot previous, GameSnapshot next) =>
         previous.Position != next.Position || previous.MapGroup != next.MapGroup || previous.MapNumber != next.MapNumber ||
         previous.InBattle != next.InBattle || previous.BadgeMask != next.BadgeMask || !previous.Pokemon.SequenceEqual(next.Pokemon) ||
+        !(previous.Faints ?? []).SequenceEqual(next.Faints ?? []) ||
         next.Pokemon.Any(p => p is { Hp: 0, IsEgg: false });
 
     public void Dispose() => File.Delete(this.database);

@@ -28,8 +28,8 @@ public sealed record MapPosition(int X, int Y, int Width, int Height, bool Outdo
     public bool Valid => Width is > 0 and <= 1024 && Height is > 0 and <= 1024 && X >= 0 && Y >= 0 && X < Width && Y < Height;
 }
 
-public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer);
-public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default);
+public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer, bool FinishingBlow = false);
+public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default, DateTimeOffset? At = null);
 
 public sealed record PokemonState
 {
@@ -147,7 +147,11 @@ public sealed class Encounter
 }
 
 public sealed record AutomationEvent(Guid Id, DateTimeOffset At, string Kind, string Message,
-    Guid? PlayerId = null, int? Area = null, int? MapGroup = null, int? MapNumber = null, MapPosition? Position = null);
+    Guid? PlayerId = null, int? Area = null, int? MapGroup = null, int? MapNumber = null, MapPosition? Position = null,
+    EventDetails? Details = null);
+public sealed record EventPokemon(string Player, int Species, bool Shiny = false);
+public sealed record EventDetails(EventPokemon? Pokemon = null, EventPokemon[]? Members = null, CatchCheck? CatchCheck = null,
+    bool? AreaAvailable = null, BattleTrace? Battle = null, string? Reason = null, bool? HasLink = null);
 public sealed record Notification(Guid Id, Guid RunId, ulong ChannelId, string Message);
 
 public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.ConfirmFaint);

@@ -1,7 +1,7 @@
 namespace SoulLink;
 
 public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null);
-public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex);
+public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex, bool FinishingBlow = false);
 
 public sealed record BridgeFrame
 {
@@ -63,10 +63,7 @@ public sealed record BridgeFrame
             InBattle = this.InBattle,
             Faints = this.Faints is { Length: > 0 and <= 6 }
                 ? this.Faints.Where(f => f is not null && f.PartySlot is >= 0 and <= 5)
-                    .Select(f => new BattleTrace(f.PartySlot,
-                        f.OpponentSpecies is int foe && SpeciesCatalog.IsValid(foe) ? foe : null,
-                        f.Move is > 0 and < 355 ? f.Move : null,
-                        f.TrainerHex is { Length: 24 } hex && hex.All(Uri.IsHexDigit) ? Gen3Parser.DecodeName(Convert.FromHexString(hex)) : null))
+                    .Select(ParseTrace)
                     .DistinctBy(f => f.PartySlot).ToArray()
                 : null,
             BadgeMask = this.BadgeMask,
@@ -74,6 +71,16 @@ public sealed record BridgeFrame
             GymLineups = this.GymLineups is { Length: 8 } ? this.GymLineups.Select(ValidateLevels).ToArray() : null,
             Pokemon = pokemon,
         };
+    }
+
+    private static BattleTrace ParseTrace(RawBattleTrace trace)
+    {
+        int? opponent = trace.OpponentSpecies is int foe && SpeciesCatalog.IsValid(foe) ? foe : null;
+        int? move = trace.Move is > 0 and < 355 ? trace.Move : null;
+        string? trainer = trace.TrainerHex is { Length: 24 } hex && hex.All(Uri.IsHexDigit)
+            ? Gen3Parser.DecodeName(Convert.FromHexString(hex)) : null;
+        return new BattleTrace(trace.PartySlot, opponent, move, trainer,
+            trace.FinishingBlow && opponent.HasValue && move.HasValue);
     }
 
     private static int[]? ValidateLevels(int[]? levels) =>

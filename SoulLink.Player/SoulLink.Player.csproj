@@ -12,5 +12,6 @@
   <ItemGroup>
     <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
     <EmbeddedResource Include="$(MgbaBundlePath)" LogicalName="SoulLink.mGBA.zip" Condition="'$(MgbaBundlePath)' != ''" />
+    <EmbeddedResource Include="..\PokeSoulLinkBot\Resources\*.png" LogicalName="SoulLink.Player.Icons.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

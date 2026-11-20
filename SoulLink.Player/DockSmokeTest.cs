@@ -37,7 +37,7 @@ internal static class DockSmokeTest
                 File.WriteAllText(progress, $"The emulator is docked with bridge port {port}.");
                 if (detached)
                 {
-                    ((Button)form.Controls.Find("ToggleEmulatorDock", true).Single()).PerformClick();
+                    form.ChangeDock();
                     if (form.IsGameDocked) throw new InvalidOperationException("Could not detach mGBA before closing the player.");
                 }
             }
@@ -141,6 +141,15 @@ internal static class DockSmokeTest
                     if (!focusOutsideGame.Focus()) throw new InvalidOperationException("Could not move focus to the test control.");
                     SendMessage(surface.Handle, 0x0210, 0x0201, 0);
                     if (!dock.IsFocused) throw new InvalidOperationException("Click notification did not focus the embedded game.");
+                    using (var notice = new DeathReasonForm(new PendingDeath(Guid.NewGuid(), 25, null, Guid.NewGuid())))
+                    {
+                        notice.Show(window);
+                        await Task.Delay(75, timeout.Token);
+                        if (!dock.IsFocused) throw new InvalidOperationException("The death notice stole keyboard focus from mGBA.");
+                        notice.Close();
+                        if (!dock.IsFocused) throw new InvalidOperationException("Dismissing a passive death notice moved keyboard focus.");
+                    }
+                    VerifyFeed(home);
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }
@@ -167,6 +176,29 @@ internal static class DockSmokeTest
             }
         };
         Application.Run(window);
+    }
+
+    private static void VerifyFeed(string home)
+    {
+        using var icons = new DiscordIcons();
+        using var sprites = new RubySprites(home);
+        if (new[] { "catch", "death", "arena", "team" }.Any(kind => icons.Get(kind) is null))
+            throw new InvalidOperationException("A Discord icon was missing from the player bundle.");
+        using var feed = new RunFeed(icons, sprites) { Size = new Size(265, 180) };
+        var now = DateTimeOffset.UtcNow;
+        var pokemon = new EventPokemon("Anne", 25);
+        feed.Render([
+            new AutomationEvent(Guid.NewGuid(), now, "caught", "", Area: 16,
+                Details: new EventDetails(pokemon, CatchCheck: new CatchCheck("Pikachu", null, null, null), AreaAvailable: true)),
+            new AutomationEvent(Guid.NewGuid(), now, "linked", "", Area: 16, Details: new EventDetails(Members: [pokemon])),
+            new AutomationEvent(Guid.NewGuid(), now, "death", "", Area: 16,
+                Details: new EventDetails(pokemon, Members: [new EventPokemon("Max", 1)],
+                    Battle: new BattleTrace(0, 1, 33, null, true), Reason: new string('x', 200))),
+        ], "");
+        using var drawing = new Bitmap(feed.Width, feed.Height);
+        feed.DrawToBitmap(drawing, feed.ClientRectangle);
+        if (feed.AutoScrollMinSize.Height <= feed.ClientSize.Height)
+            throw new InvalidOperationException("The feed did not make the additional event cards scrollable.");
     }
 
     [DllImport("user32.dll")]

@@ -49,7 +49,7 @@ internal sealed class HoennMap : Control
     {
         base.OnPaint(e);
         TextRenderer.DrawText(e.Graphics, "HOENN  /  LIVE-KARTE", this.Font, new Point(11, 4), DashboardTheme.Muted);
-        var chart = new Rectangle(10, 23, Math.Max(1, this.Width - 20), Math.Max(1, this.Height - 28));
+        var chart = new Rectangle(3, 22, Math.Max(1, this.Width - 6), Math.Max(1, this.Height - 24));
         if (this.artwork is null)
         {
             string message = this.attempted ? "Keine Originalkarte in dieser ROM erkannt." : "Die Originalkarte wird aus der Rubin-ROM geladen.";

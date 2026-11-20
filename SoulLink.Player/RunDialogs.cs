@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SoulLink;
 using SoulLink.Client;
 
@@ -45,32 +46,62 @@ internal sealed class CatchCheckForm : Form
 internal sealed class DeathReasonForm : Form
 {
     private readonly TextBox reason = new() { Dock = DockStyle.Top, MaxLength = 250, PlaceholderText = "Grund (optional)" };
+    private readonly Label details = new() { Dock = DockStyle.Top, Height = 94, Padding = new Padding(0, 0, 0, 12) };
 
     public DeathReasonForm(PendingDeath pending)
     {
         RunDialogs.Configure(this, "Todesfall prüfen", new Size(465, 223));
+        this.IncidentId = pending.IncidentId;
         this.reason.AccessibleName = "Todesursache";
-        var details = new Label { Dock = DockStyle.Top, Height = 93, Padding = new Padding(0, 0, 0, 12) };
-        var trace = pending.Battle;
-        string opponent = trace?.OpponentSpecies is int foe ? RubyNames.Pokemon(foe) : "unbekannt";
-        details.Text = $"{RubyNames.Pokemon(pending.Species)} hat 0 KP.\n" +
-            $"Gegner: {opponent}{(string.IsNullOrEmpty(trace?.Trainer) ? "" : $" · Trainer {trace.Trainer}")}\n" +
-            $"Letzte erfasste Attacke: {RubyNames.Move(trace?.Move) ?? "unbekannt"}";
+        this.UpdateTrace(pending);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 41, FlowDirection = FlowDirection.RightToLeft };
         var confirm = DashboardTheme.Button("Tod bestätigen");
-        confirm.DialogResult = DialogResult.Yes;
         var dismiss = DashboardTheme.Button("Als lebend belassen");
-        dismiss.DialogResult = DialogResult.No;
         var later = DashboardTheme.Button("Später");
-        later.DialogResult = DialogResult.Cancel;
+        confirm.Click += (_, _) => this.Finish(DialogResult.Yes);
+        dismiss.Click += (_, _) => this.Finish(DialogResult.No);
+        later.Click += (_, _) => this.Close();
         actions.Controls.AddRange([confirm, dismiss, later]);
         this.CancelButton = later;
         this.Controls.Add(this.reason);
-        this.Controls.Add(details);
+        this.Controls.Add(this.details);
         this.Controls.Add(actions);
     }
 
-    public string Reason => this.reason.Text.Trim();
+    public Guid IncidentId { get; }
+    public DialogResult Decision { get; private set; }
+    public string Reason { get; private set; } = "";
+    protected override bool ShowWithoutActivation => true;
+
+    public void UpdateTrace(PendingDeath pending)
+    {
+        var trace = pending.Battle;
+        string opponent = trace?.OpponentSpecies is int foe ? RubyNames.Pokemon(foe) : "unbekannt";
+        this.details.Text = $"{RubyNames.Pokemon(pending.Species)} ist kampfunfähig.\n" +
+            $"Gegner · {opponent}{(string.IsNullOrEmpty(trace?.Trainer) ? "" : $" · Trainer {trace.Trainer}")}\n" +
+            $"{(trace?.FinishingBlow == true ? "K.-o.-Attacke" : "Letzte erfasste Attacke")} · {RubyNames.Move(trace?.Move) ?? "unbekannt"}";
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        // Do not steal a key-up from the emulator when a player clicks the notice while holding a key.
+        if (message.Msg == 0x0021 && Enumerable.Range(8, 247).Any(key => GetAsyncKeyState(key) < 0))
+        {
+            message.Result = 4;
+            return;
+        }
+        base.WndProc(ref message);
+    }
+
+    private void Finish(DialogResult choice)
+    {
+        this.Decision = choice;
+        this.Reason = this.reason.Text.Trim();
+        this.Close();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int key);
 }
 
 internal static class RunDialogs

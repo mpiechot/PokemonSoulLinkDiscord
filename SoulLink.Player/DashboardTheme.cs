@@ -1,3 +1,4 @@
+using System.Drawing.Drawing2D;
 using SoulLink;
 
 namespace SoulLink.Player;
@@ -16,7 +17,7 @@ internal static class DashboardTheme
 
     public static Button Button(string text)
     {
-        var button = new Button
+        var button = new RoundedButton
         {
             Text = text,
             AutoSize = true,
@@ -29,6 +30,51 @@ internal static class DashboardTheme
         button.FlatAppearance.BorderColor = Border;
         button.FlatAppearance.MouseOverBackColor = Border;
         return button;
+    }
+
+    public static GraphicsPath Rounded(Rectangle bounds, int radius)
+    {
+        var path = new GraphicsPath();
+        int diameter = Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height));
+        if (diameter <= 0) return path;
+        path.AddArc(bounds.Left, bounds.Top, diameter, diameter, 180, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Top, diameter, diameter, 270, 90);
+        path.AddArc(bounds.Right - diameter, bounds.Bottom - diameter, diameter, diameter, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    public static void Fill(Graphics graphics, Rectangle bounds, Color color, int radius = 10)
+    {
+        using var path = Rounded(bounds, radius);
+        using var brush = new SolidBrush(color);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.FillPath(brush, path);
+    }
+
+    private sealed class RoundedButton : Button
+    {
+        private bool hovered;
+
+        protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); this.hovered = true; this.Invalidate(); }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); this.hovered = false; this.Invalidate(); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(this.Parent?.BackColor ?? Background);
+            var bounds = new Rectangle(1, 1, this.Width - 2, this.Height - 2);
+            var color = this.Enabled && this.hovered ? this.FlatAppearance.MouseOverBackColor : this.BackColor;
+            Fill(e.Graphics, bounds, color, 7);
+            if (this.Focused && this.ShowFocusCues)
+            {
+                using var path = Rounded(bounds, 7);
+                using var pen = new Pen(Accent);
+                e.Graphics.DrawPath(pen, path);
+            }
+            TextRenderer.DrawText(e.Graphics, this.Text, this.Font, bounds, this.Enabled ? this.ForeColor : Muted,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
     }
 
     private static readonly Dictionary<string, (string Label, Color Color)> Types = new()
@@ -79,16 +125,22 @@ internal static class DashboardTheme
 
 internal sealed class RubySprites(string directory) : IDisposable
 {
-    private readonly Dictionary<(int Number, bool Shiny), Bitmap?> loaded = new();
+    private readonly Dictionary<string, Bitmap?> loaded = new();
 
     public Image? Find(RubySpeciesAppearance appearance, bool shiny)
     {
-        var key = (appearance.NationalDex, shiny);
+        string suffix = shiny ? "-shiny" : "";
+        return this.Load($"{appearance.NationalDex}{suffix}.png");
+    }
+
+    public Image? TypeBadge(string type) => this.Load(Path.Combine("types", type + ".png"));
+
+    private Image? Load(string key)
+    {
         if (this.loaded.TryGetValue(key, out var result)) return result;
         try
         {
-            string suffix = shiny ? "-shiny" : "";
-            string path = Path.Combine(directory, $"{appearance.NationalDex}{suffix}.png");
+            string path = Path.Combine(directory, key);
             if (File.Exists(path) && new FileInfo(path).Length <= 256 * 1024)
             {
                 using var file = File.OpenRead(path);
@@ -105,5 +157,25 @@ internal sealed class RubySprites(string directory) : IDisposable
     {
         foreach (var sprite in this.loaded.Values) sprite?.Dispose();
         this.loaded.Clear();
+    }
+}
+
+internal sealed class DiscordIcons : IDisposable
+{
+    private readonly Dictionary<string, Image> icons = new(StringComparer.Ordinal);
+
+    public Image? Get(string name)
+    {
+        if (this.icons.TryGetValue(name, out var icon)) return icon;
+        using var stream = typeof(DiscordIcons).Assembly.GetManifestResourceStream($"SoulLink.Player.Icons.{name}.png");
+        if (stream is null) return null;
+        using var original = Image.FromStream(stream);
+        return this.icons[name] = new Bitmap(original);
+    }
+
+    public void Dispose()
+    {
+        foreach (var icon in this.icons.Values) icon.Dispose();
+        this.icons.Clear();
     }
 }

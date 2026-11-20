@@ -213,7 +213,6 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
                 tracked.State = state;
                 tracked.Present = true;
-                if (state.Hp > 0) tracked.FaintDismissed = false;
                 this.ObserveFaint(tx, run, player, tracked, snapshot, previous, import);
             }
 
@@ -298,7 +297,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 throw new InvalidOperationException("Der Todesfall ist in diesem Run nicht verfügbar.");
             if (pokemon.PendingDeath is not { } pending || pending.IncidentId != incidentId) return false;
             pokemon.PendingDeath = null;
-            if (confirm) this.MarkDeath(tx, run, player, pokemon, reason, pending.Battle);
+            if (confirm) this.MarkDeath(tx, run, player, pokemon, reason, pending.Battle, pending.At);
             else pokemon.FaintDismissed = true;
             tx.Save(run);
             return true;
@@ -427,21 +426,25 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
         string place = RubyNames.Area(area);
         string species = RubyNames.Pokemon(pokemon.State.Species);
-        if (encounter.Failed || encounter.Dead || encounter.Members.ContainsKey(player.Id))
+        bool areaAvailable = !encounter.Failed && !encounter.Dead && !encounter.Members.ContainsKey(player.Id);
+        var details = new EventDetails(new EventPokemon(player.Name, pokemon.State.Species, pokemon.State.IsShiny),
+            CatchCheck: CatchCheckRules.Check(run, pokemon.State.Species, pokemon.Id), AreaAvailable: areaAvailable);
+        if (!areaAvailable)
         {
             this.Event(tx, run, "extra-catch", $"{player.Name}: {species} in {place} gefangen. Das Gebiet war bereits vergeben.",
-                player: player, area: area, snapshot: snapshot);
+                player: player, area: area, snapshot: snapshot, details: details);
             return;
         }
 
         encounter.Members[player.Id] = pokemon.Id;
         this.Event(tx, run, "caught", $"{player.Name}: {species} in {place} gefangen ({encounter.Members.Count}/{run.Players.Count}).",
-            player: player, area: area, snapshot: snapshot);
+            player: player, area: area, snapshot: snapshot, details: details);
         if (encounter.Members.Count == run.Players.Count && encounter.GroupId is null)
         {
             encounter.GroupId = Guid.NewGuid();
-            string members = string.Join(" · ", run.Players.Select(p => $"{p.Name}: {RubyNames.Pokemon(p.Pokemon.Single(m => m.Id == encounter.Members[p.Id]).State.Species)}"));
-            this.Event(tx, run, "linked", $"{place} · {members}.", area: area);
+            var members = DescribeLink(run, encounter).ToArray();
+            string memberList = string.Join(" · ", members.Select(m => $"{m.Player}: {RubyNames.Pokemon(m.Species)}"));
+            this.Event(tx, run, "linked", $"{place} · {memberList}.", area: area, details: new EventDetails(Members: members));
         }
     }
 
@@ -449,39 +452,51 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         TrackedPokemon tracked, GameSnapshot snapshot, GameSnapshot? previous, bool import)
     {
         var state = tracked.State;
-        if (import || run.DeathRule == DeathRule.Disabled || state.Hp != 0 || state.IsEgg || tracked.FaintDismissed)
+        var trace = run.DeathRule == DeathRule.ConfirmFaint && state.Container == Placement.Party
+            ? snapshot.Faints?.FirstOrDefault(f => f.PartySlot == state.Slot) : null;
+        if (state.Hp > 0 && trace is null) tracked.FaintDismissed = false;
+        if (tracked.Dead) return;
+        if (tracked.PendingDeath is { } pending)
+        {
+            if (trace is not null && (pending.Battle is null || (pending.Battle.Move is null && trace.Move is not null) ||
+                (trace.FinishingBlow && !pending.Battle.FinishingBlow)))
+                tracked.PendingDeath = pending with { Battle = trace };
+            return;
+        }
+        if (import || run.DeathRule == DeathRule.Disabled ||
+            (state.Hp != 0 && !(snapshot.InBattle && trace is not null)) || state.IsEgg || tracked.FaintDismissed)
         {
             tracked.ZeroHpSamples = 0;
             tracked.FaintBattle = null;
             return;
         }
-        if (tracked.Dead || tracked.PendingDeath is not null) return;
-        if (run.DeathRule == DeathRule.ConfirmFaint &&
-            snapshot.Faints?.FirstOrDefault(f => f.PartySlot == state.Slot) is { } trace)
-            tracked.FaintBattle = trace;
-        if (snapshot.InBattle)
-        {
-            tracked.ZeroHpSamples = 0;
-            return;
-        }
+        if (trace is not null) tracked.FaintBattle = trace;
         if (run.DeathRule == DeathRule.ConfirmFaint)
         {
             bool previouslyHealthy = previous?.Pokemon.Any(p => p.Identity == state.Identity && p.Hp > 0) == true;
+            if (snapshot.InBattle && (trace is not null || previouslyHealthy))
+            {
+                tracked.PendingDeath = new PendingDeath(tracked.Id, state.Species, tracked.FaintBattle, Guid.NewGuid(), this.clock.GetUtcNow());
+                return;
+            }
+            if (snapshot.InBattle) return;
             if (previouslyHealthy || previous?.InBattle == true || tracked.FaintBattle is not null || tracked.ZeroHpSamples > 0)
             {
                 if (++tracked.ZeroHpSamples >= 2)
-                    tracked.PendingDeath = new PendingDeath(tracked.Id, state.Species, tracked.FaintBattle, Guid.NewGuid());
+                    tracked.PendingDeath = new PendingDeath(tracked.Id, state.Species, tracked.FaintBattle, Guid.NewGuid(), this.clock.GetUtcNow());
             }
             return;
         }
-        if (++tracked.ZeroHpSamples >= 2) this.MarkDeath(tx, run, player, tracked);
+        if (!snapshot.InBattle && ++tracked.ZeroHpSamples >= 2) this.MarkDeath(tx, run, player, tracked);
+        else if (snapshot.InBattle) tracked.ZeroHpSamples = 0;
     }
 
     private void MarkDeath(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player,
-        TrackedPokemon pokemon, string? reason = null, BattleTrace? battle = null)
+        TrackedPokemon pokemon, string? reason = null, BattleTrace? battle = null, DateTimeOffset? at = null)
     {
         pokemon.Dead = true;
-        foreach (var encounter in run.Encounters.Where(e => e.Members.GetValueOrDefault(player.Id) == pokemon.Id))
+        var links = run.Encounters.Where(e => e.Members.GetValueOrDefault(player.Id) == pokemon.Id).ToArray();
+        foreach (var encounter in links)
         {
             encounter.Dead = true;
             foreach (var member in encounter.Members)
@@ -494,16 +509,29 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         string detail = string.Join(" · ", new[] { reason, battle?.Trainer,
             battle?.OpponentSpecies is int species ? RubyNames.Pokemon(species) : null, RubyNames.Move(battle?.Move) }
             .Where(v => !string.IsNullOrEmpty(v)));
+        var affected = links.SelectMany(link => DescribeLink(run, link, player.Id)).Distinct().ToArray();
         this.Event(tx, run, "death", $"{player.Name}: {RubyNames.Pokemon(pokemon.State.Species)} ist gestorben." +
-            (detail.Length > 0 ? " " + detail : ""), player: player);
+            (detail.Length > 0 ? " " + detail : ""), player: player, area: links.FirstOrDefault()?.Area ?? pokemon.State.MetArea,
+            details: new EventDetails(new EventPokemon(player.Name, pokemon.State.Species, pokemon.State.IsShiny),
+                Members: affected, Battle: battle, Reason: reason, HasLink: links.Length > 0), at: at);
+    }
+
+    private static IEnumerable<EventPokemon> DescribeLink(AutomationRun run, Encounter link, Guid? except = null)
+    {
+        foreach (var player in run.Players.Where(p => p.Id != except && link.Members.ContainsKey(p.Id)))
+        {
+            var state = player.Pokemon.Single(m => m.Id == link.Members[player.Id]).State;
+            yield return new EventPokemon(player.Name, state.Species, state.IsShiny);
+        }
     }
 
     private void Event(AutomationStore.StoreTransaction tx, AutomationRun run, string kind, string message, bool notify = true,
-        AutomationPlayer? player = null, int? area = null, GameSnapshot? snapshot = null)
+        AutomationPlayer? player = null, int? area = null, GameSnapshot? snapshot = null, EventDetails? details = null,
+        DateTimeOffset? at = null)
     {
         var where = snapshot?.Area == area ? snapshot : null;
-        var item = new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), kind, message, player?.Id, area,
-            where?.MapGroup, where?.MapNumber, where?.Position);
+        var item = new AutomationEvent(Guid.NewGuid(), at ?? this.clock.GetUtcNow(), kind, message, player?.Id, area,
+            where?.MapGroup, where?.MapNumber, where?.Position, details);
         run.History.Add(item);
         if (kind is "caught" or "extra-catch" or "death") tx.RecordReplayEvent(run.Id, item);
         if (run.History.Count > 200) run.History.RemoveAt(0);

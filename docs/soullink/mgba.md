@@ -68,7 +68,7 @@ Sources:
 
 The dashboard displays the original PokéNav Hoenn map from the local AXVD ROM. The 28×15-tile crop matches the in-game cursor grid. Its palette and compressed tiles are decoded in memory, with no map image included in the package. [Region map source and cursor grid](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/src/region_map.c)
 
-`python scripts/update-ruby-dashboard.py` regenerates data for area positions, species numbers, standard types and standard gym levels. `python scripts/download-ruby-sprites.py` downloads the 386 standard and 386 shiny views from the pinned PokéAPI sprite source for local use under `artifacts/player/sprites`. Keep downloaded graphics out of Git and published player packages. [PokéAPI sprite copyright notice](https://github.com/PokeAPI/sprites/blob/c0542f7c51215d9672439012838c99f520596cbd/LICENCE.txt)
+`python scripts/update-ruby-dashboard.py` regenerates data for area positions, species numbers, standard types and standard gym levels. `python scripts/download-ruby-sprites.py` downloads the 386 standard and 386 shiny views and the 17 original Ruby/Sapphire type badges from the pinned PokéAPI sprite source for local use under `artifacts/player/sprites`. Keep downloaded graphics out of Git and published player packages. [PokéAPI sprite copyright notice](https://github.com/PokeAPI/sprites/blob/c0542f7c51215d9672439012838c99f520596cbd/LICENCE.txt)
 
 ## Manual acceptance with a disposable save copy
 
@@ -80,7 +80,7 @@ The dashboard displays the original PokéNav Hoenn map from the local AXVD ROM. 
 6. Repeat across three players on the same area; expect one completed group and accurate team conflict status.
 7. Disconnect/restart client/server without playing; expect a reconciled baseline. Play offline and reconnect; expect OutOfSync instead of replay.
 8. Load an older state/reset; confirm rollback detection. Script callbacks and frame/playtime/experience checks provide complementary evidence; same-state reloads cannot always be distinguished.
-9. With the default `confirm-faint` rule for new runs, observe HP 0 outside battle twice, select a reason and confirm the linked death. The last landed opposing move is optional context and may differ from the reason for a knockout.
+9. With the default `confirm-faint` rule for new runs, observe a faint during the battle and verify that the notice leaves keyboard focus on mGBA. Confirm the reason and linked death. The bridge identifies a direct finishing move only when adjacent frames match a standard target HP update and the recorded amount of damage. Other moves are displayed as the last observed context.
 
 The automation SQLite database keeps accepted changes in position in `map_history` and the catch/death markers in `replay_events`. Each position describes the local tile in its specific map. The client periodically samples the bridge and can skip tiles between samples. Original ROM graphics are loaded locally and are not included in these tables. The standalone playtest uses a temporary database for its current session.
 

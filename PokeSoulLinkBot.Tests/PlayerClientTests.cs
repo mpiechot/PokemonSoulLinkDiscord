@@ -69,6 +69,31 @@ public sealed class PlayerClientTests : IDisposable
         var item = Assert.Single(client.Status().Run!.History, e => e.Kind == "caught");
         Assert.Equal("caught", item.Kind);
         Assert.Contains("Pikachu", item.Message);
+        Assert.Equal(new[] { 16 }, client.Status().Run!.CaughtAreas);
+    }
+
+    [Fact]
+    public void RosterProjectsActualLinksIntoPlayerColumnsAndKeepsUnlinkedPokemonSeparate()
+    {
+        Guid first = Guid.NewGuid(), second = Guid.NewGuid();
+        var linkLeft = new DashboardPokemon(new PokemonState { Identity = "A", Species = 25, MetArea = 16 }, false, true);
+        var linkRight = new DashboardPokemon(new PokemonState { Identity = "B", Species = 1, MetArea = 16 }, false, true);
+        var unlinked = new DashboardPokemon(new PokemonState { Identity = "C", Species = 4, MetArea = 16 }, false, true);
+        var inBox = new DashboardPokemon(new PokemonState { Identity = "D", Species = 7, Container = Placement.Box }, false, true);
+        var run = new ClientRunView("Test", RunPhase.Active, Guid.NewGuid(),
+            [new("Anne", first, "", "Ready", Pokemon: [linkLeft, unlinked]), new("Max", second, "", "Ready", Pokemon: [linkRight, inBox])],
+            [], [], [new("Route 101", "ACTIVE", [new("Anne", linkLeft, first), new("Max", linkRight, second)])]);
+        var view = new ClientView("", "", true, "", 0, "", null, null, run, [], false);
+
+        var team = RosterGridData.From(view, RosterView.Team);
+        Assert.Equal(new[] { first, second }, team.Columns.Select(c => c.Id));
+        Assert.Equal(2, team.Rows.Length);
+        Assert.True(team.Rows[0].Linked);
+        Assert.Equal(new[] { linkLeft, linkRight }, team.Rows[0].Slots);
+        Assert.False(team.Rows[1].Linked);
+        Assert.Equal(unlinked, team.Rows[1].Slots[0]);
+        Assert.Null(team.Rows[1].Slots[1]);
+        Assert.Equal(inBox, Assert.Single(RosterGridData.From(view, RosterView.Box).Rows).Slots[1]);
     }
 
     [Fact]

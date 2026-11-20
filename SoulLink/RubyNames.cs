@@ -75,11 +75,17 @@ public static class CatchCheckRules
     }
 
     public static CatchCheck Check(AutomationRun run, string name)
+        => Check(run, RubyNames.Find(name), null);
+
+    public static CatchCheck Check(AutomationRun run, int species, Guid except)
+        => Check(run, RubyNames.ForSpecies(species), except);
+
+    private static CatchCheck Check(AutomationRun run, RubyNames.SpeciesName? wanted, Guid? except)
     {
-        if (RubyNames.Find(name) is not { } wanted) return new CatchCheck(null, null, null, null);
+        if (wanted is null) return new CatchCheck(null, null, null, null);
         foreach (var player in run.Players)
         {
-            foreach (var found in player.Pokemon.Where(p => !p.State.IsEgg))
+            foreach (var found in player.Pokemon.Where(p => p.Id != except && !p.State.IsEgg))
             {
                 if (RubyNames.ForSpecies(found.State.Species) is { } actual && actual.Family == wanted.Family)
                     return new CatchCheck(wanted.German, actual.German, player.Name, RubyNames.Area(found.State.MetArea));

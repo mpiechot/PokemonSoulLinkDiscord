@@ -8,12 +8,12 @@ public sealed record ClientView(
     bool ReadOnly = true, Guid? LocalPlayerId = null, PlayerMarker Marker = PlayerMarker.Circle, bool IsLocalRun = false);
 
 public sealed record ClientRunView(string Name, RunPhase Phase, Guid Id, ClientPlayerView[] Players,
-    string[] Lines, AutomationEvent[] History, DashboardLink[]? Links = null);
+    string[] Lines, AutomationEvent[] History, DashboardLink[]? Links = null, int[]? CaughtAreas = null);
 
 public sealed record ClientPlayerView(string Name, Guid Id, string Diagnostic, string Connection,
     PlayerMarker Marker = PlayerMarker.Circle, int? Area = null, DashboardPokemon[]? Pokemon = null,
     MapPosition? Position = null, byte ArenaProgress = 0, PendingDeath[]? PendingDeaths = null);
 
 public sealed record DashboardPokemon(PokemonState State, bool Dead, bool Present);
-public sealed record DashboardLinkMember(string Player, DashboardPokemon Pokemon);
+public sealed record DashboardLinkMember(string Player, DashboardPokemon Pokemon, Guid PlayerId = default);
 public sealed record DashboardLink(string Area, string State, DashboardLinkMember[] Members);

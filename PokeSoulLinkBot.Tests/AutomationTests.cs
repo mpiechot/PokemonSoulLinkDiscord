@@ -175,11 +175,9 @@ public sealed class AutomationTests : IDisposable
         foreach (var client in new[] { first, second }) this.Send(client, 1, true, Snapshot(1, Mon(1)));
         this.engine.ChangeRun("guild", run.Id, "start");
         foreach (var client in new[] { first, second }) this.Send(client, 2, false, Snapshot(2, Mon(1), Mon(2)));
-        var trace = new BattleTrace(1, 25, 33, "Felizia");
+        var trace = new BattleTrace(1, 25, 33, "Felizia", FinishingBlow: true);
         var knockedOut = Snapshot(3, Mon(1), Mon(2) with { Hp = 0 });
         this.Send(first, 3, false, knockedOut with { InBattle = true, Faints = [trace] });
-        this.Send(first, 4, false, knockedOut with { Frame = 4 });
-        this.Send(first, 5, false, knockedOut with { Frame = 5 });
         var before = this.engine.View(first.Registration);
         Assert.False(before.Encounters.Single().Dead);
         var incident = Assert.Single(before.Players.Single(p => p.Id == first.Registration.PlayerId).Pokemon,
@@ -193,10 +191,38 @@ public sealed class AutomationTests : IDisposable
         var final = this.engine.View(first.Registration);
         Assert.True(final.Encounters.Single().Dead);
         Assert.All(final.Players, p => Assert.Single(p.Pokemon, m => m.Dead));
-        var reason = Assert.Single(final.History, item => item.Kind == "death").Message;
+        var death = Assert.Single(final.History, item => item.Kind == "death");
+        var details = Assert.IsType<EventDetails>(death.Details);
+        Assert.Equal("Anne", details.Pokemon!.Player);
+        Assert.Equal("Max", Assert.Single(details.Members!).Player);
+        Assert.Equal(16, death.Area);
+        Assert.Equal(incident.At, death.At);
+        Assert.Equal(trace, details.Battle);
+        Assert.Equal("Volltreffer", details.Reason);
+        var reason = death.Message;
         Assert.Contains("Volltreffer", reason);
         Assert.Contains("Pikachu", reason);
         Assert.Contains("Tackle", reason);
+    }
+
+    [Fact]
+    public void FeedKeepsEachCatchVerdictAndCompleteLinkMembers()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test");
+        var first = this.Join(run, "Anne");
+        var second = this.Join(run, "Max");
+        foreach (var client in new[] { first, second }) this.Send(client, 1, true, Snapshot(1, Mon(1) with { Species = 1 }));
+        this.engine.ChangeRun("guild", run.Id, "start");
+        this.Send(first, 2, false, Snapshot(2, Mon(1) with { Species = 1 }, Mon(2) with { Species = 25 }));
+        this.Send(second, 2, false, Snapshot(2, Mon(1) with { Species = 1 }, Mon(3, slot: 1) with { Species = 26 }));
+        var history = this.engine.View(first.Registration).History;
+        var catches = history.Where(e => e.Kind == "caught").Select(e => e.Details!).ToArray();
+        Assert.Equal(2, catches.Length);
+        Assert.Null(catches[0].CatchCheck!.PreviouslyCaught);
+        Assert.Equal("Pikachu", catches[1].CatchCheck!.PreviouslyCaught);
+        Assert.All(catches, c => Assert.True(c.AreaAvailable == true));
+        var linked = Assert.Single(history, e => e.Kind == "linked");
+        Assert.Equal(new[] { new EventPokemon("Anne", 25), new EventPokemon("Max", 26) }, linked.Details!.Members);
     }
 
     [Fact]
