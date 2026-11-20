@@ -12,7 +12,9 @@ Links stehen Fänge, vollständige Links und Todesfälle im scrollbaren Newsfeed
 
 Die Minimap verwendet die originale Hoenn-Karte aus deiner ROM. Im Freien wird deine Position aus der aktuellen Spielfeldkachel auf die Weltkarte übertragen. In Gebäuden erscheint der Marker am zugehörigen Gebiet. Gestrichelte Icons zeigen die letzte bekannte Position.
 
-Team und Karte zeigen im gemeinsamen Run die zuletzt vom Server angenommenen Daten. **Abgleich nötig** markiert einen erkannten Spielstandwechsel oder eine unerwartete Inventaränderung. Ist der aktuelle Spielstand korrekt, kann der Gastgeber ihn unter **Spieler und Spielstände → Spielstand neu abgleichen** freigeben. Der Client verbindet sich daraufhin selbst neu.
+Team und Karte zeigen im gemeinsamen Run die zuletzt vom Server angenommenen Daten. Nach Verbindungsabbrüchen, Inventaränderungen und Schnellladen gleicht SoulLink den Bestand desselben Trainers automatisch ab. Bisherige Fänge, Links und Tode bleiben in der Run-Historie. Erscheint **Anderer Spielstand**, lade den zum Run gehörenden Spielstand. Für einen absichtlichen Wechsel des Trainers kann der Gastgeber unter **Spieler und Spielstände → Spielstand neu abgleichen** den neuen Spielstand freigeben.
+
+Sobald du in Rubin die Pokébälle von Professor Birchs Labor erhalten hast, zählt der erste bestätigte Wildkampf pro Fangort. Flucht oder ein besiegtes wildes Pokémon ohne Fang sperrt den Ort für die ganze Gruppe. Bereits zugehörige Pokémon zählen als tot. Im Newsfeed steht, wer den Erstfang verpasst hat und welche Pokémon betroffen sind.
 
 Die nächste Arena richtet sich nach dem gemeinsamen Fortschritt. **Abschließen** und **Zurücknehmen** gelten für alle Spieler im Run. Für erkannte Arenateams zeigt SoulLink die Level aus der jeweils geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 

@@ -2,6 +2,7 @@ namespace SoulLink;
 
 public sealed record RawPokemon(string Hex, Placement Container, int Slot, int? Box = null, int? LiveHp = null);
 public sealed record RawBattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? TrainerHex, bool FinishingBlow = false);
+public sealed record RawWildBattle(int MapGroup, int MapNumber, long Started, long Ended, int Outcome);
 
 public sealed record BridgeFrame
 {
@@ -24,6 +25,7 @@ public sealed record BridgeFrame
     public bool InBattle { get; init; }
     public MapPosition? Position { get; init; }
     public RawBattleTrace[]? Faints { get; init; }
+    public RawWildBattle[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
     public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
@@ -74,6 +76,7 @@ public sealed record BridgeFrame
             Epoch = this.Epoch,
             Frame = this.Frame,
             PlaySeconds = this.PlaySeconds,
+            TrainerId = this.TrainerId,
             MapGroup = this.MapGroup,
             MapNumber = this.MapNumber,
             Area = MapCatalog.Section(this.MapGroup, this.MapNumber),
@@ -84,6 +87,11 @@ public sealed record BridgeFrame
                     .Select(ParseTrace)
                     .DistinctBy(f => f.PartySlot).ToArray()
                 : null,
+            WildBattles = this.WildBattles is { Length: > 0 and <= 16 } ? this.WildBattles
+                .Where(battle => battle is { MapGroup: >= 0 and <= 255, MapNumber: >= 0 and <= 255, Started: >= 0, Outcome: >= 1 and <= 10 } &&
+                    battle.Started < battle.Ended && battle.Ended <= this.Frame)
+                .Select(battle => new WildBattleResult(MapCatalog.Section(battle.MapGroup, battle.MapNumber), battle.Started, battle.Ended, battle.Outcome))
+                .Where(battle => battle.Area != 255).ToArray() : null,
             BadgeMask = this.BadgeMask,
             RubyStarterWindow = this.RubyStarterWindow,
             GymLevels = ValidateLevels(this.GymLevels),

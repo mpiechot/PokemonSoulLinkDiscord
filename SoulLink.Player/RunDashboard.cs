@@ -59,7 +59,7 @@ internal sealed class RunDashboard : TableLayoutPanel
                 localData ? view.Snapshot is not null : p.Connection == "Ready", local,
                 localData ? view.Snapshot?.Position ?? p.Position : p.Position, localData ? null : p.Connection switch
                 {
-                    "OutOfSync" => "Abgleich nötig",
+                    "OutOfSync" => "Anderer Spielstand",
                     "Synchronizing" => "Wartet auf Spieldaten",
                     "Stale" => "Spieldaten pausiert",
                     "Offline" => "Offline",

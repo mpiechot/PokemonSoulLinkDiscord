@@ -554,7 +554,7 @@ internal sealed class CompanionForm : Form
         bool synchronized = view.Snapshot is not null && (sharedPlayer is null || sharedPlayer.Connection == "Ready");
         string gameHint = sharedPlayer?.Connection switch
         {
-            "OutOfSync" => "Abgleich nötig. Bitte den Gastgeber fragen.",
+            "OutOfSync" => "Anderer Spielstand. Lade den Spielstand dieses Runs.",
             "Synchronizing" => "Warte auf gültige Spieldaten für den Run.",
             "Stale" => "Keine aktuellen Daten aus mGBA.",
             _ => this.runtime.OwnedBridgeReady ? "mGBA verbunden. Neues Spiel beginnen oder Spielstand laden." : "Spiel in mGBA öffnen.",

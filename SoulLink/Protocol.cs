@@ -29,6 +29,7 @@ public sealed record MapPosition(int X, int Y, int Width, int Height, bool Outdo
 }
 
 public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer, bool FinishingBlow = false);
+public sealed record WildBattleResult(int Area, long Started, long Ended, int Outcome);
 public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default, DateTimeOffset? At = null);
 
 public sealed record PokemonState
@@ -59,6 +60,7 @@ public sealed record GameSnapshot
     public string Epoch { get; init; } = "";
     public long Frame { get; init; }
     public long PlaySeconds { get; init; }
+    public uint? TrainerId { get; init; }
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; }
@@ -66,6 +68,7 @@ public sealed record GameSnapshot
     public string AreaName => AreaCatalog.Name(this.Area);
     public bool InBattle { get; init; }
     public BattleTrace[]? Faints { get; init; }
+    public WildBattleResult[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
     public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
@@ -121,6 +124,11 @@ public sealed class AutomationPlayer
     public byte ArenaProgress => (byte)(((this.LastSnapshot?.BadgeMask ?? this.DisplayBadges ?? 0) | this.ArenaConfirmed) & ~this.ArenaReverted);
     public byte? DisplayBadges { get; set; }
     public bool RebaselineAllowed { get; set; }
+    public uint? TrainerId { get; set; }
+    public string? RunStartEpoch { get; set; }
+    public long RunStartFrame { get; set; }
+    public bool NeedsActiveBaseline { get; set; }
+    public HashSet<int> FirstWildAreas { get; set; } = [];
     public List<TrackedPokemon> Pokemon { get; set; } = [];
 }
 

@@ -43,7 +43,6 @@ public sealed class ClientRuntime : BackgroundService
     private GameSnapshot? latest;
     private string? lastFingerprint;
     private bool baseline = true;
-    private bool blocked;
     private long sequence;
     private string state = "Not registered";
     private DateTimeOffset? bridgeSeen;
@@ -286,7 +285,6 @@ public sealed class ClientRuntime : BackgroundService
         try
         {
             await this.CloseConnectionAsync();
-            this.blocked = false;
         }
         finally { this.connectionGate.Release(); }
     }
@@ -365,8 +363,6 @@ public sealed class ClientRuntime : BackgroundService
             this.session = await this.connection.InvokeAsync<SessionInfo>("Hello", new Hello(this.settings.ClientId), cancellationToken);
             this.sequence = this.session.NextSequence;
             this.baseline = true;
-            // The server retains the OutOfSync guard until a host authorizes reconciliation.
-            this.blocked = false;
             this.lastFingerprint = null;
             this.SetState("Synchronizing — waiting for mGBA");
         }
@@ -378,7 +374,7 @@ public sealed class ClientRuntime : BackgroundService
             fresh = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(8);
         }
         await this.connection.InvokeAsync<string>("HeartbeatWithBridge", this.session!.SessionId, fresh, cancellationToken);
-        if (snapshot is not null && fresh && !this.blocked)
+        if (snapshot is not null && fresh)
         {
             // Time/frame continue changing; only meaningful observations cross the network.
             string fingerprint = Protocol.Serialize(new
@@ -390,7 +386,9 @@ public sealed class ClientRuntime : BackgroundService
                 snapshot.Position,
                 snapshot.InBattle,
                 snapshot.Faints,
+                snapshot.WildBattles,
                 snapshot.Epoch,
+                snapshot.TrainerId,
                 snapshot.BadgeMask,
                 snapshot.RubyStarterWindow
             });
@@ -406,7 +404,15 @@ public sealed class ClientRuntime : BackgroundService
                     this.baseline = false;
                     this.lastFingerprint = fingerprint;
                 }
-                else if (result.State == "OutOfSync") this.blocked = true;
+                else if (result.State == "Reconnecting")
+                {
+                    await this.CloseConnectionAsync();
+                    return;
+                }
+                else if (result.State == "OutOfSync")
+                {
+                    this.lastFingerprint = null;
+                }
             }
         }
         var status = await this.connection.InvokeAsync<AutomationRun>("Status", cancellationToken);

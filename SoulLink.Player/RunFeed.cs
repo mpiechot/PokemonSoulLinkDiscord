@@ -186,6 +186,11 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Dashboa
             return new FeedCard("Link vollständig", "team", DashboardTheme.Panel, DashboardTheme.Text, time,
                 [new($"Link: {area}"), .. members.Select(p => new FeedLine($"{p.Player}: {RubyNames.Pokemon(p.Species)}"))]);
         }
+        if (e.Kind == "encounter-failed")
+        {
+            return new FeedCard("Erstfang verpasst", "death", Color.FromArgb(44, 49, 58), Color.FromArgb(210, 216, 225), time,
+                [new(e.Message), .. (detail?.Members ?? []).Select(p => new FeedLine($"Betroffen: {p.Player} ({RubyNames.Pokemon(p.Species)})"))]);
+        }
         var (title, icon) = e.Kind switch
         {
             "caught" or "extra-catch" => ("Fang", "catch"),

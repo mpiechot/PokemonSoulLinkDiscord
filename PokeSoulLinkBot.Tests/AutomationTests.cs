@@ -259,17 +259,15 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
-    public void SequenceGapBlocksAutomationAcrossReconnectUntilExplicitRebaseline()
+    public void SequenceGapResynchronizesFromTheServerOnReconnect()
     {
-        var (run, client) = this.Active();
+        var (_, client) = this.Active();
         var result = this.Send(client, 4, false, Snapshot(2, Mon(1), Mon(2)));
-        Assert.Equal("OutOfSync", result.State);
+        Assert.Equal("Reconnecting", result.State);
         var session = this.engine.Connect(client.Registration, new Hello(client.Registration.ClientId));
         var retry = this.engine.Observe(client.Registration, new Observation(Guid.NewGuid(), session.SessionId, 2, true, Snapshot(2, Mon(1))));
-        Assert.False(retry.Accepted);
-        this.engine.Rebaseline("guild", run.Id, client.Registration.PlayerId);
-        session = this.engine.Connect(client.Registration, new Hello(client.Registration.ClientId));
-        Assert.True(this.engine.Observe(client.Registration, new Observation(Guid.NewGuid(), session.SessionId, 2, true, Snapshot(2, Mon(1), Mon(2)))).Accepted);
+        Assert.True(retry.Accepted);
+        Assert.Equal("Ready", retry.State);
         Assert.Empty(this.engine.View(client.Registration).Encounters);
     }
 
@@ -292,7 +290,7 @@ public sealed class AutomationTests : IDisposable
     [InlineData("clock")]
     [InlineData("experience")]
     [InlineData("epoch")]
-    public void RollbacksAndMissingPokemonPauseWithoutFalseEvents(string kind)
+    public void RollbacksAndMissingPokemonSynchronizeWithoutFalseEvents(string kind)
     {
         var (_, client) = this.Active();
         var snapshot = kind switch
@@ -302,12 +300,14 @@ public sealed class AutomationTests : IDisposable
             "experience" => Snapshot(2, Mon(1) with { Experience = 1 }),
             _ => Snapshot(2, Mon(1)) with { Epoch = "different" },
         };
-        Assert.Equal("OutOfSync", this.Send(client, 2, false, snapshot).State);
-        Assert.Empty(this.engine.View(client.Registration).History);
+        Assert.Equal("Ready", this.Send(client, 2, false, snapshot).State);
+        var view = this.engine.View(client.Registration);
+        Assert.Empty(view.History);
+        Assert.Equal(kind != "missing", Assert.Single(Assert.Single(view.Players).Pokemon).Present);
     }
 
     [Fact]
-    public void ServerRestartRequiresBaselineAndDoesNotReplayOfflineCatches()
+    public void ServerRestartReconcilesACatchFromAContinuousGameOnBaseline()
     {
         var (_, client) = this.Active();
         var restarted = new AutomationEngine(this.store);
@@ -315,8 +315,82 @@ public sealed class AutomationTests : IDisposable
             new Observation(Guid.NewGuid(), client.Session.SessionId, 2, false, Snapshot(2, Mon(1)))));
         var session = restarted.Connect(client.Registration, new Hello(client.Registration.ClientId));
         Assert.False(restarted.Observe(client.Registration, new Observation(Guid.NewGuid(), session.SessionId, 2, false, Snapshot(2, Mon(1)))).Accepted);
-        Assert.Equal("OutOfSync", restarted.Observe(client.Registration,
+        Assert.Equal("Ready", restarted.Observe(client.Registration,
             new Observation(Guid.NewGuid(), session.SessionId, 2, true, Snapshot(2, Mon(1), Mon(2)))).State);
+        Assert.Single(restarted.View(client.Registration).History, e => e.Kind == "caught");
+    }
+
+    [Fact]
+    public void LoadingTheCorrectTrainerAutomaticallyRecoversAndKeepsTheLink()
+    {
+        var (_, client) = this.Active();
+        this.Send(client, 2, false, Snapshot(2, Mon(1), Mon(2)) with { TrainerId = 123 });
+        var original = Assert.Single(this.engine.View(client.Registration).Encounters);
+        Assert.Equal("OutOfSync", this.Send(client, 3, false, Snapshot(1, Mon(3)) with { TrainerId = 456, Epoch = "other" }).State);
+        Assert.Equal("Ready", this.Send(client, 3, false, Snapshot(1, Mon(1)) with { TrainerId = 123, Epoch = "old-save" }).State);
+        Assert.Equal("Ready", this.Send(client, 4, false, Snapshot(2, Mon(1), Mon(2)) with { TrainerId = 123, Epoch = "old-save" }).State);
+
+        var view = this.engine.View(client.Registration);
+        Assert.Equal(original.GroupId, Assert.Single(view.Encounters).GroupId);
+        Assert.Single(view.History, e => e.Kind == "caught");
+        Assert.All(Assert.Single(view.Players).Pokemon, pokemon => Assert.True(pokemon.Present));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void FailedFirstWildEncounterKillsTheRouteAndAnAlreadyCaughtPartner(int outcome)
+    {
+        var run = this.engine.Initialize("guild", 0, "Test");
+        var first = this.Join(run, "First");
+        var second = this.Join(run, "Second");
+        this.Send(first, 1, true, Snapshot(1, Mon(1)));
+        this.Send(second, 1, true, Snapshot(1, Mon(1)));
+        this.engine.ChangeRun("guild", run.Id, "start");
+        this.Send(first, 2, false, Snapshot(2, Mon(1), Mon(2)));
+
+        var battle = new WildBattleResult(16, 2, 3, outcome);
+        Assert.True(this.Send(second, 2, false, Snapshot(3, Mon(1)) with { WildBattles = [battle] }).Accepted);
+        Assert.True(this.Send(second, 3, false, Snapshot(4, Mon(1), Mon(2)) with { WildBattles = [battle] }).Accepted);
+
+        var view = this.engine.View(second.Registration);
+        var route = Assert.Single(view.Encounters);
+        Assert.True(route.Failed && route.Dead);
+        var member = Assert.Single(route.Members);
+        Assert.Equal(first.Registration.PlayerId, member.Key);
+        Assert.True(view.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value).Dead);
+        Assert.Single(view.History, e => e.Kind == "encounter-failed");
+        Assert.Single(view.History, e => e.Kind == "extra-catch");
+    }
+
+    [Fact]
+    public void WildResultsIgnoreBattleAlreadyInProgressAtStartAndSubsequentFailuresAfterACatch()
+    {
+        var (_, client) = this.Active();
+        var preRun = new WildBattleResult(17, 0, 2, 1);
+        var caught = new WildBattleResult(16, 2, 3, 7);
+        var laterFailure = new WildBattleResult(16, 4, 5, 1);
+        Assert.True(this.Send(client, 2, false, Snapshot(5, Mon(1), Mon(2)) with { WildBattles = [preRun, caught, laterFailure] }).Accepted);
+
+        var view = this.engine.View(client.Registration);
+        Assert.DoesNotContain(view.History, e => e.Kind == "encounter-failed");
+        var route = Assert.Single(view.Encounters);
+        Assert.Equal(16, route.Area);
+        Assert.False(route.Dead);
+    }
+
+    [Fact]
+    public void ResultsAccumulatedWhilePausedAreSkippedAfterResuming()
+    {
+        var (run, client) = this.Active();
+        this.engine.ChangeRun("guild", run.Id, "pause");
+        this.engine.ChangeRun("guild", run.Id, "load");
+        var session = this.engine.Connect(client.Registration, new Hello(client.Registration.ClientId));
+        var duringPause = new WildBattleResult(16, 2, 3, 1);
+        var afterResume = new WildBattleResult(17, 5, 6, 1);
+        Assert.True(this.Send(client with { Session = session }, 2, true, Snapshot(4, Mon(1)) with { WildBattles = [duringPause] }).Accepted);
+        Assert.True(this.Send(client with { Session = session }, 3, false, Snapshot(6, Mon(1)) with { WildBattles = [duringPause, afterResume] }).Accepted);
+        Assert.Equal(17, Assert.Single(this.engine.View(client.Registration).Encounters).Area);
     }
 
     [Fact]

@@ -37,7 +37,9 @@ The authenticated registration, never a payload's player or run ID, determines o
 
 `Connecting → Synchronizing → Ready`, or `OutOfSync`. Liveness reports Stale after 15 seconds and Offline after 45 seconds. Sessions are in memory; persistent inventories, sequences and receipts survive restart.
 
-Every server/client/Lua reconnect requires a full baseline. Existing inventory is compared by identity, species, experience and egg state. No offline events are replayed. A mismatch, a backward clock/frame/experience, an unexpected epoch, a disappeared identity or a sequence gap pauses automated changes. OutOfSync remains sticky across reconnect until an administrator authorizes rebaseline. Explicit rebaseline imports current state without reconstructing catches, reviving members or replacing links.
+Every server/client reconnect requires a full baseline. A sequence gap triggers an automatic reconnect. A full snapshot from the same trainer updates the visible inventory and preserves tracked identities, deaths and links. A continuous game can report newly observed catches on reconnect. Following a detected rewind, reset or explicit rebaseline, the new inventory is imported without inferring past catches or reviving members. A different trainer ID is rejected until the correct save returns or the host approves a switch.
+
+The optional `wildBattles` list carries up to sixteen completed wild battles from the current emulator epoch, including the map and observed start/end frames. The server consumes the first completed result per player and area after the run begins. A confirmed catch leaves link creation to inventory tracking. A missed catch marks the encounter failed and marks any existing members dead. Baselines after a timeline change or a paused run discard older battle results.
 
 Normal snapshots include fresh time/frame for rollback detection, but their wire transmission is triggered by meaningful inventory/map/battle changes. HP-zero observations are repeated to support the two-observation configurable death rule.
 

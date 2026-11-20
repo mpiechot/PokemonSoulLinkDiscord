@@ -236,6 +236,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                         throw new InvalidOperationException("Every player must send a valid baseline before starting.");
                     run.Phase = RunPhase.Active;
                     run.Invitation = "";
+                    foreach (var participant in run.Players)
+                    {
+                        participant.RunStartEpoch = participant.LastSnapshot?.Epoch;
+                        participant.RunStartFrame = participant.LastSnapshot?.Frame ?? 0;
+                    }
                     if (run.Encounters.SingleOrDefault(link => link.Area == Encounter.StarterArea) is { } starter)
                         this.CompleteLink(tx, run, starter);
                     break;
@@ -244,7 +249,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                     foreach (var previous in tx.Runs(guild).Where(r => r.Selected && r.Id != run.Id))
                         Deselect(tx, previous);
                     run.Selected = true;
-                    if (run.Phase == RunPhase.Paused) run.Phase = RunPhase.Active;
+                    if (run.Phase == RunPhase.Paused)
+                    {
+                        run.Phase = RunPhase.Active;
+                        foreach (var participant in run.Players) participant.NeedsActiveBaseline = true;
+                    }
                     foreach (var player in run.Players) this.sessions.TryRemove(player.Id, out _);
                     break;
                 case "pause":
@@ -309,7 +318,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             var player = run.Players.Single(p => p.Id == registration.PlayerId);
             var session = new LiveSession(Guid.NewGuid(), this.clock.GetUtcNow());
             this.sessions[player.Id] = session;
-            if (player.Connection != "OutOfSync") player.Connection = "Synchronizing";
+            if (player.Connection != "OutOfSync" || player.Diagnostic != DifferentTrainer) player.Connection = "Synchronizing";
             player.LastSeen = this.clock.GetUtcNow();
             tx.Save(run);
             return new SessionInfo(session.Id, run.Id, player.Id, player.Sequence + 1);
@@ -359,9 +368,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             if (tx.HasReceipt(player.Id, observation.EventId, observation.Sequence))
                 return new ObservationResult(true, player.Connection, "Already acknowledged.", player.Sequence + 1);
             if (observation.Sequence != player.Sequence + 1)
-                return this.OutOfSync(tx, run, player, "Sequence gap or out-of-order observation; reconnect and reconcile.");
-            if (player.Connection == "OutOfSync" && !player.RebaselineAllowed)
-                return new ObservationResult(false, "OutOfSync", player.Diagnostic, player.Sequence + 1);
+                return new ObservationResult(false, "Reconnecting", "Synchronisiere die Verbindung automatisch.", player.Sequence + 1);
             if (!session.Ready && !observation.Baseline)
                 return new ObservationResult(false, "Synchronizing", "A reconnect baseline is required.", player.Sequence + 1);
             if (!run.Selected || run.Phase is RunPhase.Paused or RunPhase.Finished)
@@ -370,24 +377,17 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             var snapshot = observation.Snapshot;
             var previous = player.LastSnapshot;
             bool baseline = !session.Ready || observation.Baseline;
+            if (!player.RebaselineAllowed && snapshot.TrainerId is uint trainer && player.TrainerId is uint registeredTrainer && trainer != registeredTrainer)
+                return player.Connection == "OutOfSync" && player.Diagnostic == DifferentTrainer
+                    ? new ObservationResult(false, "OutOfSync", DifferentTrainer, player.Sequence + 1)
+                    : this.OutOfSync(tx, run, player, DifferentTrainer);
             if (!baseline && previous is not null && snapshot.Epoch == previous.Epoch && snapshot.Frame == previous.Frame)
                 return new ObservationResult(false, "Ready", "Waiting for a fresh emulator frame.", player.Sequence + 1);
-            if (previous is not null && !player.RebaselineAllowed)
-            {
-                if (snapshot.PlaySeconds + 1 < previous.PlaySeconds ||
-                    (snapshot.Epoch == previous.Epoch && snapshot.Frame < previous.Frame))
-                    return this.OutOfSync(tx, run, player, "Game time moved backwards; possible save-state load.");
-                if (session.Ready && snapshot.Epoch != previous.Epoch)
-                    return this.OutOfSync(tx, run, player, "The emulator reset or loaded a state. Explicit reconciliation required.");
-                if (baseline && !SameInventory(previous, snapshot))
-                    return this.OutOfSync(tx, run, player, "Inventory changed while disconnected; offline events are not replayed.");
-                if (previous.Pokemon.Any(old => !snapshot.Pokemon.Any(p => p.Identity == old.Identity)))
-                    return this.OutOfSync(tx, run, player, "A known Pokémon disappeared. Check release, daycare, trade or rollback before rebaselining.");
-                if (snapshot.Pokemon.Any(p => player.Pokemon.Any(old => old.State.Identity == p.Identity && old.State.Experience > p.Experience)))
-                    return this.OutOfSync(tx, run, player, "Pokémon experience moved backwards.");
-            }
-
-            bool import = baseline || run.Phase == RunPhase.Lobby;
+            bool sameTimeline = previous is not null && !player.RebaselineAllowed && !player.NeedsActiveBaseline && previous.Epoch == snapshot.Epoch &&
+                snapshot.Frame >= previous.Frame && snapshot.PlaySeconds + 1 >= previous.PlaySeconds &&
+                !snapshot.Pokemon.Any(mon => previous.Pokemon.Any(old => old.Identity == mon.Identity && old.Experience > mon.Experience));
+            bool import = !sameTimeline || run.Phase == RunPhase.Lobby;
+            if (!import) this.RecordWildResults(tx, run, player, snapshot, previous!.Frame);
             foreach (var tracked in player.Pokemon) tracked.Present = false;
             foreach (var state in snapshot.Pokemon)
             {
@@ -409,7 +409,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
                 tracked.State = state;
                 tracked.Present = true;
-                this.ObserveFaint(tx, run, player, tracked, snapshot, previous, import);
+                this.ObserveFaint(tx, run, player, tracked, snapshot, previous, import || baseline);
             }
 
             player.LastSnapshot = snapshot;
@@ -422,8 +422,15 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 if (acquired > 0) this.Event(tx, run, "badge", $"{player.Name}: +{acquired} Orden.", notify: false);
             }
             player.Sequence = observation.Sequence;
+            player.TrainerId = snapshot.TrainerId ?? player.TrainerId;
+            if (player.NeedsActiveBaseline)
+            {
+                player.RunStartEpoch = snapshot.Epoch;
+                player.RunStartFrame = snapshot.Frame;
+                player.NeedsActiveBaseline = false;
+            }
             player.Connection = "Ready";
-            player.Diagnostic = import ? "Baseline accepted; existing Pokémon imported without catch events." : "Observation accepted.";
+            player.Diagnostic = import ? "Spielstand abgeglichen. Bisherige Fänge, Links und Tode bleiben erhalten." : "Observation accepted.";
             player.RebaselineAllowed = false;
             player.LastSeen = this.clock.GetUtcNow();
             tx.Receipt(player.Id, observation.EventId, observation.Sequence);
@@ -538,9 +545,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             var encounter = run.Encounters.SingleOrDefault(e => e.Area == area);
             if (encounter?.GroupId is not null) throw new InvalidOperationException("A completed link cannot be marked as a missed encounter.");
             encounter ??= new Encounter { Area = area };
-            if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
-            encounter.Failed = true;
-            this.Event(tx, run, "encounter-failed", $"{run.Name}: {encounter.Name} — encounter failed (manual confirmation).");
+            if (encounter.Failed) return false;
+            this.FailEncounter(tx, run, encounter, $"{RubyNames.Area(area)}: Erstfang als verpasst bestätigt.");
             tx.Save(run);
             return true;
         });
@@ -572,9 +578,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         });
     }
 
-    private static bool SameInventory(GameSnapshot left, GameSnapshot right) =>
-        left.Pokemon.Count == right.Pokemon.Count && left.Pokemon.All(a => right.Pokemon.Any(b =>
-            a.Identity == b.Identity && a.Species == b.Species && a.Experience == b.Experience && a.IsEgg == b.IsEgg));
+    private const string DifferentTrainer = "Ein anderer Trainer ist geladen. Wähle den Spielstand dieses Runs.";
 
     private static void ValidateName(string name)
     {
@@ -589,6 +593,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         if (snapshot.GameCode != "AXVD" || snapshot.Epoch.Length is < 1 or > 80 || snapshot.LayoutId.Length is < 1 or > 80 ||
             snapshot.Frame < 0 || snapshot.PlaySeconds < 0 || snapshot.Area is < 0 or > 255 ||
             snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426 ||
+            snapshot.WildBattles is { Length: > 16 } || snapshot.WildBattles?.Any(battle =>
+                battle is null || battle.Area is < 0 or >= 255 || battle.Started < 0 || battle.Ended <= battle.Started ||
+                battle.Ended > snapshot.Frame || battle.Outcome is < 1 or > 10) == true ||
             snapshot.Position is { Valid: false } || snapshot.Faints is { Length: > 6 } ||
             snapshot.Faints?.Any(f => f is null || f.PartySlot is < 0 or > 5 || f.Move is < 1 or > 354 ||
                 f.OpponentSpecies.HasValue && !SpeciesCatalog.IsValid(f.OpponentSpecies.Value) ||
@@ -615,6 +622,37 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         player.Diagnostic = reason;
         tx.Save(run);
         return new ObservationResult(false, "OutOfSync", reason, player.Sequence + 1);
+    }
+
+    private void RecordWildResults(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, GameSnapshot snapshot, long previousFrame)
+    {
+        long floor = player.RunStartEpoch == snapshot.Epoch ? player.RunStartFrame : -1;
+        foreach (var battle in (snapshot.WildBattles ?? []).OrderBy(result => result.Ended))
+        {
+            if (battle.Ended <= previousFrame || battle.Started <= floor || !player.FirstWildAreas.Add(battle.Area)) continue;
+            if (battle.Outcome == 7) continue; // The game confirmed a catch. Inventory supplies its identity.
+
+            var encounter = run.Encounters.SingleOrDefault(link => link.Area == battle.Area);
+            if (encounter is { Failed: true } or { Dead: true } or { GroupId: not null } ||
+                encounter?.Members.ContainsKey(player.Id) == true) continue;
+            encounter ??= new Encounter { Area = battle.Area };
+            this.FailEncounter(tx, run, encounter, $"{player.Name}: Erstfang in {RubyNames.Area(battle.Area)} verpasst.", player);
+        }
+    }
+
+    private void FailEncounter(AutomationStore.StoreTransaction tx, AutomationRun run, Encounter encounter, string description, AutomationPlayer? player = null)
+    {
+        if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
+        encounter.Failed = encounter.Dead = true;
+        foreach (var member in encounter.Members)
+        {
+            var pokemon = run.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value);
+            pokemon.Dead = true;
+            pokemon.PendingDeath = null;
+            pokemon.FaintBattle = null;
+        }
+        this.Event(tx, run, "encounter-failed", description, player: player, area: encounter.Area,
+            details: new EventDetails(Members: DescribeLink(run, encounter).ToArray()));
     }
 
     private void Catch(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, TrackedPokemon pokemon, GameSnapshot snapshot)

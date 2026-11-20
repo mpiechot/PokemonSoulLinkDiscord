@@ -11,7 +11,7 @@ local profiles = {
         storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770,
         stats = 0x0820BBE8, trainers = 0x081FD478,
         mapHeader = 0x0202E828, avatar = 0x0202E858, objects = 0x030048B0,
-        battle = {flags = 0x020239F8, count = 0x02024A68, slots = 0x02024A6A, sides = 0x02024A72,
+        battle = {flags = 0x020239F8, outcome = 0x02024D26, count = 0x02024A68, slots = 0x02024A6A, sides = 0x02024A72,
             mons = 0x02024A80, lastMoves = 0x02024C3C, lastHitBy = 0x02024C5C, trainer = 0x0202FF5E,
             active = 0x02024A60, move = 0x02024BE6, damage = 0x02024BEC, dealt = 0x02024BF0,
             attacker = 0x02024C07, target = 0x02024C08, script = 0x02024C10, hitMarker = 0x02024C6C}
@@ -23,12 +23,14 @@ SOULLINK_ITEM_SESSION = nil
 local peer, pending, position = nil, nil, 1
 local itemInput, itemReply, lastItemRequest = "", nil, nil
 local itemIds = {[1] = true, [2] = true, [3] = true, [4] = true, [68] = true}
-local epoch = tostring({}):gsub("[^%w]", "")
+local epochSeed = tostring({}):gsub("[^%w]", "") .. tostring(os.time()) .. "_"
+local epochSerial, epoch = 0, epochSeed .. "0"
 local tick, lastFrame = 0, -1
 local lastError = ""
 local activeProfile
 local battleFaints, lastPosition = {}, "null"
 local faintDirty = false
+local canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
 local nextHit
 local gymLineups, rubyTypes
 
@@ -239,6 +241,29 @@ local function captureBattle(profile, frame)
     end
 end
 
+local function observeWildBattle(profile, frame)
+    if profile ~= profiles.AXVD then return end
+    local outcome = read8(profile.battle.outcome)
+    if (read8(profile.main + 0x43D) & 2) == 0 then
+        if wildBattle and frame > wildBattle.started and outcome >= 1 and outcome <= 10 then
+            wildResults[#wildResults + 1] = string.format('{"mapGroup":%d,"mapNumber":%d,"started":%d,"ended":%d,"outcome":%d}',
+                wildBattle.group, wildBattle.number, wildBattle.started, frame, outcome)
+            if #wildResults > 16 then table.remove(wildResults, 1) end
+            wildDirty = true
+        end
+        wildBattle, canStartWild = nil, lastPosition ~= "null"
+        return
+    end
+    if not canStartWild or outcome ~= 0 then return end
+
+    canStartWild = false
+    local flags = read32(profile.battle.flags)
+    -- Normal and roaming wild battles only. The lab sets FLAG_ADVENTURE_STARTED after awarding Poké Balls.
+    if (flags & ~0x404) == 0 and (read8(profile.save1 + 0x122E) & 0x10) ~= 0 then
+        wildBattle = {group = read8(profile.save1 + 4), number = read8(profile.save1 + 5), started = frame}
+    end
+end
+
 local function sendPending()
     if not peer or not pending then return end
     local index, err = peer:send(pending, position)
@@ -353,32 +378,37 @@ local function snapshot(frame)
         rubyTypes = typesOk and types or ""
     end
     local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId, itemCapability,
-        group, number, lastPosition, tostring(battle), table.concat(faints, ","), badges,
+        group, number, lastPosition, tostring(battle), table.concat(faints, ","), table.concat(wildResults, ","), badges,
         tostring(starterWindow), gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
 
 local function reset()
-    epoch = tostring({}):gsub("[^%w]", "")
+    epochSerial = epochSerial + 1
+    epoch = epochSeed .. tostring(epochSerial)
     activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
     faintDirty, nextHit, lastFrame = false, nil, -1
+    canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
     stop()
 end
 
 local function onFrame()
     tick = tick + 1
     local frame = readCore():currentFrame()
-    if lastFrame >= 0 and (frame < lastFrame or frame > lastFrame + 1) then reset() end
+    if lastFrame >= 0 and frame < lastFrame then reset() end
     lastFrame = frame
-    if activeProfile then pcall(captureBattle, activeProfile, frame) end
+    if activeProfile then
+        pcall(captureBattle, activeProfile, frame)
+        pcall(observeWildBattle, activeProfile, frame)
+    end
     sendPending()
     receivePcItem()
     if itemReply and not pending then
         pending, position, itemReply = itemReply, 1, nil
         sendPending()
     end
-    if (tick % 30 ~= 0 and not faintDirty) or pending then return end
+    if (tick % 30 ~= 0 and not faintDirty and not wildDirty) or pending then return end
     if not peer then
         local valid, profileOrError = pcall(readProfile)
         if not valid then report(tostring(profileOrError)); return end
@@ -394,7 +424,7 @@ local function onFrame()
     local ok, result = pcall(snapshot, frame)
     if not ok then report(tostring(result)); return end
     pending, position = result, 1
-    faintDirty = false
+    faintDirty, wildDirty = false, false
     sendPending()
     report("Streaming read-only reference profile. Check party and box contents in the client before starting the run.")
 end

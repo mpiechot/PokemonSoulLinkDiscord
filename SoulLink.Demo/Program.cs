@@ -177,25 +177,29 @@ try
         Console.WriteLine("Verified: a rejected Pokémon frame does not break the socket, and other players receive subsequent HP-only updates.");
 
         Guid localPlayer = rosterView.LocalPlayerId ?? throw new InvalidDataException("The local player registration is missing.");
+        var fullInventory = current.Pokemon;
         current = current with { Frame = ++frame, PlaySeconds = frame, Epoch = "new-emulator-state" };
-        await Send(current);
+        await Send(current with { Pokemon = [fullInventory[0]] });
         await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
-            .Single(player => player.Id == localPlayer).Connection == "OutOfSync");
-        await WaitUntil(async () => await SharedLocalConnection() == "OutOfSync");
-        await hostTools.RebaselineAsync(demoGroup.Id, run.Id, localPlayer);
-        current = current with { Frame = ++frame, PlaySeconds = frame };
+            .Single(player => player.Id == localPlayer) is { Connection: "Ready" } peer &&
+            peer.Pokemon.Count(pokemon => pokemon.Present) == 1);
+        current = current with { Frame = ++frame, PlaySeconds = frame, Pokemon = fullInventory };
         await Send(current);
-        await WaitUntil(async () => await SharedLocalConnection() == "Ready");
-        if ((await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Single(player => player.Id == localPlayer).Connection != "Ready")
-            throw new InvalidDataException("The resynchronized player still appears inactive to peers.");
-        Console.WriteLine("Verified: all clients see the same OutOfSync state, and an authorized rebaseline resumes without a manual reconnect.");
-
-        async Task<string?> SharedLocalConnection()
+        await WaitUntil(async () =>
         {
-            var view = await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token);
-            return view?.Run is { } shared && shared.Id == run.Id
-                ? shared.Players.SingleOrDefault(player => player.Id == localPlayer)?.Connection : null;
-        }
+            var shared = await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token);
+            return shared.Players.Single(player => player.Id == localPlayer) is { Connection: "Ready" } peer &&
+                peer.Pokemon.Count(pokemon => pokemon.Present) == 2 &&
+                shared.History.Count(entry => entry.Kind == "caught") == 3;
+        });
+        Console.WriteLine("Verified: peers see the restored inventory without host action or duplicate catches.");
+
+        long started = ++frame;
+        current = current with { Frame = ++frame, PlaySeconds = frame, InBattle = false, WildBattles = [new RawWildBattle(0, 17, started, frame, 4)] };
+        await Send(current);
+        await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Encounters
+            .Any(link => link.Area == 17 && link.Failed && link.Dead));
+        Console.WriteLine("Verified: a completed wild escape closes the route on the shared server.");
 
         const string rule = "Keine Heilitems im Arenakampf.";
         await hubs[0].InvokeAsync("AddRule", rule, lifetime.Token);
@@ -294,7 +298,7 @@ try
         {
             Frame = ++frame,
             PlaySeconds = frame,
-            Pokemon = [.. current.Pokemon, SyntheticPokemon.Raw(301, 25, slot: 2, area: 17)],
+            Pokemon = [.. current.Pokemon, SyntheticPokemon.Raw(301, 25, slot: 2, area: 18)],
         };
         await Send(current);
         await WaitUntil(async () =>
