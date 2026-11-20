@@ -30,6 +30,7 @@ public sealed class ClientRuntime : BackgroundService
     private ClientSettings settings;
     private readonly bool allowSyntheticFrames;
     private readonly bool enableLocalRun;
+    private readonly string? localRunDirectory;
     private readonly TimeProvider clock;
     private readonly JoinForm? autoJoin;
     private DateTimeOffset nextJoinAttempt;
@@ -47,6 +48,8 @@ public sealed class ClientRuntime : BackgroundService
     private ClientRunView? run;
     private ClientRunView? localView;
     private LocalRunTracker? localTracker;
+    private string? localRomHash;
+    private uint? localTrainerId;
     private bool bridgeReconnected;
     private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -56,6 +59,7 @@ public sealed class ClientRuntime : BackgroundService
         this.autoJoin = autoJoin;
         this.allowSyntheticFrames = configuration.GetValue("AllowSyntheticFrames", false);
         this.enableLocalRun = configuration.GetValue("EnableLocalRun", false);
+        this.localRunDirectory = configuration["LocalRunDirectory"];
         this.bridgePort = configuration.GetValue("BridgePort", 5091);
         this.settingsPath = Path.GetFullPath(configuration["SettingsPath"] ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "client.json"));
@@ -94,9 +98,32 @@ public sealed class ClientRuntime : BackgroundService
             this.bridgeSeen = this.clock.GetUtcNow();
             if (this.enableLocalRun)
             {
-                this.localTracker ??= new LocalRunTracker(this.clock);
+                if (this.localTrainerId != frame.TrainerId)
+                {
+                    this.ClearLocalRun();
+                    this.localTrainerId = frame.TrainerId;
+                }
+                this.localTracker ??= new LocalRunTracker(this.clock,
+                    this.localRunDirectory is { } directory && this.localRomHash is { } rom && this.localTrainerId is uint trainer
+                        ? Path.Combine(directory, $"{rom}-{trainer:X8}.sqlite") : null);
                 if (this.localTracker.Observe(snapshot)) this.localView = this.localTracker.View();
             }
+        }
+    }
+
+    public async Task SelectLocalGameAsync(string romPath)
+    {
+        string? romHash = null;
+        if (this.enableLocalRun && this.localRunDirectory is not null)
+        {
+            using var rom = File.OpenRead(romPath);
+            romHash = Convert.ToHexString(await SHA256.HashDataAsync(rom).ConfigureAwait(false));
+        }
+        lock (this.stateGate)
+        {
+            this.ClearLocalRun();
+            this.localRomHash = romHash;
+            this.localTrainerId = null;
         }
     }
 
@@ -104,10 +131,17 @@ public sealed class ClientRuntime : BackgroundService
     {
         lock (this.stateGate)
         {
-            this.localTracker?.Dispose();
-            this.localTracker = null;
-            this.localView = null;
+            this.ClearLocalRun();
+            this.localRomHash = null;
+            this.localTrainerId = null;
         }
+    }
+
+    private void ClearLocalRun()
+    {
+        this.localTracker?.Dispose();
+        this.localTracker = null;
+        this.localView = null;
     }
 
     public override void Dispose()

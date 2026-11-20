@@ -155,6 +155,97 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadingALaterSnapshotKeepsRecordedTimesAndConfirmedDeaths()
+    {
+        var clock = new TestClock();
+        using var client = this.Client(demo: true, clock: clock);
+        var starter = SyntheticPokemon.Raw(1, 392);
+        var caught = SyntheticPokemon.Raw(2, 25, slot: 1);
+        client.AcceptFrame(SyntheticPokemon.Frame(1, starter));
+        clock.Now = clock.Now.AddSeconds(5);
+        client.AcceptFrame(SyntheticPokemon.Frame(2, starter, caught));
+        DateTimeOffset caughtAt = clock.Now;
+        clock.Now = clock.Now.AddSeconds(2);
+        client.AcceptFrame(SyntheticPokemon.Frame(3, starter, SyntheticPokemon.Raw(2, 25, slot: 1, hp: 0)) with { InBattle = true });
+        var run = client.Status().Run!;
+        var faint = Assert.Single(run.Players.Single().PendingDeaths!);
+        await client.ResolveFaintAsync(run.Id, faint.PokemonId, faint.IncidentId, true, "Test");
+        DateTimeOffset diedAt = clock.Now;
+
+        clock.Now = clock.Now.AddSeconds(10);
+        client.AcceptFrame(SyntheticPokemon.Frame(4, starter, caught, SyntheticPokemon.Raw(3, 1, slot: 2, area: 17)) with { PlaySeconds = 240 });
+
+        var view = client.Status();
+        Assert.Equal(caughtAt, Assert.Single(view.Run!.History, e => e.Kind == "caught").At);
+        Assert.Equal(diedAt, Assert.Single(view.Run.History, e => e.Kind == "death").At);
+        Assert.Contains(RosterGridData.From(view, RosterView.Dead).Rows, row => row.Slots.Any(p => p?.State.Species == 25));
+    }
+
+    [Fact]
+    public async Task ReopeningTheSameLocalGameRestoresHistoryAndDeadList()
+    {
+        Directory.CreateDirectory(this.directory);
+        string ruby = Path.Combine(this.directory, "ruby.gba");
+        File.WriteAllBytes(ruby, [1, 2, 3]);
+        string otherRuby = Path.Combine(this.directory, "other-ruby.gba");
+        File.WriteAllBytes(otherRuby, [4, 5, 6]);
+        var clock = new TestClock();
+        var starter = SyntheticPokemon.Raw(1, 392);
+        var caught = SyntheticPokemon.Raw(2, 25, slot: 1);
+        const uint trainer = 1234;
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = Path.Combine(this.directory, "player.json"),
+            ["LocalRunDirectory"] = Path.Combine(this.directory, "test-runs"),
+            ["EnableLocalRun"] = "true",
+            ["AllowSyntheticFrames"] = "true",
+        }).Build();
+
+        Guid runId;
+        Guid caughtId;
+        DateTimeOffset caughtAt = clock.Now;
+        DateTimeOffset diedAt = caughtAt.AddSeconds(3);
+        using (var first = new ClientRuntime(configuration, clock))
+        {
+            await first.SelectLocalGameAsync(ruby);
+            first.AcceptFrame(SyntheticPokemon.Frame(1, starter) with { TrainerId = trainer });
+            first.AcceptFrame(SyntheticPokemon.Frame(2, starter, caught) with { TrainerId = trainer });
+            var run = first.Status().Run!;
+            runId = run.Id;
+            caughtId = Assert.Single(run.History, e => e.Kind == "caught").Id;
+            clock.Now = diedAt;
+            first.AcceptFrame(SyntheticPokemon.Frame(3, starter, SyntheticPokemon.Raw(2, 25, slot: 1, hp: 0)) with
+            {
+                TrainerId = trainer,
+                InBattle = true,
+            });
+            var faint = Assert.Single(first.Status().Run!.Players.Single().PendingDeaths!);
+            await first.ResolveFaintAsync(runId, faint.PokemonId, faint.IncidentId, true, "Test");
+        }
+
+        clock.Now = diedAt.AddHours(2);
+        using var reopened = new ClientRuntime(configuration, clock);
+        await reopened.SelectLocalGameAsync(ruby);
+        reopened.AcceptFrame(SyntheticPokemon.Frame(1, starter) with { TrainerId = trainer });
+        var restored = reopened.Status();
+        Assert.Equal(runId, restored.Run!.Id);
+        var originalCatch = Assert.Single(restored.Run.History, e => e.Kind == "caught");
+        Assert.Equal(caughtId, originalCatch.Id);
+        Assert.Equal(caughtAt, originalCatch.At);
+        Assert.Equal(diedAt, Assert.Single(restored.Run.History, e => e.Kind == "death").At);
+        Assert.Contains(RosterGridData.From(restored, RosterView.Dead).Rows, row => row.Slots.Any(p => p?.State.Species == 25));
+
+        reopened.AcceptFrame(SyntheticPokemon.Frame(1, starter, caught) with { TrainerId = trainer + 1 });
+        Assert.NotEqual(runId, reopened.Status().Run!.Id);
+        Assert.DoesNotContain(reopened.Status().Run!.History, e => e.Kind is "caught" or "death");
+
+        await reopened.SelectLocalGameAsync(otherRuby);
+        reopened.AcceptFrame(SyntheticPokemon.Frame(1, starter) with { TrainerId = trainer });
+        Assert.NotEqual(runId, reopened.Status().Run!.Id);
+        Assert.DoesNotContain(reopened.Status().Run!.History, e => e.Kind is "caught" or "death");
+    }
+
+    [Fact]
     public async Task ClosingClientCancelsAnInFlightJoinAndReleasesItsBridge()
     {
         var builder = WebApplication.CreateBuilder();

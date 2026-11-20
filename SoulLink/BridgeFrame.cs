@@ -13,6 +13,7 @@ public sealed record BridgeFrame
     public string Epoch { get; init; } = "";
     public long Frame { get; init; }
     public long PlaySeconds { get; init; }
+    public uint? TrainerId { get; init; }
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; } = 255;

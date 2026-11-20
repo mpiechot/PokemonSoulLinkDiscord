@@ -50,6 +50,7 @@ internal static class Program
             ["SettingsPath"] = Path.Combine(home, profile is null ? "player.json" : $"player-{profile.Id:N}.json"),
             ["AllowSyntheticFrames"] = "false",
             ["EnableLocalRun"] = (profile is null && !smokeTest).ToString(),
+            ["LocalRunDirectory"] = Path.Combine(home, "LocalRuns"),
             ["BridgePort"] = "0",
         }).Build();
         using var runtime = new ClientRuntime(configuration);

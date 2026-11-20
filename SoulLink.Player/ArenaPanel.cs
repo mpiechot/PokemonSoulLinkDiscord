@@ -7,8 +7,11 @@ internal sealed class ArenaPanel : TableLayoutPanel
 {
     private readonly Label heading = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
     private readonly Label levels = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
-    private readonly Button complete = DashboardTheme.Button("Abschließen");
-    private readonly Button revert = DashboardTheme.Button("Zurücknehmen");
+    private readonly Button complete = DashboardTheme.IconButton(DashboardIcon.Check, "Arena abschließen",
+        Color.FromArgb(31, 75, 62), Color.FromArgb(41, 100, 81), DashboardTheme.Accent);
+    private readonly Button revert = DashboardTheme.IconButton(DashboardIcon.Undo, "Arena-Fortschritt zurücknehmen",
+        DashboardTheme.Border, Color.FromArgb(66, 86, 111), DashboardTheme.Text);
+    private readonly ToolTip hints = new();
     private int? next;
     private int? last;
 
@@ -21,7 +24,7 @@ internal sealed class ArenaPanel : TableLayoutPanel
         this.RowCount = 2;
         this.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 49));
         this.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        this.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 126));
+        this.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
         this.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         this.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         var stadium = new PictureBox { Dock = DockStyle.Fill, Image = icons.Get("arena"), SizeMode = PictureBoxSizeMode.Zoom, AccessibleName = "Arena" };
@@ -30,10 +33,20 @@ internal sealed class ArenaPanel : TableLayoutPanel
         this.Controls.Add(this.heading, 1, 0);
         this.Controls.Add(this.levels, 1, 1);
         this.levels.ForeColor = DashboardTheme.Gold;
-        this.complete.Dock = DockStyle.Fill;
-        this.revert.Dock = DockStyle.Fill;
-        this.Controls.Add(this.complete, 2, 0);
-        this.Controls.Add(this.revert, 2, 1);
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        foreach (var button in new[] { this.complete, this.revert })
+        {
+            button.Size = new Size(38, 34);
+            button.Anchor = AnchorStyles.None;
+            this.hints.SetToolTip(button, button.AccessibleName);
+        }
+        actions.Controls.Add(this.complete, 0, 0);
+        actions.Controls.Add(this.revert, 1, 0);
+        this.Controls.Add(actions, 2, 0);
+        this.SetRowSpan(actions, 2);
         this.complete.Click += (_, _) => { if (this.next is int number) this.ProgressChange?.Invoke(number, true); };
         this.revert.Click += (_, _) => { if (this.last is int number) this.ProgressChange?.Invoke(number, false); };
     }
@@ -61,5 +74,11 @@ internal sealed class ArenaPanel : TableLayoutPanel
     {
         e.Graphics.Clear(this.Parent?.BackColor ?? DashboardTheme.Background);
         DashboardTheme.Fill(e.Graphics, this.ClientRectangle, this.BackColor);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) this.hints.Dispose();
+        base.Dispose(disposing);
     }
 }

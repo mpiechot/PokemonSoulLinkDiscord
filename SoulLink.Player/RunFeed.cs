@@ -163,7 +163,9 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Scrolla
             var (verdict, explanation) = detail.AreaAvailable == false ? (CatchVerdict.Invalid, "(Fangort bereits vergeben)")
                 : detail.CatchCheck?.PreviouslyCaught is { } earlier ? (CatchVerdict.Invalid, $"(Evolutionsfamilie bereits gefangen: {earlier})")
                 : detail.CatchCheck?.Pokemon is null ? (CatchVerdict.Unknown, "") : (CatchVerdict.Valid, "");
-            return new FeedCard("Fang", "catch", Color.FromArgb(24, 58, 48), DashboardTheme.Accent, time,
+            return new FeedCard(caught.Shiny ? "Shiny-Fang" : "Fang", "catch",
+                caught.Shiny ? Color.FromArgb(92, 65, 24) : Color.FromArgb(24, 58, 48),
+                caught.Shiny ? DashboardTheme.Gold : DashboardTheme.Accent, time,
                 [new($"Pokémon: {RubyNames.Pokemon(caught.Species)}"), new($"Spieler: {caught.Player}"),
                     new(explanation, verdict), new($"Fangort: {area}")], caught);
         }

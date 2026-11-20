@@ -35,3 +35,5 @@ Die Kopie enthält die Einladungsdaten und einen Profilbezeichner pro Run. Die E
 Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise der [Server-Anleitung](README.md): einen getrennten Test-Bot und eine eigene Testdatenbank benutzen. Der neue Client übernimmt keine bestehenden manuellen Links nachträglich.
 
 Aktuell steht das [Profil für deutsches Rubin](mgba.md) zur Verfügung. SoulLink lädt Pokémon-Sprites von PokéAPI und transparente Energiesymbole des Sammelkartenspiels über Poképédia. Die Bilder werden lokal gespeichert und sind danach auch offline verfügbar. Boden, Gestein und Kampf verwenden die orange Faust. Der Tooltip nennt den jeweiligen Spieltyp. Die Icons des Discord-Bots sind in der EXE enthalten.
+
+Der lokale Spieltest speichert seinen Feed und bestätigte Tode in einer privaten SQLite-Datei pro ROM und Trainer. Bereits erfasste Fänge behalten beim Schnellladen und Neustarten ihre ursprüngliche Uhrzeit. Aus dem Spielstand lässt sich der aktuelle Stand von Team und Box lesen. Fangzeiten und bestätigte SoulLink-Tode stammen aus der Run-Historie.

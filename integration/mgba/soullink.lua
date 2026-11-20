@@ -198,6 +198,7 @@ local function snapshot(frame)
     local hours = read16(profile.save2 + 0x0E)
     local minutes = read8(profile.save2 + 0x10)
     local seconds = read8(profile.save2 + 0x11)
+    local trainerId = read16(profile.save2 + 0x0A) | (read16(profile.save2 + 0x0C) << 16)
     if count > 6 or currentBox > 13 or hours > 999 or minutes > 59 or seconds > 59 then
         error(string.format("Invalid %s memory layout: party=%d, box=%d, play time=%d:%02d:%02d.",
             code, count, currentBox, hours, minutes, seconds), 0)
@@ -253,16 +254,23 @@ local function snapshot(frame)
         local typesOk, types = pcall(readTypes, profile)
         rubyTypes = typesOk and types or ""
     end
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
-        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds,
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"faints":[%s],"badgeMask":%d,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+        code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId,
         group, number, lastPosition, tostring(battle), table.concat(faints, ","), badges,
         gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
+end
+
+local function reset()
+    epoch = tostring({}):gsub("[^%w]", "")
+    activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
+    faintDirty, nextHit, lastFrame = false, nil, -1
+    stop()
 end
 
 local function onFrame()
     tick = tick + 1
     local frame = readCore():currentFrame()
-    if frame < lastFrame then epoch = tostring({}):gsub("[^%w]", "") end
+    if lastFrame >= 0 and (frame < lastFrame or frame > lastFrame + 1) then reset() end
     lastFrame = frame
     if activeProfile then pcall(captureBattle, activeProfile, frame) end
     sendPending()
@@ -283,13 +291,6 @@ end
 -- Re-loading this file removes only callbacks installed by its previous instance.
 if SOULLINK_STOP then SOULLINK_STOP() end
 local frameCallback = callbacks:add("frame", onFrame)
-local function reset()
-    epoch = tostring({}):gsub("[^%w]", "")
-    activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
-    faintDirty = false
-    nextHit = nil
-    stop()
-end
 local resetCallback = callbacks:add("reset", reset)
 local loadCallback = callbacks:add("loadState", reset)
 SOULLINK_STOP = function()

@@ -236,6 +236,14 @@ internal static class DockSmokeTest
         if (feed.AutoScrollMinSize.Height <= feed.ClientSize.Height)
             throw new InvalidOperationException("The feed did not make the additional event cards scrollable.");
 
+        feed.Render([
+            new AutomationEvent(Guid.NewGuid(), now, "caught", "", Area: 16,
+                Details: new EventDetails(pokemon with { Shiny = true })),
+        ], "");
+        feed.DrawToBitmap(drawing, feed.ClientRectangle);
+        if (drawing.GetPixel(100, 8).ToArgb() != Color.FromArgb(92, 65, 24).ToArgb())
+            throw new InvalidOperationException("Shiny catches must use the gold feed background.");
+
         if (RunDialogs.BattleMove(new BattleTrace(0, 1, 33, null, true)) != ("K.-o.-Attacke", "Tackle") ||
             RunDialogs.BattleMove(new BattleTrace(0, 1, 33, null)) != ("Letzte erfasste Attacke", "Tackle") ||
             RunDialogs.BattleMove(null) != ("Attacke", "Unbekannt"))

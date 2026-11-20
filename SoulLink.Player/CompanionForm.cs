@@ -124,10 +124,14 @@ internal sealed class CompanionForm : Form
             Button("Fangorte", (_, _) => this.ShowPlaces()),
             this.checkCatch, this.pendingDeathButton,
         ]);
-        var chrome = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
-        var minimize = CaptionButton("–", "Minimieren", (_, _) => this.WindowState = FormWindowState.Minimized);
-        var maximize = CaptionButton("□", "Maximieren oder wiederherstellen", (_, _) => this.ToggleMaximize());
-        var close = CaptionButton("×", "Schließen", (_, _) => this.Close());
+        var chrome = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(3, 0, 0, 0) };
+        var minimize = DashboardTheme.IconButton(DashboardIcon.Minimize, "Minimieren", DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
+        var maximize = DashboardTheme.IconButton(DashboardIcon.Maximize, "Maximieren oder wiederherstellen", DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
+        var close = DashboardTheme.IconButton(DashboardIcon.Close, "Schließen", Color.FromArgb(96, 38, 51), Color.FromArgb(155, 47, 65), DashboardTheme.Text);
+        minimize.Click += (_, _) => this.WindowState = FormWindowState.Minimized;
+        maximize.Click += (_, _) => this.ToggleMaximize();
+        close.Click += (_, _) => this.Close();
+        foreach (var button in new[] { minimize, maximize, close }) this.hints.SetToolTip(button, button.AccessibleName);
         chrome.Controls.AddRange([minimize, maximize, close]);
         bar.Controls.Add(brand, 0, 0);
         bar.Controls.Add(this.status, 1, 0);
@@ -235,15 +239,6 @@ internal sealed class CompanionForm : Form
         button.Height = 32;
         button.Margin = new Padding(2, 4, 2, 0);
         button.Click += clicked;
-        return button;
-    }
-
-    private static Button CaptionButton(string glyph, string name, EventHandler clicked)
-    {
-        var button = Button(glyph, clicked);
-        button.AccessibleName = name;
-        button.AutoSize = false;
-        button.Width = 33;
         return button;
     }
 
@@ -416,7 +411,8 @@ internal sealed class CompanionForm : Form
             }
 
             this.rom.Save(path);
-            this.runtime.ResetLocalRun();
+            await this.runtime.SelectLocalGameAsync(path);
+            if (this.closing) return;
             string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort);
             this.game = await Task.Run(() => this.emulator.Start(path, bridge));
             if (this.closing) return;

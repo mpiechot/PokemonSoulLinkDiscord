@@ -3,6 +3,8 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
+internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo }
+
 internal static class DashboardTheme
 {
     public static readonly Color Background = Color.FromArgb(13, 21, 33);
@@ -32,6 +34,21 @@ internal static class DashboardTheme
         return button;
     }
 
+    public static Button IconButton(DashboardIcon icon, string name, Color background, Color hover, Color foreground)
+    {
+        var button = new RoundedButton(icon)
+        {
+            AccessibleName = name,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = background,
+            ForeColor = foreground,
+            Margin = new Padding(2, 4, 2, 4),
+            Size = new Size(44, 34),
+        };
+        button.FlatAppearance.MouseOverBackColor = hover;
+        return button;
+    }
+
     public static GraphicsPath Rounded(Rectangle bounds, int radius)
     {
         var path = new GraphicsPath();
@@ -53,7 +70,7 @@ internal static class DashboardTheme
         graphics.FillPath(brush, path);
     }
 
-    private sealed class RoundedButton : Button
+    private sealed class RoundedButton(DashboardIcon? icon = null) : Button
     {
         private bool hovered;
 
@@ -64,7 +81,8 @@ internal static class DashboardTheme
         {
             e.Graphics.Clear(this.Parent?.BackColor ?? Background);
             var bounds = new Rectangle(1, 1, this.Width - 2, this.Height - 2);
-            var color = this.Enabled && this.hovered ? this.FlatAppearance.MouseOverBackColor : this.BackColor;
+            var color = !this.Enabled && icon.HasValue ? Surface
+                : this.Enabled && this.hovered ? this.FlatAppearance.MouseOverBackColor : this.BackColor;
             Fill(e.Graphics, bounds, color, 7);
             if (this.Focused && this.ShowFocusCues)
             {
@@ -72,9 +90,49 @@ internal static class DashboardTheme
                 using var pen = new Pen(Accent);
                 e.Graphics.DrawPath(pen, path);
             }
-            TextRenderer.DrawText(e.Graphics, this.Text, this.Font, bounds, this.Enabled ? this.ForeColor : Muted,
+            var foreground = this.Enabled ? this.ForeColor : Muted;
+            if (icon is { } symbol)
+            {
+                this.DrawIcon(e.Graphics, bounds, symbol, foreground);
+                return;
+            }
+            TextRenderer.DrawText(e.Graphics, this.Text, this.Font, bounds, foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
                 TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsClipping);
+        }
+
+        private void DrawIcon(Graphics canvas, Rectangle bounds, DashboardIcon icon, Color foreground)
+        {
+            var state = canvas.Save();
+            canvas.TranslateTransform(bounds.Left + bounds.Width / 2f, bounds.Top + bounds.Height / 2f);
+            float scale = this.DeviceDpi / 96f;
+            canvas.ScaleTransform(scale, scale);
+            using var pen = new Pen(foreground, 1.65f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+            switch (icon)
+            {
+                case DashboardIcon.Minimize:
+                    canvas.DrawLine(pen, -7, 0, 7, 0);
+                    break;
+                case DashboardIcon.Maximize when this.FindForm()?.WindowState == FormWindowState.Maximized:
+                    canvas.DrawRectangle(pen, -7, -2, 10, 9);
+                    canvas.DrawLines(pen, [new Point(6, 4), new Point(6, -6), new Point(-4, -6), new Point(-4, -3)]);
+                    break;
+                case DashboardIcon.Maximize:
+                    canvas.DrawRectangle(pen, -6, -6, 12, 12);
+                    break;
+                case DashboardIcon.Close:
+                    canvas.DrawLine(pen, -6, -6, 6, 6);
+                    canvas.DrawLine(pen, -6, 6, 6, -6);
+                    break;
+                case DashboardIcon.Check:
+                    canvas.DrawLines(pen, [new Point(-7, 0), new Point(-2, 5), new Point(7, -5)]);
+                    break;
+                case DashboardIcon.Undo:
+                    canvas.DrawLines(pen, [new Point(-3, -7), new Point(-7, -3), new Point(-3, 1)]);
+                    canvas.DrawBezier(pen, -7, -3, 13, -7, 10, 8, -1, 7);
+                    break;
+            }
+            canvas.Restore(state);
         }
     }
 
