@@ -34,6 +34,8 @@ Bei einer allgemeinen, noch nicht vorbereiteten Datei gibst du diese Angaben ein
 
 Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Dort legst du zuerst eine Gruppe und darin einen Run an. Du kannst die Einladung kopieren, sie für dich merken oder eine Spieler-EXE erzeugen. Sobald alle Mitspieler einen gültigen Spielstand übertragen haben, aktualisierst du die Ansicht und klickst auf **Starten**. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
 
+Wähle nach dem Run-Start **Starter verlinken**, um aus dem übernommenen Startbestand pro Spieler einen Starter auszuwählen. Der Starter-Link erscheint als gemeinsame Zeile im Team und lässt Route 101 für einen regulären Fang frei.
+
 Unter **SoulLink → Run wechseln** findest du die gemerkten Einladungen. Dort kannst du einen Einladungscode hinzufügen oder einen bereits bekannten Run öffnen. Beim Wechsel bitte vorher im Spiel speichern. SoulLink beendet mGBA und öffnet dieselbe EXE mit dem gewählten Run-Profil. Jeder Run behält seine eigene Anmeldung und ROM-Auswahl.
 
 ### Einladungen per Discord

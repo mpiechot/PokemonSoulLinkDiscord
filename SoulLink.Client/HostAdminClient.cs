@@ -37,6 +37,14 @@ public sealed class HostAdminClient : IDisposable
     public Task<HostPlayer[]> PlayersAsync(Guid group, Guid run) =>
         this.SendAsync<HostPlayer[]>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/players");
 
+    public Task<HostStarterPlayer[]> StarterCandidatesAsync(Guid group, Guid run) =>
+        this.SendAsync<HostStarterPlayer[]>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/starters");
+
+    public async Task LinkStartersAsync(Guid group, Guid run, Dictionary<Guid, Guid> members)
+    {
+        using var result = await this.SendAsync<JsonDocument>(HttpMethod.Post, $"groups/{group:D}/runs/{run:D}/starters", new StarterLinkRequest(members));
+    }
+
     public async Task RebaselineAsync(Guid group, Guid run, Guid player)
     {
         using var result = await this.SendAsync<JsonDocument>(HttpMethod.Post, $"groups/{group:D}/runs/{run:D}/players/{player:D}/rebaseline");

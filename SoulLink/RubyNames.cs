@@ -60,7 +60,7 @@ public static partial class RubyNames
 
     public static string? Move(int? id) => id is > 0 and < 355 ? MoveById[id.Value] : null;
 
-    public static string Area(int id) => id >= 0 && id < Places.Length ? Places[id]
+    public static string Area(int id) => id == Encounter.StarterArea ? "Starter" : id >= 0 && id < Places.Length ? Places[id]
         : id == 255 ? "Unbekannter Ort" : Landmarks.GetValueOrDefault(id, AreaCatalog.Name(id));
 
     public sealed record SpeciesName(int Family, string German, string English);

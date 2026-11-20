@@ -136,11 +136,14 @@ public sealed class TrackedPokemon
 
 public sealed class Encounter
 {
+    // Game snapshots only contain byte-sized area IDs.
+    public const int StarterArea = 256;
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public int Area { get; set; }
     public int MapGroup { get; set; }
     public int MapNumber { get; set; }
-    public string Name => AreaCatalog.Name(this.Area);
+    public string Name => this.Area == StarterArea ? "Starter" : AreaCatalog.Name(this.Area);
     public Guid? GroupId { get; set; }
     public bool Dead { get; set; }
     public bool Failed { get; set; }
@@ -162,3 +165,6 @@ public sealed record CreateGroupRequest(string Name);
 public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint);
 public sealed record HostRun(Guid Id, string Name, RunPhase Phase, bool Selected, string Invitation, int Players, int Ready);
 public sealed record HostPlayer(Guid Id, string Name, string Connection, string Diagnostic);
+public sealed record HostStarterPlayer(Guid Id, string Name, HostStarterPokemon[] Pokemon);
+public sealed record HostStarterPokemon(Guid Id, int Species, string Nickname, int? Level);
+public sealed record StarterLinkRequest(Dictionary<Guid, Guid>? Members);

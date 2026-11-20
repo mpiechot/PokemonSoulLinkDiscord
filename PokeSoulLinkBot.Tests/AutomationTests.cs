@@ -57,6 +57,45 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void ExplicitStarterLinkPreservesRoute101AndSharesConfirmedDeaths()
+    {
+        var group = this.engine.CreateGroup("Three players");
+        var other = this.engine.CreateGroup("Different players");
+        var run = this.engine.CreateGroupRun(group.Id, new GroupRunRequest("Rubin", DeathRule.ZeroHpOutsideBattle));
+        var invitation = new AutomationRun { Invitation = run.Invitation };
+        var clients = Enumerable.Range(0, 3).Select(i => this.Join(invitation, "Player " + i)).ToArray();
+        foreach (var client in clients) this.Send(client, 1, true, Snapshot(1, Mon(1)));
+        this.engine.ChangeGroupRun(group.Id, run.Id, "start");
+
+        var candidates = this.engine.GroupStarterCandidates(group.Id, run.Id);
+        var picks = candidates.ToDictionary(p => p.Id, p => Assert.Single(p.Pokemon).Id);
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.LinkGroupStarters(other.Id, run.Id, new StarterLinkRequest(picks)));
+        Assert.Throws<InvalidDataException>(() => this.engine.LinkGroupStarters(group.Id, run.Id, new StarterLinkRequest([])));
+        Assert.Empty(this.engine.View(clients[0].Registration).Encounters);
+        this.engine.LinkGroupStarters(group.Id, run.Id, new StarterLinkRequest(picks));
+        this.engine.LinkGroupStarters(group.Id, run.Id, new StarterLinkRequest(picks));
+
+        foreach (var client in clients) this.Send(client, 2, false, Snapshot(2, Mon(1), Mon(2)));
+        var afterCatch = this.engine.View(clients[0].Registration);
+        Assert.Equal(2, afterCatch.Encounters.Count);
+        var starter = Assert.Single(afterCatch.Encounters, e => e.Area == Encounter.StarterArea);
+        var route = Assert.Single(afterCatch.Encounters, e => e.Area == 16);
+        Assert.NotNull(starter.GroupId);
+        Assert.NotNull(route.GroupId);
+        Assert.Equal(picks, starter.Members);
+        Assert.Single(afterCatch.History, e => e.Kind == "linked" && e.Area == Encounter.StarterArea);
+        Assert.Equal(3, afterCatch.History.Count(e => e.Kind == "caught"));
+
+        this.Send(clients[0], 3, false, Snapshot(3, Mon(1) with { Hp = 0 }, Mon(2)));
+        this.Send(clients[0], 4, false, Snapshot(4, Mon(1) with { Hp = 0 }, Mon(2)));
+        var reopened = new AutomationEngine(new AutomationStore(Path.Combine(this.directory, "runs.sqlite")));
+        var persisted = reopened.View(clients[1].Registration);
+        Assert.True(persisted.Encounters.Single(e => e.Area == Encounter.StarterArea).Dead);
+        Assert.False(persisted.Encounters.Single(e => e.Area == 16).Dead);
+        Assert.All(persisted.Players, p => Assert.True(p.Pokemon.Single(m => m.Id == picks[p.Id]).Dead));
+    }
+
+    [Fact]
     public void VersionOneBackupMigrationsPreserveRegistrationsAndRunData()
     {
         var initial = this.engine.Initialize("legacy", 100, "Existing run");

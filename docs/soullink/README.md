@@ -82,7 +82,7 @@ Bestehende JSON-Runs bleiben als Archiv lesbar. Die alten manuellen Schreibbefeh
 ## Bekannte Grenzen des ersten echten Spieltests
 
 - Das Cheat-Menü erlaubt per lokalem Klick fünf feste PC-Item-Zugaben. Die Erfassung und die Run-Server-Verbindung lesen Spieldaten. Gemischte Party-/Boxbelegung erscheint als **TEAM CONFLICT**.
-- Ein Erstbestand wird importiert; Starter werden nicht automatisch nachträglich miteinander verlinkt.
+- Im Gastgeberfenster kann der übernommene Startbestand nach dem Start über **Starter verlinken** gezielt zu einem Starter-Link zusammengefasst werden.
 - Neue Identität bedeutet „neu beobachtet“. Geschenke, Trades und Fänge lassen sich daraus nicht immer sicher unterscheiden. Die erste gültige Identität je Spieler/Gebiet belegt den Encounter; weitere werden als Extra-Fang diagnostiziert. Shiny-Sonderregeln des separaten manuellen Features werden hier nicht automatisch angewendet.
 - Releases, Daycare und Save-State-Rücksprünge können die erwartete Inventarmenge ändern und führen zu **OutOfSync**. Nichts wird automatisch gelöscht oder durch Offline-Ereignisse nachgetragen.
 - Die optionale Todesregel verlangt zwei vollständige Beobachtungen mit HP 0 außerhalb eines Kampfes. Die Erkennung ist damit bewusst verzögert; Heilung vor diesen Beobachtungen kann einen Todesfall verbergen. Für verbindliche Run-Regeln den Tod im Bot bestätigen.
