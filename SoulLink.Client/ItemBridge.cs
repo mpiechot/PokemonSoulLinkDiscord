@@ -1,0 +1,156 @@
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
+using SoulLink;
+
+namespace SoulLink.Client;
+
+public enum PcItem
+{
+    MasterBall = 1,
+    UltraBall = 2,
+    GreatBall = 3,
+    PokeBall = 4,
+    SafariBall = 5,
+    NetBall = 6,
+    DiveBall = 7,
+    NestBall = 8,
+    RepeatBall = 9,
+    TimerBall = 10,
+    LuxuryBall = 11,
+    PremierBall = 12,
+    RareCandy = 68,
+}
+
+internal sealed class ItemBridge
+{
+    private readonly object gate = new();
+    private string? session;
+    private ReadyBridge? ready;
+    private PendingGrant? pending;
+
+    public string Begin()
+    {
+        lock (this.gate)
+        {
+            this.ready = null;
+            return this.session = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        }
+    }
+
+    public bool Ready
+    {
+        get
+        {
+            lock (this.gate) return this.CurrentBridge() is { InBattle: false };
+        }
+    }
+
+    public bool CanSave
+    {
+        get
+        {
+            lock (this.gate) return this.CurrentBridge() is not null && this.pending is null;
+        }
+    }
+
+    public bool MatchesSession(string? value)
+    {
+        lock (this.gate) return this.session is not null && value == this.session;
+    }
+
+    public void Observe(NetworkStream stream, BridgeFrame frame)
+    {
+        lock (this.gate)
+        {
+            this.ready = this.session is { } expected && frame.ItemSession == expected &&
+                frame.LayoutId == "ruby-axvd-reference-v2" && frame.TrainerId is uint trainer &&
+                frame.Pokemon.Any(p => p.Container == Placement.Party) &&
+                frame.Epoch is { Length: > 0 and <= 48 } epoch && epoch.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
+                ? new ReadyBridge(stream, expected, epoch, trainer, frame.InBattle, DateTimeOffset.UtcNow)
+                : null;
+        }
+    }
+
+    public void Disconnect(NetworkStream stream)
+    {
+        lock (this.gate)
+        {
+            if (this.ready?.Stream == stream) this.ready = null;
+            if (this.pending is { } request && request.Stream == stream)
+                request.Completion.TrySetException(new IOException("Die Verbindung zu mGBA wurde unterbrochen."));
+        }
+    }
+
+    public void AcceptResult(NetworkStream stream, BridgeFrame frame)
+    {
+        lock (this.gate)
+        {
+            if (this.pending is { } request && request.Stream == stream && request.Id == frame.ItemRequest &&
+                frame.ItemSession == request.Session && frame.ItemResult is { } result)
+                request.Completion.TrySetResult(new GrantResult(result, frame.ItemQuantity));
+        }
+    }
+
+    public async Task<int> AddAsync(PcItem item, CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(item)) throw new ArgumentOutOfRangeException(nameof(item));
+        var outcome = await this.SendAsync("PC", (int)item, cancellationToken);
+        if (outcome is { Status: "ok", Quantity: >= 99 and <= 49950 }) return outcome.Quantity.Value;
+        throw new InvalidOperationException(outcome.Status switch
+        {
+            "full" => "Für 99 Stück ist im Item-Lager zu wenig Platz.",
+            "storage" => "Das Item-Lager dieses Spielstands konnte nicht sicher gelesen werden.",
+            "location" => "Schließe das Spielmenü und kehre ins Spielfeld zurück.",
+            _ => "Spielstand oder Verbindung hat sich geändert. Prüfe das Item-Lager.",
+        });
+    }
+
+    public async Task SaveSlotOneAsync(CancellationToken cancellationToken)
+    {
+        var outcome = await this.SendAsync("SAVE", 1, cancellationToken);
+        if (outcome.Status != "ok") throw new IOException("mGBA konnte Slot 1 nicht speichern.");
+    }
+
+    private async Task<GrantResult> SendAsync(string action, int value, CancellationToken cancellationToken)
+    {
+        ReadyBridge target;
+        PendingGrant request;
+        lock (this.gate)
+        {
+            target = this.CurrentBridge() ?? throw new InvalidOperationException("Es sind keine aktuellen Spieldaten aus mGBA verfügbar.");
+            if (action == "PC" && target.InBattle)
+                throw new InvalidOperationException("Verlasse den Kampf, bevor du Items hinzufügst.");
+            if (this.pending is not null) throw new InvalidOperationException("mGBA verarbeitet noch die vorherige Anfrage.");
+            request = new PendingGrant(target.Stream, target.Session, Guid.NewGuid(), new(TaskCreationOptions.RunContinuationsAsynchronously));
+            this.pending = request;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(6));
+        try
+        {
+            long expires = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5;
+            string packet = FormattableString.Invariant($"{action} {target.Session} {target.Epoch} {target.Trainer} {request.Id:D} {value} {expires}\n");
+            await target.Stream.WriteAsync(Encoding.ASCII.GetBytes(packet), timeout.Token);
+            return await request.Completion.Task.WaitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new IOException("Keine Bestätigung von mGBA erhalten.");
+        }
+        finally
+        {
+            lock (this.gate) this.pending = null;
+        }
+    }
+
+    private ReadyBridge? CurrentBridge() =>
+        this.ready is { } bridge && DateTimeOffset.UtcNow - bridge.Seen < TimeSpan.FromSeconds(4) ? bridge : null;
+
+    private sealed record ReadyBridge(NetworkStream Stream, string Session, string Epoch, uint Trainer, bool InBattle, DateTimeOffset Seen);
+
+    private sealed record GrantResult(string Status, int? Quantity);
+
+    private sealed record PendingGrant(NetworkStream Stream, string Session, Guid Id, TaskCompletionSource<GrantResult> Completion);
+}
