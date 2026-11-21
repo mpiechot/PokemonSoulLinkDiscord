@@ -361,6 +361,91 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void RejectedEvolutionFamilyDoesNotConsumeTheFirstEncounter()
+    {
+        var (_, client) = this.Active();
+        var duplicate = new BattleStatus("fixture:2", null,
+            [new(0, 280, 20, 20, 1), new(1, 281, 15, 15, 2)], CatchEncounter: true);
+        Assert.True(this.Send(client, 2, false, Snapshot(2, Mon(1)) with { InBattle = true, Battle = duplicate }).Accepted);
+        Assert.True(this.Send(client, 3, false, Snapshot(3, Mon(1)) with { WildBattles = [new(16, 2, 3, 4)] }).Accepted);
+        var eligible = duplicate with { Key = "fixture:4", Combatants = [duplicate.Combatants[0], new(1, 25, 8, 16, 3)] };
+        Assert.True(this.Send(client, 4, false, Snapshot(4, Mon(1)) with { InBattle = true, Battle = eligible }).Accepted);
+
+        var view = this.engine.View(client.Registration);
+        var player = Assert.Single(view.Players);
+        Assert.Empty(view.Encounters);
+        Assert.True(Assert.Single(EncounterCatchChecks.ForPlayer(view, player)).Allowed);
+        Assert.Equal(new BattleCombatant(1, 0, 8, 16, 0), player.LastSnapshot!.Battle!.ForSpectator().Combatants[1]);
+    }
+
+    [Fact]
+    public void CaughtDuplicateWildPokemonStaysOutsideTheRouteLink()
+    {
+        var (_, client) = this.Active();
+        var caught = new WildBattleResult(16, 2, 3, 7, Species: 281);
+        Assert.True(this.Send(client, 2, false, Snapshot(3, Mon(1), Mon(2) with { Species = 281 }) with
+        {
+            WildBattles = [caught],
+        }).Accepted);
+        var view = this.engine.View(client.Registration);
+        Assert.Empty(view.Encounters);
+        Assert.Equal("extra-catch", Assert.Single(view.History).Kind);
+        Assert.Empty(Assert.Single(view.Players).FirstWildAreas);
+
+        Assert.True(this.Send(client, 3, false, Snapshot(5, Mon(1), Mon(2) with { Species = 281 },
+            Mon(3, slot: 2) with { Species = 25 }) with { WildBattles = [caught, new(16, 4, 5, 7, Species: 25)] }).Accepted);
+        Assert.NotNull(Assert.Single(this.engine.View(client.Registration).Encounters).GroupId);
+    }
+
+    [Fact]
+    public void OnlyThePlayerWhoLostTheLastCompleteLinkCanFinishTheRun()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test", DeathRule.ConfirmFaint);
+        var first = this.Join(run, "First");
+        var second = this.Join(run, "Second");
+        foreach (var client in new[] { first, second })
+            this.Send(client, 1, true, Snapshot(1, Mon(1)));
+        this.engine.ChangeRun("guild", run.Id, "start");
+        var caught = Mon(2);
+        var reserve = Mon(3, box: true) with { MetArea = 17 };
+        foreach (var client in new[] { first, second })
+            this.Send(client, 2, false, Snapshot(2, Mon(1), caught, reserve));
+        var trace = new BattleTrace(1, 25, 33, null);
+        this.Send(first, 3, false, Snapshot(3, Mon(1), caught with { Hp = 0 }, reserve) with { InBattle = true, Faints = [trace] });
+        var pending = this.engine.View(first.Registration).Players.Single(player => player.Id == first.Registration.PlayerId)
+            .Pokemon.Select(pokemon => pokemon.PendingDeath).OfType<PendingDeath>().Single();
+        this.engine.ResolveFaint(first.Registration, pending.PokemonId, pending.IncidentId, true, null);
+        Assert.Null(this.engine.View(first.Registration).PendingEnd);
+
+        // A living boxed link still counts. Bring it out and lose it on the other player's turn.
+        var fighting = reserve with { Container = Placement.Party, Box = null, Slot = 2, Level = 5, Hp = 15, MaxHp = 20 };
+        this.Send(second, 3, false, Snapshot(3, Mon(1), caught, fighting));
+        this.Send(second, 4, false, Snapshot(4, Mon(1), caught, fighting with { Hp = 0 }) with
+        {
+            InBattle = true,
+            Faints = [trace with { PartySlot = 2 }],
+        });
+        pending = this.engine.View(second.Registration).Players.Single(player => player.Id == second.Registration.PlayerId)
+            .Pokemon.Select(pokemon => pokemon.PendingDeath).OfType<PendingDeath>().Single();
+        this.engine.ResolveFaint(second.Registration, pending.PokemonId, pending.IncidentId, true, null);
+
+        var view = this.engine.View(second.Registration);
+        var end = Assert.IsType<PendingRunEnd>(view.PendingEnd);
+        Assert.Equal(second.Registration.PlayerId, end.PlayerId);
+        Assert.Equal(RunPhase.Active, view.Phase);
+        Assert.Throws<InvalidOperationException>(() => this.engine.CompleteWipedRun(first.Registration, end.Id, "Wrong player"));
+        var restarted = new AutomationEngine(this.store);
+        restarted.CompleteWipedRun(second.Registration, end.Id, "Team besiegt");
+        view = restarted.View(first.Registration);
+        Assert.Equal(RunPhase.Finished, view.Phase);
+        Assert.Equal("Team besiegt", view.EndReason);
+        Assert.False(view.Selected);
+        Assert.Empty(view.Invitation);
+        Assert.Null(view.PendingEnd);
+        Assert.Single(view.History, item => item.Kind == "run-ended");
+    }
+
+    [Fact]
     public void SequenceGapResynchronizesFromTheServerOnReconnect()
     {
         var (_, client) = this.Active();

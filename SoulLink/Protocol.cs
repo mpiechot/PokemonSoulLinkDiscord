@@ -61,7 +61,8 @@ public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[]
     }
 }
 
-public sealed record WildBattleResult(int Area, long Started, long Ended, int Outcome);
+public sealed record WildBattleResult(int Area, long Started, long Ended, int Outcome, int? Species = null);
+public sealed record PendingRunEnd(Guid Id, Guid PlayerId);
 public sealed record PendingDeath(Guid PokemonId, int Species, BattleTrace? Battle, Guid IncidentId = default, DateTimeOffset? At = null);
 public sealed record PokemonStats(int Hp, int Attack, int Defense, int Speed, int SpecialAttack, int SpecialDefense);
 
@@ -132,6 +133,7 @@ public sealed class AutomationRun
     public string Invitation { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? EndReason { get; set; }
+    public PendingRunEnd? PendingEnd { get; set; }
     public DeathRule DeathRule { get; set; }
     public List<AutomationPlayer> Players { get; set; } = [];
     public byte ArenaProgress => this.Players.Count == 0 ? (byte)0 :

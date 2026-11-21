@@ -96,6 +96,16 @@ internal sealed class HostingForm : Form
         this.ClearServerView();
     }
 
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        base.OnFormClosing(e);
+        if (e.CloseReason == CloseReason.UserClosing && this.Owner is not null)
+        {
+            e.Cancel = true;
+            this.Hide();
+        }
+    }
+
     private RunGroup? Group => this.groups.SelectedItem as RunGroup;
 
     private HostRun? Run => (this.runs.SelectedItem as Row)?.Run;

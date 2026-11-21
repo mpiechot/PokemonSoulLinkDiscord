@@ -240,15 +240,16 @@ try
         }
         Console.WriteLine("Verified: wallet-only updates, including zero, are shared with peers.");
 
-        foreach (int species in new[] { 25, 281 })
+        foreach (int species in new[] { 281, 25 })
         {
+            long started = ++frame;
             current = current with
             {
-                Frame = ++frame,
+                Frame = started,
                 PlaySeconds = frame,
                 MapNumber = 17,
                 InBattle = true,
-                Battle = new RawBattleStatus(combatStart, null, [new(0, 1, 7, 20, 100), new(1, species, 18, 22, 300)], true),
+                Battle = new RawBattleStatus(started, null, [new(0, 1, 7, 20, 100), new(1, species, 18, 22, 300)], true),
             };
             await Send(current);
             await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
@@ -258,15 +259,24 @@ try
             if (spectator.DisplayBattle?.Combatants is not [_, { Species: 0, Personality: 0, Hp: 18, MaxHp: 22 }] ||
                 spectator.DisplayCatchChecks is not null)
                 throw new InvalidDataException("The first encounter shared its opponent or removed its HP.");
-        }
-        Console.WriteLine("Verified: the player gets their Catch Check while spectators receive only the unknown opponent's HP.");
 
-        long started = ++frame;
-        current = current with { Frame = ++frame, PlaySeconds = frame, InBattle = false, WildBattles = [new RawWildBattle(0, 17, started, frame, 4)] };
-        await Send(current);
-        await WaitUntil(async () => (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Encounters
-            .Any(link => link.Area == 17 && link.Failed && link.Dead));
-        Console.WriteLine("Verified: a completed wild escape closes the route on the shared server.");
+            current = current with
+            {
+                Frame = ++frame,
+                PlaySeconds = frame,
+                InBattle = false,
+                Battle = null,
+                WildBattles = [new RawWildBattle(0, 17, started, frame, 4, species)],
+            };
+            await Send(current);
+            await WaitUntil(async () =>
+            {
+                var shared = await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token);
+                return shared.Players.Single(p => p.Id == localPlayer).DisplayBattle is null &&
+                    shared.Encounters.Any(link => link.Area == 17 && link.Failed && link.Dead) == (species == 25);
+            });
+        }
+        Console.WriteLine("Verified: spectators see only HP, the player receives the Catch Check, and only an eligible escape closes the route.");
 
         const string rule = "Keine Heilitems im Arenakampf.";
         await hubs[0].InvokeAsync("AddRule", rule, lifetime.Token);
@@ -310,6 +320,25 @@ try
             !resolved.History.Any(e => e.Kind == "death" && e.Message.Contains("Volltreffer")))
             throw new InvalidDataException("The shared link death or reason was not saved.");
         Console.WriteLine("Verified: bilingual catch check, shared arena changes, and battle context and death confirmation cross SignalR.");
+
+        await Task.Delay(200, lifetime.Token);
+        var finalBattle = SyntheticPokemon.Frame(7, SyntheticPokemon.Raw(101, 1, hp: 0), SyntheticPokemon.Raw(201, 280, 1, hp: 0))
+            .Parse() with { InBattle = true, Faints = [trace with { PartySlot = 0 }] };
+        var finalObservation = await hub.InvokeAsync<ObservationResult>("Observe",
+            new Observation(Guid.NewGuid(), session.SessionId, 7, false, finalBattle), lifetime.Token);
+        if (!finalObservation.Accepted) throw new InvalidDataException("The last-link death was rejected.");
+        pending = (await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players
+            .Single(p => p.Id == session.PlayerId).Pokemon.Select(m => m.PendingDeath).OfType<PendingDeath>().Single();
+        await hub.InvokeAsync("ResolveFaint", pending.PokemonId, pending.IncidentId, true, null, lifetime.Token);
+        var awaitingReason = await hub.InvokeAsync<AutomationRun>("Status", lifetime.Token);
+        if (awaitingReason.PendingEnd is not { } end || end.PlayerId != session.PlayerId ||
+            (await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).PendingEnd is not null)
+            throw new InvalidDataException("The run-end prompt was not scoped to the player who lost the last link.");
+        await hub.InvokeAsync("CompleteWipedRun", end.Id, "Letzter Link gefallen", lifetime.Token);
+        var finished = await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token);
+        if (finished.Phase != RunPhase.Finished || finished.Selected || finished.EndReason != "Letzter Link gefallen")
+            throw new InvalidDataException("The player could not finish the wiped run for the group.");
+        Console.WriteLine("Verified: the affected player closes a wiped run, and partners receive the reason and finished phase.");
     }
     var isolatedRun = await Post<AutomationRun>(admin, "/api/soullink/admin/runs", new CreateRun("isolated-guild", "Isolated run"));
     Guid isolatedClientId = Guid.NewGuid();

@@ -216,12 +216,21 @@ public sealed class ClientRuntime : BackgroundService
 
     public bool CanAddPcItems => this.items.Ready;
 
+    public bool CanSaveState => this.items.CanSave;
+
+    public Task SaveSlotOneAsync(CancellationToken cancellationToken = default) =>
+        this.items.SaveSlotOneAsync(cancellationToken);
+
     public Task<int> AddPcItemsAsync(PcItem item, CancellationToken cancellationToken = default) =>
         this.items.AddAsync(item, cancellationToken);
 
     public Task ResolveFaintAsync(Guid runId, Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
         this.RunActionAsync(runId, t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
             c => c.InvokeAsync("ResolveFaint", pokemonId, incidentId, confirm, reason));
+
+    public Task CompleteWipedRunAsync(Guid runId, Guid incidentId, string? reason) =>
+        this.RunActionAsync(runId, t => t.CompleteWipedRun(incidentId, reason),
+            c => c.InvokeAsync("CompleteWipedRun", incidentId, reason));
 
     private async Task RunActionAsync(Guid runId, Action<LocalRunTracker> localAction, Func<HubConnection, Task> remoteAction)
     {
@@ -431,8 +440,10 @@ public sealed class ClientRuntime : BackgroundService
         }
         GameSnapshot? snapshot;
         bool fresh;
+        bool finished;
         lock (this.stateGate)
         {
+            finished = this.run?.Phase == RunPhase.Finished;
             snapshot = this.latest;
             fresh = this.bridgeSeen is not null && this.clock.GetUtcNow() - this.bridgeSeen < TimeSpan.FromSeconds(8);
         }
@@ -443,7 +454,7 @@ public sealed class ClientRuntime : BackgroundService
             this.reportedBridge = fresh;
             this.nextHeartbeat = now.AddSeconds(3);
         }
-        if (snapshot is not null && fresh && now >= this.nextObservation && !ReferenceEquals(this.evaluated, snapshot))
+        if (!finished && snapshot is not null && fresh && now >= this.nextObservation && !ReferenceEquals(this.evaluated, snapshot))
         {
             this.evaluated = snapshot;
             // Time/frame continue changing; only meaningful observations cross the network.

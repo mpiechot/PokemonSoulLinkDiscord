@@ -126,7 +126,7 @@ internal sealed class ItemMenuForm : Form
 internal sealed class RulesForm : Form
 {
     private readonly ClientRuntime runtime;
-    private readonly Guid? runId;
+    private Guid? runId;
     private readonly RichTextBox rules = new()
     {
         Dock = DockStyle.Fill,
@@ -147,7 +147,6 @@ internal sealed class RulesForm : Form
     public RulesForm(ClientRuntime runtime)
     {
         this.runtime = runtime;
-        this.runId = runtime.Status().Run?.Id;
         RunDialogs.Configure(this, "SoulLink-Regeln", new Size(560, 428));
         var editor = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 40, ColumnCount = 2, RowCount = 1 };
         editor.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -171,7 +170,12 @@ internal sealed class RulesForm : Form
     private void RenderRules()
     {
         var run = this.runtime.Status().Run;
-        if (run?.Id != this.runId) run = null;
+        if (run?.Id != this.runId)
+        {
+            this.runId = run?.Id;
+            this.feedback.Text = "";
+            this.input.Clear();
+        }
         string heading = run is null ? "Zusatzregeln" : $"Zusatzregeln für {run.Name}";
         string extra = run?.AdditionalRules is { Length: > 0 } saved
             ? string.Join(Environment.NewLine + Environment.NewLine, saved.Select(rule => $"• {rule}"))
@@ -179,7 +183,7 @@ internal sealed class RulesForm : Form
         string text = $"""
             Grundregeln
 
-            • Pro Fanggebiet zählt für jeden Spieler der erste gültige Fang.
+            • Pro Fanggebiet zählt die erste wilde Begegnung mit einem Pokéball im Beutel, deren Evolutionsfamilie im Run noch frei ist.
             • Die Fänge aller Spieler aus demselben Gebiet bilden einen Link. Setzt ihr den Link ein, kommen alle Partner ins Team.
             • Stirbt ein Pokémon, ist der ganze Link tot. Tote Pokémon dürfen nicht mehr eingesetzt werden.
             • Der Catch-Check zeigt, ob eine Evolutionsfamilie im Run schon gefangen wurde.
@@ -209,14 +213,14 @@ internal sealed class RulesForm : Form
         try
         {
             await this.runtime.AddRuleAsync(id, this.input.Text);
-            if (this.IsDisposed) return;
+            if (this.IsDisposed || this.runId != id) return;
             this.input.Clear();
             this.feedback.ForeColor = DashboardTheme.Accent;
             this.feedback.Text = "Zusatzregel gespeichert.";
         }
         catch (Exception error) when (RunDialogs.IsActionError(error))
         {
-            if (this.IsDisposed) return;
+            if (this.IsDisposed || this.runId != id) return;
             this.feedback.ForeColor = DashboardTheme.Danger;
             this.feedback.Text = error.Message;
         }

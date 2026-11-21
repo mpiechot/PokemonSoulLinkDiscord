@@ -23,15 +23,7 @@ internal sealed class CompanionForm : Form
     private readonly BattlePanel battles;
     private readonly RowStyle battleRow = new(SizeType.Absolute, 0);
     private readonly RowStyle catchRow = new(SizeType.Absolute, 0);
-    private readonly Label encounterCheck = new()
-    {
-        Dock = DockStyle.Fill,
-        BackColor = DashboardTheme.Panel,
-        TextAlign = ContentAlignment.MiddleLeft,
-        AutoEllipsis = true,
-        Padding = new Padding(9, 0, 7, 0),
-        AccessibleName = "Automatischer Catch-Check",
-    };
+    private readonly CatchVerdictPanel encounterCheck = new() { AccessibleName = "Automatischer Catch-Check" };
     private readonly RosterGrid team;
     private readonly RubySprites spriteCache;
     private readonly DiscordIcons discordIcons = new();
@@ -41,6 +33,8 @@ internal sealed class CompanionForm : Form
     private readonly Button checkCatch;
     private readonly Button cheats;
     private readonly Button pendingDeathButton;
+    private readonly Button pendingEndButton;
+    private readonly ToolStripMenuItem saveGame;
     private readonly ToolStripMenuItem startGame;
     private readonly ToolStripMenuItem toggleDock;
     private readonly ToolStripMenuItem joinRun;
@@ -70,6 +64,13 @@ internal sealed class CompanionForm : Form
     private DeathReasonForm? activeDeath;
     private RosterGrid? openRoster;
     private RosterView openRosterFilter;
+    private HostingForm? hosting;
+    private RulesForm? rules;
+    private TypeChartForm? typeChart;
+    private RunEndForm? runEnd;
+    private Guid? shownRunEnd;
+    private string? saveFeedback;
+    private DateTimeOffset saveFeedbackUntil;
     private bool actionRunning;
     private Guid? displayedRunId;
 
@@ -126,7 +127,8 @@ internal sealed class CompanionForm : Form
         this.startGame = new ToolStripMenuItem("Spiel starten", null, async (_, _) => await this.StartGameAsync());
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
         this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
-        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.saveGame = new ToolStripMenuItem("Speichern (Slot 1)", null, async (_, _) => await this.SaveGameAsync());
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
             this.RunPlayerTestInstance()));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
@@ -136,8 +138,8 @@ internal sealed class CompanionForm : Form
             this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, (_, _) =>
             {
                 if (this.closing) return;
-                using var dialog = new HostingForm(profiles, this.runtime.Status().Server);
-                dialog.ShowDialog(this);
+                this.hosting ??= new HostingForm(profiles, this.runtime.Status().Server);
+                ShowTool(this.hosting);
             }));
             this.programMenu.Items.Insert(3, new ToolStripMenuItem("Run-Server neu verbinden", null, async (_, _) =>
             {
@@ -159,6 +161,7 @@ internal sealed class CompanionForm : Form
             dialog.ShowDialog(this);
         });
         this.pendingDeathButton = Button("Todesfall prüfen", (_, _) => this.ReviewDeath());
+        this.pendingEndButton = Button("Run abschließen", (_, _) => this.ReviewRunEnd());
         this.cheats = Button("Cheats", (_, _) =>
         {
             if (this.closing || this.game is not { HasExited: false } || !this.runtime.CanAddPcItems) return;
@@ -167,17 +170,17 @@ internal sealed class CompanionForm : Form
         });
         this.hints.SetToolTip(this.cheats, "Je 99 Items ins lokale PC-Lager legen");
         navigation.Controls.AddRange([
-            Button("Box", (_, _) => this.ShowRoster("Box", RosterView.Box)),
-            Button("Tot", (_, _) => this.ShowRoster("Tot", RosterView.Dead)),
-            Button("Shinies", (_, _) => this.ShowRoster("Shinies", RosterView.Shiny)),
-            Button("Fangorte", (_, _) => this.ShowPlaces()),
             Button("Regeln", (_, _) =>
             {
-                using var dialog = new RulesForm(this.runtime);
-                dialog.ShowDialog(this);
+                if (this.rules is null || this.rules.IsDisposed) this.rules = new RulesForm(this.runtime);
+                ShowTool(this.rules);
             }),
-            this.cheats,
-            this.checkCatch, this.pendingDeathButton,
+            Button("Typen", (_, _) =>
+            {
+                if (this.typeChart is null || this.typeChart.IsDisposed) this.typeChart = new TypeChartForm();
+                ShowTool(this.typeChart);
+            }),
+            this.cheats, this.checkCatch, this.pendingDeathButton, this.pendingEndButton,
         ]);
         var chrome = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(3, 0, 0, 0) };
         var minimize = DashboardTheme.IconButton(DashboardIcon.Minimize, "Minimieren", DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
@@ -210,8 +213,14 @@ internal sealed class CompanionForm : Form
         this.battles.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
         this.team = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
         this.team.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
-        var news = Section("Newsfeed", this.feed);
-        var teamPanel = Section("Aktuelles Team", this.team);
+        var places = Button("Fangorte", (_, _) => this.ShowPlaces());
+        places.Font = new Font("Segoe UI", 8.5f);
+        places.Margin = new Padding(0);
+        var news = Section("Newsfeed", this.feed, places);
+        var teamPanel = Section("Aktuelles Team", this.team,
+            this.RosterButton(DashboardIcon.Box, "Box", RosterView.Box),
+            this.RosterButton(DashboardIcon.Death, "Tot", RosterView.Dead),
+            this.RosterButton(DashboardIcon.Shiny, "Shinies", RosterView.Shiny));
         var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
         sidebar.RowStyles.Add(this.catchRow);
@@ -409,14 +418,57 @@ internal sealed class CompanionForm : Form
         return button;
     }
 
-    private static Control Section(string name, Control contents)
+    private Button RosterButton(DashboardIcon icon, string title, RosterView filter)
+    {
+        var button = DashboardTheme.IconButton(icon, title, DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
+        button.Size = new Size(30, 24);
+        button.Margin = new Padding(2, 0, 0, 0);
+        button.Click += (_, _) => this.ShowRoster(title, filter);
+        this.hints.SetToolTip(button, title);
+        return button;
+    }
+
+    private static Control Section(string name, Control contents, params Button[] actions)
     {
         var panel = new RoundedSection { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, BackColor = DashboardTheme.Surface, Padding = new Padding(6) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 31));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        panel.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Text }, 0, 0);
+        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new Padding(0) };
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        heading.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Text }, 0, 0);
+        var buttons = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.Right, WrapContents = false, Margin = new Padding(0) };
+        buttons.Controls.AddRange(actions);
+        heading.Controls.Add(buttons, 1, 0);
+        panel.Controls.Add(heading, 0, 0);
         panel.Controls.Add(contents, 0, 1);
         return panel;
+    }
+
+    private void ShowTool(Form tool)
+    {
+        if (this.closing) return;
+        if (!tool.Visible) tool.Show(this);
+        tool.Activate();
+    }
+
+    private async Task SaveGameAsync()
+    {
+        if (this.closing) return;
+        try
+        {
+            this.dock.FocusGame();
+            await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
+            this.saveFeedback = "Spielstand in mGBA auf Slot 1 gespeichert.";
+        }
+        catch (Exception error) when (RunDialogs.IsActionError(error))
+        {
+            this.saveFeedback = error.Message;
+        }
+        if (this.closing) return;
+        this.saveFeedbackUntil = DateTimeOffset.UtcNow.AddSeconds(5);
+        this.dock.FocusGame();
+        this.Render();
     }
 
     private static Label ConnectionLabel(string name) => new()
@@ -634,9 +686,11 @@ internal sealed class CompanionForm : Form
         var pending = OwnDeaths(view);
         if (this.activeDeath is { } popup && pending.FirstOrDefault(d => d.IncidentId == popup.IncidentId) is { } update)
             popup.UpdateTrace(update);
-        if (!this.deathDialogOpen && !this.actionRunning && !this.OwnedForms.Any(form => form.Visible) &&
-            view.Run is { } run && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident && this.Visible)
-            this.BeginInvoke((Action)(() => this.ReviewDeath(incident, run.Id)));
+        if (!this.Visible || !this.Enabled || this.actionRunning || this.OwnedForms.Any(form => form.Visible && form.Modal)) return;
+        if (OwnRunEnd(view) is { } end && this.shownRunEnd != end.Id)
+            this.ReviewRunEnd(activate: false);
+        else if (!this.deathDialogOpen && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident)
+            this.ReviewDeath(incident, view.Run?.Id);
     }
 
     internal void ChangeDock()
@@ -670,7 +724,8 @@ internal sealed class CompanionForm : Form
                 _ => "Abgeschlossen",
             }) + ")"
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
-        this.status.Text = this.shutdownError ?? this.joinError ?? this.updateStatus ??
+        this.status.Text = this.shutdownError ?? this.joinError ??
+            (DateTimeOffset.UtcNow < this.saveFeedbackUntil ? this.saveFeedback : null) ?? this.updateStatus ??
             (this.instanceLabel is { } label ? $"{label} | {registration}" : registration);
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
             view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
@@ -691,10 +746,14 @@ internal sealed class CompanionForm : Form
             : "Wähle beim ersten Start die ROM für diesen Run.");
         this.startGame.Enabled = this.started && !running && !this.launching;
         this.toggleDock.Enabled = running;
+        this.saveGame.Enabled = running && this.runtime.CanSaveState;
         this.toggleDock.Text = this.dock.Attached ? "mGBA lösen" : "mGBA einbetten";
         this.joinRun.Available = this.profiles is not null || (this.profile is not null && !view.Registered);
         this.checkCatch.Enabled = view.Run is not null;
         this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
+        var pendingEnd = OwnRunEnd(view);
+        this.pendingEndButton.Visible = pendingEnd is not null;
+        if (this.runEnd is { IsDisposed: false } end && end.IncidentId != pendingEnd?.Id) end.Close();
         this.dashboard.Render(view);
         this.RenderEncounterCheck(view);
         int battleHeight = this.battles.Render(view);
@@ -723,19 +782,38 @@ internal sealed class CompanionForm : Form
 
     private void RenderEncounterCheck(ClientView view)
     {
-        EncounterCatchVerdict[] checks = view.Snapshot?.Battle?.CatchEncounter == true
-            ? view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId)?.CatchChecks ?? [] : [];
+        var player = view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId);
+        EncounterCatchVerdict[] checks = view.Snapshot?.Battle is { CatchEncounter: true } live && live.Key == player?.Battle?.Key
+            ? player.CatchChecks ?? [] : [];
         string text = string.Join(Environment.NewLine, checks.Select(check => check.Allowed
-            ? $"✓ {RubyNames.Pokemon(check.Species)}: Fang erlaubt"
-            : $"✕ {RubyNames.Pokemon(check.Species)}: {check.Reason}"));
-        if (this.encounterCheck.Text != text)
-        {
-            this.encounterCheck.Text = text;
-            this.encounterCheck.ForeColor = checks.All(check => check.Allowed) ? DashboardTheme.Accent : DashboardTheme.Danger;
-            this.hints.SetToolTip(this.encounterCheck, text);
-        }
-        float height = checks.Length == 0 ? 0 : 20 + checks.Length * 22;
+            ? $"{RubyNames.Pokemon(check.Species)}: Fang erlaubt"
+            : $"{RubyNames.Pokemon(check.Species)}: {check.Reason}"));
+        this.encounterCheck.SetResult(checks.Length == 0 ? null : checks.All(check => check.Allowed), text);
+        float height = checks.Length == 0 ? 0 : 82 + (checks.Length - 1) * 32;
         if (this.catchRow.Height != height) this.catchRow.Height = height;
+    }
+
+    private static PendingRunEnd? OwnRunEnd(ClientView view) =>
+        view.Run is { Phase: RunPhase.Active, PendingEnd: { } end } && end.PlayerId == view.LocalPlayerId ? end : null;
+
+    private void ReviewRunEnd(bool activate = true)
+    {
+        if (this.closing) return;
+        var view = this.runtime.Status();
+        if (OwnRunEnd(view) is not { } end || view.Run is not { } run) return;
+        if (this.runEnd is { IsDisposed: false } open)
+        {
+            if (activate) open.Activate();
+            return;
+        }
+
+        this.shownRunEnd = end.Id;
+        var dialog = new RunEndForm(end.Id, reason => this.runtime.CompleteWipedRunAsync(run.Id, end.Id, reason));
+        this.runEnd = dialog;
+        dialog.StartPosition = FormStartPosition.Manual;
+        dialog.Location = this.PointToScreen(new Point(Math.Max(0, this.ClientSize.Width - dialog.Width - 16), 63));
+        dialog.Show(this);
+        if (activate) dialog.Activate();
     }
 
     private static PendingDeath[] OwnDeaths(ClientView view) =>

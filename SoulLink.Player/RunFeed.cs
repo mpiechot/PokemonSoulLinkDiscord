@@ -198,6 +198,7 @@ internal sealed class RunFeed(DiscordIcons icons, RubySprites sprites) : Dashboa
             "death" or "death-confirmed" or "death-undone" => ("Todesfall", "death"),
             "badge" or "arena-completed" or "arena-reverted" => ("Arena", "arena"),
             "evolved" => ("Entwicklung", "use"),
+            "run-ended" => ("Run abgeschlossen", "status"),
             _ => ("Run", "status"),
         };
         var background = icon == "catch" ? Color.FromArgb(24, 58, 48) :

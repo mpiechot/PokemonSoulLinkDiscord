@@ -159,6 +159,20 @@ public sealed class AutomationHub : Hub
         this.engine.ResolveFaint(this.Registration(), pokemonId, incidentId, confirm, reason);
     }
 
+    /// <summary>Finishes a wiped run for the player who lost its last link.</summary>
+    public void CompleteWipedRun(Guid incidentId, string? reason)
+    {
+        this.RequireReadTracking();
+        try
+        {
+            this.engine.CompleteWipedRun(this.Registration(), incidentId, reason);
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException)
+        {
+            throw new HubException(error.Message);
+        }
+    }
+
     /// <summary>Returns only the caller's run.</summary>
     public async Task<AutomationRun> Subscribe()
     {
@@ -171,6 +185,11 @@ public sealed class AutomationHub : Hub
     {
         var registration = this.Registration();
         var run = this.engine.View(registration);
+        if (run.PendingEnd?.PlayerId != registration.PlayerId)
+        {
+            run.PendingEnd = null;
+        }
+
         foreach (var player in run.Players)
         {
             player.Connection = this.engine.Connection(player);

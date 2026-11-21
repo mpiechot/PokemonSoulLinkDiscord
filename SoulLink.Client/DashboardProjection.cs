@@ -27,7 +27,7 @@ internal static class DashboardProjection
             .Where(p => !p.Imported && !p.State.IsEgg && p.State.MetArea != 255)
             .Select(p => p.State.MetArea).Distinct().Order().ToArray();
         return new ClientRunView(run.Name, run.Phase, run.Id, players, StatusPresenter.Lines(run, p => p.Connection).ToArray(),
-            run.History.TakeLast(50).ToArray(), links, caught, run.AdditionalRules.ToArray());
+            run.History.TakeLast(50).ToArray(), links, caught, run.AdditionalRules.ToArray(), run.PendingEnd);
     }
 
     private static DashboardPokemon ProjectPokemon(TrackedPokemon pokemon) => new(pokemon.State, pokemon.Dead, pokemon.Present);

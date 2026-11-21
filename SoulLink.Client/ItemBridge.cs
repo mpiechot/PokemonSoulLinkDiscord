@@ -46,6 +46,14 @@ internal sealed class ItemBridge
         }
     }
 
+    public bool CanSave
+    {
+        get
+        {
+            lock (this.gate) return this.CurrentBridge() is not null && this.pending is null;
+        }
+    }
+
     public bool MatchesSession(string? value)
     {
         lock (this.gate) return this.session is not null && value == this.session;
@@ -70,7 +78,7 @@ internal sealed class ItemBridge
         {
             if (this.ready?.Stream == stream) this.ready = null;
             if (this.pending is { } request && request.Stream == stream)
-                request.Completion.TrySetException(new IOException("Verbindung unterbrochen. Prüfe das Item-Lager vor einem weiteren Klick."));
+                request.Completion.TrySetException(new IOException("Die Verbindung zu mGBA wurde unterbrochen."));
         }
     }
 
@@ -87,13 +95,33 @@ internal sealed class ItemBridge
     public async Task<int> AddAsync(PcItem item, CancellationToken cancellationToken)
     {
         if (!Enum.IsDefined(item)) throw new ArgumentOutOfRangeException(nameof(item));
+        var outcome = await this.SendAsync("PC", (int)item, cancellationToken);
+        if (outcome is { Status: "ok", Quantity: >= 99 and <= 49950 }) return outcome.Quantity.Value;
+        throw new InvalidOperationException(outcome.Status switch
+        {
+            "full" => "Für 99 Stück ist im Item-Lager zu wenig Platz.",
+            "storage" => "Das Item-Lager dieses Spielstands konnte nicht sicher gelesen werden.",
+            "location" => "Schließe das Spielmenü und kehre ins Spielfeld zurück.",
+            _ => "Spielstand oder Verbindung hat sich geändert. Prüfe das Item-Lager.",
+        });
+    }
+
+    public async Task SaveSlotOneAsync(CancellationToken cancellationToken)
+    {
+        var outcome = await this.SendAsync("SAVE", 1, cancellationToken);
+        if (outcome.Status != "ok") throw new IOException("mGBA konnte Slot 1 nicht speichern.");
+    }
+
+    private async Task<GrantResult> SendAsync(string action, int value, CancellationToken cancellationToken)
+    {
         ReadyBridge target;
         PendingGrant request;
         lock (this.gate)
         {
-            target = this.CurrentBridge() is { InBattle: false } bridge ? bridge :
-                throw new InvalidOperationException("Lade einen Rubin-Spielstand und verlasse den Kampf.");
-            if (this.pending is not null) throw new InvalidOperationException("Die letzte Zugabe wird noch verarbeitet.");
+            target = this.CurrentBridge() ?? throw new InvalidOperationException("Es sind keine aktuellen Spieldaten aus mGBA verfügbar.");
+            if (action == "PC" && target.InBattle)
+                throw new InvalidOperationException("Verlasse den Kampf, bevor du Items hinzufügst.");
+            if (this.pending is not null) throw new InvalidOperationException("mGBA verarbeitet noch die vorherige Anfrage.");
             request = new PendingGrant(target.Stream, target.Session, Guid.NewGuid(), new(TaskCreationOptions.RunContinuationsAsynchronously));
             this.pending = request;
         }
@@ -103,21 +131,13 @@ internal sealed class ItemBridge
         try
         {
             long expires = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 5;
-            string packet = FormattableString.Invariant($"PC {target.Session} {target.Epoch} {target.Trainer} {request.Id:D} {(int)item} {expires}\n");
+            string packet = FormattableString.Invariant($"{action} {target.Session} {target.Epoch} {target.Trainer} {request.Id:D} {value} {expires}\n");
             await target.Stream.WriteAsync(Encoding.ASCII.GetBytes(packet), timeout.Token);
-            var outcome = await request.Completion.Task.WaitAsync(timeout.Token);
-            if (outcome is { Status: "ok", Quantity: >= 99 and <= 49950 }) return outcome.Quantity.Value;
-            throw new InvalidOperationException(outcome.Status switch
-            {
-                "full" => "Für 99 Stück ist im Item-Lager zu wenig Platz.",
-                "storage" => "Das Item-Lager dieses Spielstands konnte nicht sicher gelesen werden.",
-                "location" => "Schließe das Spielmenü und kehre ins Spielfeld zurück.",
-                _ => "Spielstand oder Verbindung hat sich geändert. Prüfe das Item-Lager.",
-            });
+            return await request.Completion.Task.WaitAsync(timeout.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new IOException("Keine Bestätigung von mGBA. Prüfe das Item-Lager vor einem weiteren Klick.");
+            throw new IOException("Keine Bestätigung von mGBA erhalten.");
         }
         finally
         {

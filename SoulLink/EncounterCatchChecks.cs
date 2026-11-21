@@ -25,11 +25,12 @@ public static class EncounterCatchChecks
             .Select(mon => mon.Species).Distinct().Select(species =>
             {
                 if (locationProblem is not null) return new EncounterCatchVerdict(species, false, locationProblem);
-                var family = CatchCheckRules.Check(run, species, Guid.Empty);
-                string? reason = family.PreviouslyCaught is { } match
-                    ? $"Evolutionsfamilie schon gefangen: {match} ({family.Player})"
-                    : family.Pokemon is null ? "Pokémon konnte nicht geprüft werden." : null;
+                string? reason = FamilyProblem(CatchCheckRules.Check(run, species, Guid.Empty));
                 return new EncounterCatchVerdict(species, reason is null, reason);
             }).ToArray();
     }
+
+    internal static string? FamilyProblem(CatchCheck family) => family.PreviouslyCaught is { } match
+        ? $"Evolutionsfamilie schon gefangen: {match} ({family.Player})"
+        : family.Pokemon is null ? "Pokémon konnte nicht geprüft werden." : null;
 }

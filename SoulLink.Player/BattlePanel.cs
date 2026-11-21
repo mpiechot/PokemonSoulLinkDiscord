@@ -159,20 +159,28 @@ internal sealed class BattlePanel : DashboardScrollView
         bool struck = this.hits.TryGetValue((player, mon.Position), out var hit) && hit.Ends > Environment.TickCount64;
         if (struck) DashboardTheme.Fill(canvas, bounds, Color.FromArgb(102, 49, 65), 6);
         int shake = struck ? (int)(Math.Sin((hit.Ends - Environment.TickCount64) / 18.0) * 3) : 0;
-        if (RubyDashboardCatalog.Appearance(mon.Species) is { } appearance && this.sprites.Find(appearance, false) is { } sprite)
+        if (mon.Species == 0)
+        {
+            TextRenderer.DrawText(canvas, "?", this.Font, new Rectangle(bounds.X + shake, bounds.Y, 32, 32),
+                DashboardTheme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+        else if (RubyDashboardCatalog.Appearance(mon.Species) is { } appearance && this.sprites.Find(appearance, false) is { } sprite)
         {
             canvas.InterpolationMode = InterpolationMode.NearestNeighbor;
             canvas.DrawImage(sprite, new Rectangle(bounds.X + shake, bounds.Y, 32, 32));
         }
         int width = Math.Max(4, bounds.Width - 37);
         int left = bounds.X + 33;
-        TextRenderer.DrawText(canvas, mon.Species == 0 ? "Unbekannt" : RubyNames.Pokemon(mon.Species), this.small, new Rectangle(left, bounds.Y, width, 14),
-            (mon.Position & 1) == 0 ? DashboardTheme.Accent : DashboardTheme.Text, LabelFlags);
+        if (mon.Species != 0)
+        {
+            TextRenderer.DrawText(canvas, RubyNames.Pokemon(mon.Species), this.small, new Rectangle(left, bounds.Y, width, 14),
+                (mon.Position & 1) == 0 ? DashboardTheme.Accent : DashboardTheme.Text, LabelFlags);
+        }
         var bar = new Rectangle(left, bounds.Y + 15, width, 4);
         DashboardTheme.Fill(canvas, bar, DashboardTheme.Background, 2);
         if (mon.Hp > 0)
             DashboardTheme.Fill(canvas, bar with { Width = Math.Max(1, width * mon.Hp / mon.MaxHp) }, DashboardTheme.Accent, 2);
-        string health = struck ? $"−{hit.Damage} KP" : $"KP {mon.Hp}/{mon.MaxHp}";
+        string health = struck && mon.Species != 0 ? $"−{hit.Damage} KP" : $"KP {mon.Hp}/{mon.MaxHp}";
         TextRenderer.DrawText(canvas, health, this.small, new Rectangle(left, bounds.Y + 20, width, 14),
             struck ? DashboardTheme.Danger : DashboardTheme.Muted, LabelFlags);
     }

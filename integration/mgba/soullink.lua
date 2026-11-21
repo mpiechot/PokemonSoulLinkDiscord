@@ -124,11 +124,7 @@ local function readTrainerId(profile)
     return read16(profile.save2 + 0x0A) | (read16(profile.save2 + 0x0C) << 16)
 end
 
-local function grantPcItem(expectedEpoch, trainer, item, expires)
-    local profile = activeProfile
-    if profile ~= profiles.AXVD or epoch ~= expectedEpoch or readTrainerId(profile) ~= trainer or expires < os.time() then
-        return "changed"
-    end
+local function grantPcItem(profile, item)
     local count = read8(profile.partyCount)
     if (read8(profile.main + 0x43D) & 2) ~= 0 or count < 1 or count > 6 or
         read8(profile.avatar + 6) ~= 0 or readPosition(profile, read8(profile.save1 + 4)) == "null" then
@@ -162,7 +158,7 @@ local function grantPcItem(expectedEpoch, trainer, item, expires)
     return "ok", total + 99
 end
 
-local function receivePcItem()
+local function receiveLocalAction()
     if not itemSession or not peer or itemReply then return end
     if peer:hasdata() then
         local chunk = peer:receive(256)
@@ -173,12 +169,21 @@ local function receivePcItem()
     if not ending then return end
     local line = itemInput:sub(1, ending - 1)
     itemInput = itemInput:sub(ending + 1)
-    local token, expectedEpoch, trainer, request, kind, expires =
-        line:match("^PC (%x+) ([%w_]+) (%d+) ([%x%-]+) (%d+) (%d+)$")
+    local action, token, expectedEpoch, trainer, request, kind, expires =
+        line:match("^(%u+) (%x+) ([%w_]+) (%d+) ([%x%-]+) (%d+) (%d+)$")
     local item = tonumber(kind)
-    if token ~= itemSession or not request or #request ~= 36 or not isPcGrantItem(item) or request == lastItemRequest then return end
+    local save = action == "SAVE" and item == 1
+    if token ~= itemSession or not request or #request ~= 36 or request == lastItemRequest or
+        not (save or (action == "PC" and isPcGrantItem(item))) then return end
     lastItemRequest = request
-    local ok, outcome, quantity = pcall(grantPcItem, expectedEpoch, tonumber(trainer), item, tonumber(expires))
+    local ok, outcome, quantity = pcall(function()
+        local profile = activeProfile
+        if profile ~= profiles.AXVD or epoch ~= expectedEpoch or readTrainerId(profile) ~= tonumber(trainer) or tonumber(expires) < os.time() then
+            return "changed"
+        end
+        if save then return readCore():saveStateSlot(1) and "ok" or "save" end
+        return grantPcItem(profile, item)
+    end)
     itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","itemQuantity":%s}\n',
         itemSession, request, ok and outcome or "changed", quantity or "null")
 end
@@ -255,7 +260,7 @@ local function observeLiveBattle(profile, frame)
     if (read8(profile.main + 0x43D) & 2) ~= 0 then
         if not battleStarted and read8(addresses.outcome) ~= 0 then return end
         local count = read8(addresses.count)
-        battleStarted = battleStarted or frame
+        battleStarted = battleStarted or (wildBattle and wildBattle.started) or frame
         if count == 2 or count == 4 then
             local combatants, seen = {}, {}
             for index = 0, count - 1 do
@@ -264,6 +269,7 @@ local function observeLiveBattle(profile, frame)
                 local species, hp, maxHp = read16(mon), read16(mon + 0x28), read16(mon + 0x2C)
                 if position < 4 and not seen[position] and species > 0 and species < 412 and maxHp > 0 and maxHp <= 999 and hp <= maxHp then
                     seen[position] = true
+                    if wildBattle and (position & 1) ~= 0 and not wildBattle.species then wildBattle.species = species end
                     combatants[#combatants + 1] = string.format('{"position":%d,"species":%d,"hp":%d,"maxHp":%d,"personality":%d}',
                         position, species, hp, maxHp, read32(mon + 0x48))
                 end
@@ -279,27 +285,38 @@ local function observeLiveBattle(profile, frame)
     if liveBattle ~= scene then liveBattle, battleDirty = scene, true end
 end
 
+local function hasBagBalls(profile)
+    -- Ruby's 16 bag slots hold unencrypted {u16 id, u16 count} pairs.
+    for slot = 0, 15 do
+        local entry = read32(profile.save1 + 0x600 + 4 * slot)
+        local id, quantity = entry & 0xFFFF, entry >> 16
+        if id >= 1 and id <= 12 and quantity > 0 and quantity <= 999 then return true end
+    end
+    return false
+end
+
 local function observeWildBattle(profile, frame)
     if profile ~= profiles.AXVD then return end
     local outcome = read8(profile.battle.outcome)
     if (read8(profile.main + 0x43D) & 2) == 0 then
-        if wildBattle and frame > wildBattle.started and outcome >= 1 and outcome <= 10 then
-            wildResults[#wildResults + 1] = string.format('{"mapGroup":%d,"mapNumber":%d,"started":%d,"ended":%d,"outcome":%d}',
-                wildBattle.group, wildBattle.number, wildBattle.started, frame, outcome)
+        if wildBattle and wildBattle.record and frame > wildBattle.started and outcome >= 1 and outcome <= 10 then
+            wildResults[#wildResults + 1] = string.format('{"mapGroup":%d,"mapNumber":%d,"started":%d,"ended":%d,"outcome":%d,"species":%s}',
+                wildBattle.group, wildBattle.number, wildBattle.started, frame, outcome, wildBattle.species or "null")
             if #wildResults > 16 then table.remove(wildResults, 1) end
             wildDirty = true
         end
-        wildBattle, canStartWild = nil, lastPosition ~= "null"
+        wildBattle = nil
+        canStartWild = canStartWild or readPosition(profile, read8(profile.save1 + 4)) ~= "null"
         return
     end
-    if not canStartWild or outcome ~= 0 then return end
+    if battleStarted or wildBattle or outcome ~= 0 then return end
 
-    canStartWild = false
     local flags = read32(profile.battle.flags)
-    -- Normal and roaming wild battles only. The lab sets FLAG_ADVENTURE_STARTED after awarding Poké Balls.
-    if (flags & ~0x404) == 0 and (read8(profile.save1 + 0x122E) & 0x10) ~= 0 then
-        wildBattle = {group = read8(profile.save1 + 4), number = read8(profile.save1 + 5), started = frame}
+    -- Normal and roaming wild battles only. Starter and tutorial battles have their own flags.
+    if (flags & ~0x404) == 0 and hasBagBalls(profile) then
+        wildBattle = {group = read8(profile.save1 + 4), number = read8(profile.save1 + 5), started = frame, record = canStartWild}
     end
+    canStartWild = false
 end
 
 local function sendPending()
@@ -442,10 +459,12 @@ local function onFrame()
     if activeProfile then
         pcall(captureBattle, activeProfile, frame)
         pcall(observeWildBattle, activeProfile, frame)
-        if tick % 5 == 0 then pcall(observeLiveBattle, activeProfile, frame) end
+        if tick % 5 == 0 or battleStarted == nil or (read8(activeProfile.main + 0x43D) & 2) == 0 then
+            pcall(observeLiveBattle, activeProfile, frame)
+        end
     end
     sendPending()
-    receivePcItem()
+    receiveLocalAction()
     if itemReply and not pending then
         pending, position, itemReply = itemReply, 1, nil
         sendPending()

@@ -3,7 +3,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo }
+internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo, Box, Death, Shiny }
 
 internal static class DashboardTheme
 {
@@ -126,6 +126,19 @@ internal static class DashboardTheme
                     break;
                 case DashboardIcon.Check:
                     canvas.DrawLines(pen, [new Point(-7, 0), new Point(-2, 5), new Point(7, -5)]);
+                    break;
+                case DashboardIcon.Box:
+                    canvas.DrawRectangle(pen, -7, -5, 14, 11);
+                    canvas.DrawLine(pen, -7, -1, 7, -1);
+                    canvas.DrawLine(pen, -2, 2, 2, 2);
+                    break;
+                case DashboardIcon.Death:
+                    canvas.DrawLine(pen, -6, 1, 6, 1);
+                    canvas.DrawLine(pen, 0, -7, 0, 7);
+                    break;
+                case DashboardIcon.Shiny:
+                    canvas.DrawPolygon(pen, [new Point(0, -7), new Point(2, -2), new Point(7, 0), new Point(2, 2),
+                        new Point(0, 7), new Point(-2, 2), new Point(-7, 0), new Point(-2, -2)]);
                     break;
                 case DashboardIcon.Undo:
                     canvas.DrawLines(pen, [new Point(-3, -7), new Point(-7, -3), new Point(-3, 1)]);

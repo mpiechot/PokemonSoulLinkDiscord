@@ -261,10 +261,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                     run.Phase = RunPhase.Paused;
                     break;
                 case "end":
-                    run.Phase = RunPhase.Finished;
-                    run.Selected = false;
-                    run.Invitation = "";
-                    run.EndReason = reason ?? "Ended by administrator.";
+                    if (run.Phase == RunPhase.Finished) return run;
+                    Finish(run, reason ?? "Ended by administrator.");
                     break;
                 default: throw new InvalidDataException("Unknown run action.");
             }
@@ -272,6 +270,38 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             tx.Save(run);
             return run;
         });
+    }
+
+    public void CompleteWipedRun(Registration registration, Guid incidentId, string? reason)
+    {
+        reason = reason?.Trim();
+        if (reason is { Length: > 250 } || reason?.Any(char.IsControl) == true)
+            throw new InvalidDataException("Der Grund darf bis zu 250 Zeichen enthalten.");
+
+        store.Execute(tx =>
+        {
+            var run = tx.Run(registration.RunId);
+            var player = run.Players.Single(p => p.Id == registration.PlayerId && p.ClientId == registration.ClientId);
+            if (run.Phase != RunPhase.Active || run.PendingEnd != new PendingRunEnd(incidentId, player.Id) ||
+                run.Encounters.Any(IsLiveLink))
+                throw new InvalidOperationException("Für dich ist kein Run-Ende mehr offen.");
+
+            string endReason = string.IsNullOrEmpty(reason) ? "Alle Links sind tot." : reason;
+            Finish(run, endReason);
+            this.Event(tx, run, "run-ended", $"Run abgeschlossen: {endReason}", player: player,
+                details: new EventDetails(Reason: endReason));
+            tx.Save(run);
+            return true;
+        });
+    }
+
+    private static void Finish(AutomationRun run, string reason)
+    {
+        run.Phase = RunPhase.Finished;
+        run.Selected = false;
+        run.Invitation = "";
+        run.EndReason = reason;
+        run.PendingEnd = null;
     }
 
     public Registration Join(JoinRequest request)
@@ -387,15 +417,15 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 snapshot.Frame >= previous.Frame && snapshot.PlaySeconds + 1 >= previous.PlaySeconds &&
                 !snapshot.Pokemon.Any(mon => previous.Pokemon.Any(old => old.Identity == mon.Identity && old.Experience > mon.Experience));
             bool import = !sameTimeline || run.Phase == RunPhase.Lobby;
+            if (!import) this.RecordWildResults(tx, run, player, snapshot, previous!.Frame);
             if (snapshot.Battle is { } battle)
             {
                 bool hidden = previous?.Battle is { HideOpponent: true } oldBattle && oldBattle.Key == battle.Key ||
                     battle is { CatchEncounter: true, Trainer: null } && snapshot.Area < 255 &&
-                    !player.FirstWildAreas.Contains(snapshot.Area) &&
-                    !run.Encounters.Any(link => link.Area == snapshot.Area && link.Members.ContainsKey(player.Id));
+                    !player.FirstWildAreas.Contains(snapshot.Area) && !run.Encounters.Any(link => link.Area == snapshot.Area &&
+                        (link.Dead || link.Failed || link.Members.ContainsKey(player.Id)));
                 snapshot = snapshot with { Battle = battle with { HideOpponent = hidden } };
             }
-            if (!import) this.RecordWildResults(tx, run, player, snapshot, previous!.Frame);
             foreach (var tracked in player.Pokemon) tracked.Present = false;
             foreach (var state in snapshot.Pokemon)
             {
@@ -408,7 +438,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                     tracked = new TrackedPokemon { State = state, Imported = import || starter };
                     player.Pokemon.Add(tracked);
                     if (starter) this.RecordStarter(tx, run, player, tracked);
-                    else if (!import && !state.IsEgg) this.Catch(tx, run, player, tracked, snapshot);
+                    else if (!import && !state.IsEgg) this.Catch(tx, run, player, tracked, snapshot, previous!);
                 }
                 else if (!import && tracked.State.Species != state.Species)
                 {
@@ -570,6 +600,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 ?? throw new InvalidOperationException("No encounter found for this area.");
             if (encounter.Dead == dead) return true;
             encounter.Dead = dead;
+            if (IsLiveLink(encounter)) run.PendingEnd = null;
             foreach (var member in encounter.Members)
             {
                 var pokemon = run.Players.Single(p => p.Id == member.Key).Pokemon.Single(p => p.Id == member.Value);
@@ -604,7 +635,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426 ||
             snapshot.WildBattles is { Length: > 16 } || snapshot.WildBattles?.Any(battle =>
                 battle is null || battle.Area is < 0 or >= 255 || battle.Started < 0 || battle.Ended <= battle.Started ||
-                battle.Ended > snapshot.Frame || battle.Outcome is < 1 or > 10) == true ||
+                battle.Ended > snapshot.Frame || battle.Outcome is < 1 or > 10 ||
+                battle.Species is int foe && !SpeciesCatalog.IsValid(foe)) == true ||
             snapshot.Battle is { } combat && (!snapshot.InBattle || !combat.IsValid()) ||
             snapshot.Position is { Valid: false } || snapshot.Faints is { Length: > 6 } ||
             snapshot.Faints?.Any(f => f is null || f.PartySlot is < 0 or > 5 || f.Move is < 1 or > 354 ||
@@ -639,8 +671,13 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         long floor = player.RunStartEpoch == snapshot.Epoch ? player.RunStartFrame : -1;
         foreach (var battle in (snapshot.WildBattles ?? []).OrderBy(result => result.Ended))
         {
-            if (battle.Ended <= previousFrame || battle.Started <= floor || !player.FirstWildAreas.Add(battle.Area)) continue;
-            if (battle.Outcome == 7) continue; // The game confirmed a catch. Inventory supplies its identity.
+            if (battle.Ended <= previousFrame || battle.Started <= floor) continue;
+            // Older bridges only expose the species in the live battle snapshot.
+            var live = player.LastSnapshot?.Battle;
+            int? species = battle.Species ?? (live?.Key == $"{snapshot.Epoch}:{battle.Started}"
+                ? live.Combatants.FirstOrDefault(mon => (mon.Position & 1) != 0)?.Species : null);
+            if (species is int foe && EncounterCatchChecks.FamilyProblem(CatchCheckRules.Check(run, foe, Guid.Empty)) is not null) continue;
+            if (!player.FirstWildAreas.Add(battle.Area) || battle.Outcome == 7) continue;
 
             var encounter = run.Encounters.SingleOrDefault(link => link.Area == battle.Area);
             if (encounter is { Failed: true } or { Dead: true } or { GroupId: not null } ||
@@ -665,29 +702,43 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             details: new EventDetails(Members: DescribeLink(run, encounter).ToArray()));
     }
 
-    private void Catch(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, TrackedPokemon pokemon, GameSnapshot snapshot)
+    private void Catch(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, TrackedPokemon pokemon,
+        GameSnapshot snapshot, GameSnapshot previous)
     {
         int area = pokemon.State.MetArea;
         var encounter = run.Encounters.SingleOrDefault(e => e.Area == area);
-        encounter ??= new Encounter { Area = area, MapGroup = snapshot.MapGroup, MapNumber = snapshot.MapNumber };
-        if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
         string place = RubyNames.Area(area);
-        string species = RubyNames.Pokemon(pokemon.State.Species);
-        bool areaAvailable = !encounter.Failed && !encounter.Dead && !encounter.Members.ContainsKey(player.Id);
-        var details = new EventDetails(new EventPokemon(player.Name, pokemon.State.Species, pokemon.State.IsShiny),
-            CatchCheck: CatchCheckRules.Check(run, pokemon.State.Species, pokemon.Id), AreaAvailable: areaAvailable);
-        if (!areaAvailable)
+        int speciesId = pokemon.State.Species;
+        string species = RubyNames.Pokemon(speciesId);
+        bool areaAvailable = encounter is null || !encounter.Failed && !encounter.Dead && !encounter.Members.ContainsKey(player.Id);
+        var check = CatchCheckRules.Check(run, speciesId, pokemon.Id);
+        var details = new EventDetails(new EventPokemon(player.Name, speciesId, pokemon.State.IsShiny),
+            CatchCheck: check, AreaAvailable: areaAvailable);
+        bool observedWildCatch = (snapshot.WildBattles ?? []).Any(battle => battle.Area == area && battle.Outcome == 7 &&
+            battle.Ended > previous.Frame && battle.Species == speciesId) ||
+            (snapshot.Area == area && IsWildOpponent(snapshot.Battle, speciesId)) ||
+            (previous.Area == area && IsWildOpponent(previous.Battle, speciesId));
+        string? rejection = !areaAvailable ? "Das Gebiet war bereits vergeben."
+            : observedWildCatch ? EncounterCatchChecks.FamilyProblem(check) : null;
+        if (rejection is not null)
         {
-            this.Event(tx, run, "extra-catch", $"{player.Name}: {species} in {place} gefangen. Das Gebiet war bereits vergeben.",
+            this.Event(tx, run, "extra-catch", $"{player.Name}: {species} in {place} gefangen. {rejection}",
                 player: player, area: area, snapshot: snapshot, details: details);
             return;
         }
 
+        encounter ??= new Encounter { Area = area, MapGroup = snapshot.MapGroup, MapNumber = snapshot.MapNumber };
+        if (!run.Encounters.Contains(encounter)) run.Encounters.Add(encounter);
         encounter.Members[player.Id] = pokemon.Id;
         this.Event(tx, run, "caught", $"{player.Name}: {species} in {place} gefangen ({encounter.Members.Count}/{run.Players.Count}).",
             player: player, area: area, snapshot: snapshot, details: details);
         this.CompleteLink(tx, run, encounter);
     }
+
+    private static bool IsWildOpponent(BattleStatus? battle, int species) =>
+        battle is { CatchEncounter: true } && battle.Combatants.Any(mon => (mon.Position & 1) != 0 && mon.Species == species);
+
+    private static bool IsLiveLink(Encounter link) => link.GroupId.HasValue && !link.Dead && !link.Failed;
 
     private static Encounter InsertStarterLink(AutomationRun run)
     {
@@ -708,6 +759,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (encounter.GroupId is not null || encounter.Members.Count != run.Players.Count) return;
         encounter.GroupId = Guid.NewGuid();
+        if (IsLiveLink(encounter)) run.PendingEnd = null;
         var members = DescribeLink(run, encounter).ToArray();
         string memberList = string.Join(" · ", members.Select(m => $"{m.Player}: {RubyNames.Pokemon(m.Species)}"));
         this.Event(tx, run, "linked", $"{RubyNames.Area(encounter.Area)} · {memberList}.", area: encounter.Area,
@@ -766,6 +818,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         pokemon.Dead = true;
         var links = run.Encounters.Where(e => e.Members.GetValueOrDefault(player.Id) == pokemon.Id).ToArray();
+        bool lostLink = links.Any(IsLiveLink);
         foreach (var encounter in links)
         {
             encounter.Dead = true;
@@ -776,6 +829,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 linked.PendingDeath = null;
             }
         }
+        if (lostLink && !run.Encounters.Any(IsLiveLink))
+            run.PendingEnd = new PendingRunEnd(Guid.NewGuid(), player.Id);
+
         if (battle is { OpponentHidden: true })
             battle = battle with { OpponentSpecies = null, Move = null, FinishingBlow = false };
         string detail = string.Join(" · ", new[] { reason, battle?.Trainer,

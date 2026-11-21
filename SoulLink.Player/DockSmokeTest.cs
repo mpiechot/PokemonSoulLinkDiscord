@@ -112,6 +112,87 @@ internal static class DockSmokeTest
         if (!drewLabel) throw new InvalidOperationException("The SoulLink label was blank when painted.");
     }
 
+    // This code runs only in the verified synthetic cartridge's copy of the bridge.
+    private const string WildBattleFixture = """
+
+        local testFrame = 0
+        local function testWildBattle()
+            -- The last PC grant lets the test start after all existing item assertions.
+            if testFrame == 0 then
+                for slot = 0, 49 do
+                    if read16(0x02025BCC + 4 * slot) == 12 then testFrame = 1; break end
+                end
+                if testFrame == 0 then return end
+            end
+            testFrame = testFrame + 1
+            local function startBattle()
+                readCore():write32(0x03001BAC, 0x200) -- Main.inBattle is the second byte.
+                readCore():write32(0x02024D24, 0) -- The outcome is the third byte.
+                readCore():write32(0x020239F8, 4)
+                readCore():write32(0x02024A68, 2)
+                readCore():write32(0x02024A70, 0x01000000)
+                readCore():write32(0x02024A80, 25)
+                readCore():write32(0x02024AA8, 15)
+                readCore():write32(0x02024AAC, 20)
+                readCore():write32(0x02024AD8, 280)
+                readCore():write32(0x02024B00, 9)
+                readCore():write32(0x02024B04, 17)
+            end
+            local function escape()
+                readCore():write32(0x02024D24, 0x00040000)
+                readCore():write32(0x03001BAC, 0)
+            end
+            if testFrame == 30 then
+                readCore():write8(0x02025739, 16)
+                readCore():write8(0x02026962, 0x10) -- Adventure flag set, but balls only in PC storage.
+                startBattle()
+            elseif testFrame == 120 then
+                escape()
+            elseif testFrame == 150 then
+                readCore():write8(0x02026962, 0)
+                readCore():write32(0x02025D38, 0x00010003) -- One Great Ball in the second bag slot.
+                startBattle()
+            elseif testFrame == 210 then
+                readCore():write32(0x02025D38, 0) -- Using the last ball must not unmark the encounter.
+                readCore():write32(0x02024B00, 7)
+            elseif testFrame == 270 then
+                escape()
+            end
+        end
+        """;
+
+    private static async Task VerifyWildBattlesAsync(ClientRuntime runtime, CancellationToken cancellationToken)
+    {
+        async Task<GameSnapshot> WaitFor(string stage, Func<GameSnapshot, bool> matches)
+        {
+            try
+            {
+                while (true)
+                {
+                    if (runtime.Status().Snapshot is { } snapshot && matches(snapshot)) return snapshot;
+                    await Task.Delay(25, cancellationToken);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                var last = runtime.Status().Snapshot;
+                throw new InvalidDataException($"Wild battle test timed out at {stage}. Last frame: {last?.Frame}, area: {last?.Area}, " +
+                    $"battle: {Protocol.Serialize(last?.Battle)}, outcomes: {Protocol.Serialize(last?.WildBattles)}.");
+            }
+        }
+
+        var noBalls = await WaitFor("battle with only PC balls", snapshot => snapshot.Battle is { });
+        if (noBalls.Battle!.CatchEncounter) throw new InvalidDataException("PC balls counted as balls in the bag.");
+        await WaitFor("escape without balls", snapshot => !snapshot.InBattle);
+        var encounter = await WaitFor("battle with a Great Ball", snapshot => snapshot.Battle is { } battle && battle.Key != noBalls.Battle.Key);
+        if (encounter.Battle!.CatchEncounter is false || encounter.WildBattles is { Length: > 0 })
+            throw new InvalidDataException("The first wild battle with a ball in the bag was not recognized.");
+        await WaitFor("last ball used", snapshot => snapshot.Battle is { CatchEncounter: true, Combatants: [_, { Hp: 7 }] });
+        var escaped = await WaitFor("eligible escape", snapshot => !snapshot.InBattle && snapshot.WildBattles is { Length: > 0 });
+        if (escaped.WildBattles is not [{ Area: 16, Species: 280, Outcome: 4 }])
+            throw new InvalidDataException("The wild encounter outcome did not retain its route and opponent.");
+    }
+
     private static IEnumerable<Control> Descendants(Control parent) =>
         parent.Controls.Cast<Control>().SelectMany(child => new[] { child }.Concat(Descendants(child)));
 
@@ -164,6 +245,13 @@ internal static class DockSmokeTest
                 await runtime.StartAsync(timeout.Token);
                 string bridge = BridgeInstaller.Install(Path.Combine(home, "Bridge"), runtime.Status().BridgePort,
                     testItems ? runtime.BeginLocalItemSession() : null);
+                if (testItems)
+                {
+                    string source = File.ReadAllText(bridge);
+                    File.WriteAllText(bridge, source
+                        .Replace("local function onFrame()", WildBattleFixture + "\nlocal function onFrame()", StringComparison.Ordinal)
+                        .Replace("    receiveLocalAction()", "    receiveLocalAction()\n    if activeProfile then testWildBattle() end", StringComparison.Ordinal));
+                }
                 using var process = emulator.Start(rom.Read()!, bridge, testState, softwareDisplay: true);
                 try
                 {
@@ -206,6 +294,10 @@ internal static class DockSmokeTest
                     VerifyFeed(home);
                     if (testItems)
                     {
+                        while (!runtime.CanSaveState) await Task.Delay(25, timeout.Token);
+                        await runtime.SaveSlotOneAsync(timeout.Token);
+                        if (new FileInfo(Path.ChangeExtension(path, ".ss1")) is not { Exists: true, Length: > 0 })
+                            throw new InvalidDataException("mGBA did not write the quick save to slot 1.");
                         if (after.InBattle)
                         {
                             if (runtime.CanAddPcItems) throw new InvalidOperationException("The item menu was available during battle.");
@@ -224,6 +316,7 @@ internal static class DockSmokeTest
                             foreach (var ball in Enum.GetValues<PcItem>().Where(item => item != PcItem.RareCandy))
                                 if (await runtime.AddPcItemsAsync(ball, timeout.Token) != 99)
                                     throw new InvalidOperationException($"The fixture did not receive 99 {ball}.");
+                            await VerifyWildBattlesAsync(runtime, timeout.Token);
                         }
                     }
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");

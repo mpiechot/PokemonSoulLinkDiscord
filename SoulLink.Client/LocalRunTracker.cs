@@ -81,6 +81,9 @@ internal sealed class LocalRunTracker : IDisposable
     public void ResolveFaint(Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
         this.engine.ResolveFaint(this.registration, pokemonId, incidentId, confirm, reason);
 
+    public void CompleteWipedRun(Guid incidentId, string? reason) =>
+        this.engine.CompleteWipedRun(this.registration, incidentId, reason);
+
     private static bool TimelineChanged(GameSnapshot previous, GameSnapshot next) =>
         previous.Epoch != next.Epoch || next.Frame < previous.Frame ||
         next.PlaySeconds + 1 < previous.PlaySeconds ||
