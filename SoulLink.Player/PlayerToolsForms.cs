@@ -12,6 +12,14 @@ internal sealed class ItemMenuForm : Form
         (PcItem.GreatBall, "Superbälle", "great-ball", Color.FromArgb(134, 194, 255)),
         (PcItem.UltraBall, "Hyperbälle", "ultra-ball", DashboardTheme.Gold),
         (PcItem.MasterBall, "Meisterbälle", "master-ball", Color.FromArgb(210, 163, 255)),
+        (PcItem.SafariBall, "Safaribälle", "safari-ball", DashboardTheme.Accent),
+        (PcItem.NetBall, "Netzbälle", "net-ball", DashboardTheme.Accent),
+        (PcItem.DiveBall, "Tauchbälle", "dive-ball", Color.FromArgb(134, 194, 255)),
+        (PcItem.NestBall, "Nestbälle", "nest-ball", DashboardTheme.Accent),
+        (PcItem.RepeatBall, "Wiederbälle", "repeat-ball", DashboardTheme.Danger),
+        (PcItem.TimerBall, "Timerbälle", "timer-ball", DashboardTheme.Muted),
+        (PcItem.LuxuryBall, "Luxusbälle", "luxury-ball", DashboardTheme.Gold),
+        (PcItem.PremierBall, "Premierbälle", "premier-ball", DashboardTheme.Text),
     ];
 
     private readonly RubySprites sprites;
@@ -22,7 +30,7 @@ internal sealed class ItemMenuForm : Form
 
     public ItemMenuForm(ClientRuntime runtime, RubySprites sprites)
     {
-        RunDialogs.Configure(this, "Cheat-Menü", new Size(570, 360));
+        RunDialogs.Configure(this, "Cheat-Menü", new Size(660, 570));
         this.sprites = sprites;
         var help = new Label
         {
@@ -31,9 +39,11 @@ internal sealed class ItemMenuForm : Form
             Height = 52,
             ForeColor = DashboardTheme.Muted,
         };
-        var cards = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
-        for (int col = 0; col < 3; col++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
-        for (int row = 0; row < 2; row++) cards.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        const int columns = 4;
+        int rows = (Items.Length + columns - 1) / columns;
+        var cards = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = columns, RowCount = rows };
+        for (int col = 0; col < columns; col++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / columns));
+        for (int row = 0; row < rows; row++) cards.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rows));
         for (int index = 0; index < Items.Length; index++)
         {
             var choice = Items[index];
@@ -61,7 +71,7 @@ internal sealed class ItemMenuForm : Form
             card.Controls.Add(this.images[index], 0, 0);
             card.Controls.Add(label, 0, 1);
             card.Controls.Add(button, 0, 2);
-            cards.Controls.Add(card, index % 3, index / 3);
+            cards.Controls.Add(card, index % columns, index / columns);
         }
         this.Controls.Add(cards);
         this.Controls.Add(this.feedback);

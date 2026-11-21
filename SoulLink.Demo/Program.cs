@@ -254,8 +254,12 @@ try
             await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
                 .Run?.Players.Single(p => p.Id == localPlayer).CatchChecks is [var verdict] &&
                 verdict.Species == species && verdict.Allowed == (species == 25));
+            var spectator = (await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).Players.Single(p => p.Id == localPlayer);
+            if (spectator.DisplayBattle?.Combatants is not [_, { Species: 0, Personality: 0, Hp: 18, MaxHp: 22 }] ||
+                spectator.DisplayCatchChecks is not null)
+                throw new InvalidDataException("The first encounter shared its opponent or removed its HP.");
         }
-        Console.WriteLine("Verified: automatic wild Catch Check returns both the permitted and duplicate-family verdict.");
+        Console.WriteLine("Verified: the player gets their Catch Check while spectators receive only the unknown opponent's HP.");
 
         long started = ++frame;
         current = current with { Frame = ++frame, PlaySeconds = frame, InBattle = false, WildBattles = [new RawWildBattle(0, 17, started, frame, 4)] };

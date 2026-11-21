@@ -20,7 +20,13 @@ Zu Beginn eines eigenen Wildkampfs zeigt der automatische **Catch-Check** unter 
 
 Unter der Karte erscheinen die **Live-Kämpfe** deiner Mitspieler. Dort siehst du die aktiven Pokémon und ihre KP. Bei einem beobachteten Treffer blitzt die Karte des betroffenen Pokémon kurz auf und zeigt den KP-Verlust.
 
+Bei einem Erstencounter sieht nur der kämpfende Spieler die Art im Spiel und im Catch-Check. Für Mitspieler erscheint der Gegner als **Unbekannt** mit seinen KP. Der Fang selbst enthüllt das Pokémon im gemeinsamen Feed.
+
+Für einen Mehrspieler-Test am selben PC öffnest du in **SoulLink → Testspieler öffnen** weitere Fenster. Jedes Testfenster hat eigene Profile und einen eigenen mGBA-Spielstand. Du kannst dieselbe Ausgangs-ROM auswählen. Die Testfenster verwenden getrennte Kopien und übernehmen keine vorhandenen Spielstände. Tritt in jedem Fenster mit einem eigenen Namen derselben Einladung bei und starte danach den Run als Gastgeber.
+
 Der Geldstand steht in der Spielerliste unter der Karte neben dem Ort. Wenn ein Spieler offline ist, zeigt die Liste den zuletzt übertragenen Stand.
+
+Im **Cheat-Menü** stehen Sonderbonbons und alle zwölf Bälle aus Rubin mit Bild und Namen. Mit **+99** legst du das jeweilige Item ins PC-Item-Lager.
 
 Versionen mit eingebautem Updater prüfen beim Öffnen auf neue Releases. Steht eine bereit, findest du unter **SoulLink** den Eintrag **Update … installieren**. Vor der Bestätigung speicherst du in mGBA. SoulLink lädt das signierte Paket, beendet das eigene mGBA und öffnet danach die neue Version. Einladungen, Run-Auswahl und ROM-Pfade bleiben in deinem bisherigen Spielerprofil gespeichert.
 

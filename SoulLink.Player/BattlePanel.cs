@@ -137,7 +137,7 @@ internal sealed class BattlePanel : DashboardScrollView
             var battle = player.Battle!;
             foreach (var mon in battle.Combatants)
             {
-                if (CombatantBounds(mon, top, this.Viewport.Width - 4).Contains(point)) return (player.Id, mon);
+                if (mon.Species > 0 && CombatantBounds(mon, top, this.Viewport.Width - 4).Contains(point)) return (player.Id, mon);
             }
             top += HeightOf(battle);
         }
@@ -166,7 +166,7 @@ internal sealed class BattlePanel : DashboardScrollView
         }
         int width = Math.Max(4, bounds.Width - 37);
         int left = bounds.X + 33;
-        TextRenderer.DrawText(canvas, RubyNames.Pokemon(mon.Species), this.small, new Rectangle(left, bounds.Y, width, 14),
+        TextRenderer.DrawText(canvas, mon.Species == 0 ? "Unbekannt" : RubyNames.Pokemon(mon.Species), this.small, new Rectangle(left, bounds.Y, width, 14),
             (mon.Position & 1) == 0 ? DashboardTheme.Accent : DashboardTheme.Text, LabelFlags);
         var bar = new Rectangle(left, bounds.Y + 15, width, 4);
         DashboardTheme.Fill(canvas, bar, DashboardTheme.Background, 2);

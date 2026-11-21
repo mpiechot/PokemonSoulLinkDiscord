@@ -11,6 +11,14 @@ public enum PcItem
     UltraBall = 2,
     GreatBall = 3,
     PokeBall = 4,
+    SafariBall = 5,
+    NetBall = 6,
+    DiveBall = 7,
+    NestBall = 8,
+    RepeatBall = 9,
+    TimerBall = 10,
+    LuxuryBall = 11,
+    PremierBall = 12,
     RareCandy = 68,
 }
 
@@ -50,7 +58,7 @@ internal sealed class ItemBridge
             this.ready = this.session is { } expected && frame.ItemSession == expected &&
                 frame.LayoutId == "ruby-axvd-reference-v2" && frame.TrainerId is uint trainer &&
                 frame.Pokemon.Any(p => p.Container == Placement.Party) &&
-                frame.Epoch is { Length: > 0 and <= 48 } epoch && epoch.All(char.IsAsciiLetterOrDigit)
+                frame.Epoch is { Length: > 0 and <= 48 } epoch && epoch.All(c => char.IsAsciiLetterOrDigit(c) || c == '_')
                 ? new ReadyBridge(stream, expected, epoch, trainer, frame.InBattle, DateTimeOffset.UtcNow)
                 : null;
         }

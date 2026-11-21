@@ -45,7 +45,8 @@ internal sealed class CompanionForm : Form
     private readonly ToolStripMenuItem toggleDock;
     private readonly ToolStripMenuItem joinRun;
     private readonly ToolStripMenuItem updateMenu;
-    private readonly PlayerUpdater? updater = PlayerUpdater.Create();
+    private readonly PlayerUpdater? updater;
+    private readonly string? instanceLabel;
     private readonly CancellationTokenSource updateLifetime = new();
     private readonly ContextMenuStrip programMenu = new();
     private readonly System.Windows.Forms.Timer refresh = new() { Interval = 200 };
@@ -73,7 +74,8 @@ internal sealed class CompanionForm : Form
     private Guid? displayedRunId;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
-        string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null)
+        string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null,
+        int? testSlot = null)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -82,8 +84,10 @@ internal sealed class CompanionForm : Form
         this.requestedRom = requestedRom;
         this.profile = profile;
         this.profiles = profiles;
+        this.updater = testSlot.HasValue ? null : PlayerUpdater.Create();
+        this.instanceLabel = testSlot is int slot ? $"Testspieler {slot}" : null;
         this.dock = new EmulatorDock(this.surface);
-        this.Text = "SoulLink";
+        this.Text = this.instanceLabel is { } label ? $"SoulLink – {label}" : "SoulLink";
         this.FormBorderStyle = FormBorderStyle.None;
         var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
         this.ClientSize = new Size(Math.Min(1720, workArea.Width), Math.Min(930, workArea.Height));
@@ -123,6 +127,8 @@ internal sealed class CompanionForm : Form
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
         this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
         this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
+            this.RunPlayerTestInstance()));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
         if (this.updater is not null) this.programMenu.Items.Add(this.updateMenu);
         if (profiles is not null)
@@ -260,7 +266,13 @@ internal sealed class CompanionForm : Form
                 return;
             }
             this.updateMenu.Text = $"Update {offer.Version} installieren";
-            if (!interactive || MessageBox.Show(this,
+            if (!interactive) return;
+            if (PlayerInstance.HasTestPlayers())
+            {
+                MessageBox.Show(this, "Schließe die SoulLink-Testfenster vor dem Update.", "SoulLink-Update");
+                return;
+            }
+            if (MessageBox.Show(this,
                 $"Version {offer.Version} ist verfügbar. Speichere zuerst im Spiel. SoulLink beendet mGBA und startet nach der Installation neu.",
                 "SoulLink aktualisieren", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
 
@@ -269,9 +281,11 @@ internal sealed class CompanionForm : Form
             using var download = CancellationTokenSource.CreateLinkedTokenSource(this.updateLifetime.Token);
             download.CancelAfter(TimeSpan.FromMinutes(12));
             var staged = await service.StageAsync(offer, download.Token);
-            if (this.closing || this.IsDisposed)
+            if (this.closing || this.IsDisposed || PlayerInstance.HasTestPlayers())
             {
                 PlayerUpdater.CleanStage(staged.Directory);
+                if (!this.closing && !this.IsDisposed)
+                    MessageBox.Show(this, "Schließe die SoulLink-Testfenster vor dem Update.", "SoulLink-Update");
                 return;
             }
             this.PendingUpdate = staged;
@@ -563,7 +577,7 @@ internal sealed class CompanionForm : Form
         this.Render();
         try
         {
-            if (PortableMgba.IsAlreadyRunning())
+            if (this.emulator.IsAlreadyRunning())
                 throw new InvalidOperationException("mGBA ist bereits geöffnet. Schließe es und klicke auf „Spiel starten“.");
 
             path ??= chooseRom ? null : this.rom.Read();
@@ -656,7 +670,8 @@ internal sealed class CompanionForm : Form
                 _ => "Abgeschlossen",
             }) + ")"
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
-        this.status.Text = this.shutdownError ?? this.joinError ?? this.updateStatus ?? registration;
+        this.status.Text = this.shutdownError ?? this.joinError ?? this.updateStatus ??
+            (this.instanceLabel is { } label ? $"{label} | {registration}" : registration);
         this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
             view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
         var sharedPlayer = view.IsLocalRun ? null : view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId);
@@ -689,6 +704,21 @@ internal sealed class CompanionForm : Form
         this.openRoster?.Render(view, this.openRosterFilter);
         this.feed.Render(view.Run?.History ?? [], view.Run is { Phase: RunPhase.Lobby }
             ? "Lobby. Fänge werden erfasst, sobald der Gastgeber auf „Starten“ klickt." : "Noch keine Ereignisse.");
+    }
+
+    private void RunPlayerTestInstance()
+    {
+        if (this.closing || Environment.ProcessPath is not { } executable) return;
+        try
+        {
+            var options = new ProcessStartInfo(executable) { UseShellExecute = false };
+            options.ArgumentList.Add("--new-test-player");
+            using var process = Process.Start(options);
+        }
+        catch (System.ComponentModel.Win32Exception error)
+        {
+            MessageBox.Show(this, error.Message, "Testspieler konnte nicht geöffnet werden.");
+        }
     }
 
     private void RenderEncounterCheck(ClientView view)

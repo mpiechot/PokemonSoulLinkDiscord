@@ -221,7 +221,7 @@ internal static class DockSmokeTest
                             while (!runtime.CanAddPcItems) await Task.Delay(25, timeout.Token);
                             if (await runtime.AddPcItemsAsync(PcItem.RareCandy, timeout.Token) != 1049)
                                 throw new InvalidOperationException("The existing 950 candies did not receive exactly 99 more.");
-                            foreach (var ball in new[] { PcItem.PokeBall, PcItem.GreatBall, PcItem.UltraBall, PcItem.MasterBall })
+                            foreach (var ball in Enum.GetValues<PcItem>().Where(item => item != PcItem.RareCandy))
                                 if (await runtime.AddPcItemsAsync(ball, timeout.Token) != 99)
                                     throw new InvalidOperationException($"The fixture did not receive 99 {ball}.");
                         }
@@ -324,6 +324,39 @@ internal static class DockSmokeTest
         if (rendered.Where((icon, index) => icon.Image?.Width != 24 || icon.Label != expected[index].Item2).Any() ||
             rendered.Select(icon => icon.Image).Distinct().Count() != expected.Length)
             throw new InvalidOperationException("The distinct types displayed for Geodude and Pidgeot must have separate symbols.");
+    }
+
+    internal static void VerifyTestPlayers(string home)
+    {
+        string scope = "Local\\SoulLink.Smoke." + Guid.NewGuid().ToString("N");
+        using var primary = PlayerInstance.Open(1, allowFallback: false, wait: false, scope);
+        if (primary?.Slot != 1) throw new InvalidOperationException("The main player did not reserve its slot.");
+        Task.Factory.StartNew(() =>
+        {
+            using var first = PlayerInstance.Open(1, allowFallback: true, wait: false, scope);
+            if (first?.Slot != 2) throw new InvalidOperationException("The second player did not get an independent slot.");
+            int? next = Task.Factory.StartNew(() =>
+            {
+                using var third = PlayerInstance.Open(2, allowFallback: true, wait: false, scope);
+                return third?.Slot;
+            },
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
+            if (next != 3) throw new InvalidOperationException("The third player did not get an independent slot.");
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).GetAwaiter().GetResult();
+
+        string source = Path.Combine(home, "Test original.gba");
+        File.WriteAllBytes(source, [1, 2, 3]);
+        var firstEmulator = new PortableMgba(Path.Combine(home, "TestPlayers", "2"), isolated: true);
+        var secondEmulator = new PortableMgba(Path.Combine(home, "TestPlayers", "3"), isolated: true);
+        string firstCopy = firstEmulator.PrepareRom(source);
+        string secondCopy = secondEmulator.PrepareRom(source);
+        string save = Path.ChangeExtension(firstCopy, ".sav");
+        File.WriteAllText(save, "test 2");
+        if (firstCopy == secondCopy || firstCopy == source || secondCopy == source ||
+            !File.ReadAllBytes(source).SequenceEqual(File.ReadAllBytes(firstCopy)) ||
+            File.Exists(Path.ChangeExtension(secondCopy, ".sav")) || File.Exists(Path.ChangeExtension(source, ".sav")) ||
+            firstEmulator.PrepareRom(source) != firstCopy)
+            throw new InvalidOperationException("The test players did not isolate their ROM and save paths.");
     }
 
     internal static void VerifyLinkEditor()

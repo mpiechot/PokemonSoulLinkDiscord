@@ -28,15 +28,20 @@ public sealed record MapPosition(int X, int Y, int Width, int Height, bool Outdo
     public bool Valid => Width is > 0 and <= 1024 && Height is > 0 and <= 1024 && X >= 0 && Y >= 0 && X < Width && Y < Height;
 }
 
-public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer, bool FinishingBlow = false);
+public sealed record BattleTrace(int PartySlot, int? OpponentSpecies, int? Move, string? Trainer, bool FinishingBlow = false, bool OpponentHidden = false);
 public sealed record BattleCombatant(int Position, int Species, int Hp, int MaxHp, uint Personality)
 {
     public bool IsValid() => this.Position is >= 0 and <= 3 && SpeciesCatalog.IsValid(this.Species) &&
         this.MaxHp is > 0 and <= 999 && this.Hp >= 0 && this.Hp <= this.MaxHp;
 }
 
-public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[] Combatants, bool CatchEncounter = false)
+public sealed record BattleStatus(string Key, string? Trainer, BattleCombatant[] Combatants, bool CatchEncounter = false, bool HideOpponent = false)
 {
+    public BattleStatus ForSpectator() => !this.HideOpponent ? this : this with
+    {
+        Combatants = this.Combatants.Select(mon => (mon.Position & 1) == 0 ? mon : mon with { Species = 0, Personality = 0 }).ToArray(),
+    };
+
     public bool IsValid() => this.Key is { Length: > 0 and <= 100 } &&
         (this.Trainer is null || this.Trainer.Length <= 12 && !this.Trainer.Any(char.IsControl)) &&
         this.Combatants is { Length: > 0 and <= 4 } &&

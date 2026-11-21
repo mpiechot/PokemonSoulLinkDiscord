@@ -43,22 +43,24 @@ internal static class Program
         bool smokeItems = args.Length == 3 && args[0] == "--smoke-pc-items";
         bool smokeGame = smokeItems || (args.Length is 3 or 4 && args[0] == "--smoke-game");
         bool smokeClose = args.Length is 3 or 4 && args[0] == "--smoke-close";
+        bool customHome = args.Length is 2 or 3 && args[0] == "--data-directory";
+        bool newTestPlayer = args is ["--new-test-player"];
+        int? testSlot = args is ["--test-player-slot", string slotArgument, ..] &&
+            int.TryParse(slotArgument, out int slot) && slot is >= 2 and <= PlayerInstance.MaxSlots ? slot : null;
+        if (testSlot.HasValue) args = args[2..];
         Guid? selectedProfile = args is ["--run-profile", string selection] && Guid.TryParse(selection, out Guid selected) ? selected : null;
-        using var instance = new Mutex(true, "Local\\SoulLink.Player", out bool firstInstance);
-        if (!firstInstance && selectedProfile is not null)
+        bool smoke = smokeTest || smokeGame || smokeClose;
+        using var instance = smoke ? null : PlayerInstance.Open(testSlot ?? (newTestPlayer ? 2 : 1),
+            allowFallback: !testSlot.HasValue && !selectedProfile.HasValue && !customHome, wait: selectedProfile.HasValue);
+        if (!smoke && instance is null)
         {
-            try { firstInstance = instance.WaitOne(TimeSpan.FromSeconds(8)); }
-            catch (AbandonedMutexException) { firstInstance = true; }
-        }
-        if (!smokeTest && !smokeGame && !smokeClose && !firstInstance)
-        {
-            MessageBox.Show("SoulLink läuft bereits. Öffne das vorhandene SoulLink-Fenster.", "SoulLink");
+            MessageBox.Show("Der gewünschte Spielerplatz ist belegt. Schließe bei Bedarf ein Testfenster.", "SoulLink");
             return;
         }
-        if (firstInstance) PlayerUpdater.CleanOldStages();
-        bool customHome = args.Length is 2 or 3 && args[0] == "--data-directory";
+        if (instance is { IsTest: false }) PlayerUpdater.CleanOldStages();
+        string playerHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
         string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulLink", "Player");
+            instance is { IsTest: true } ? Path.Combine(playerHome, "TestPlayers", instance.Slot.ToString()) : playerHome;
         Directory.CreateDirectory(home);
         var profiles = new PlayerProfileLibrary(home);
         if (!smokeTest && !smokeGame && !smokeClose && !customHome)
@@ -82,7 +84,7 @@ internal static class Program
             ["BridgePort"] = "0",
         }).Build();
         using var runtime = new ClientRuntime(configuration);
-        var emulator = new PortableMgba(home, preferSoftwareDisplay: smokeClose);
+        var emulator = new PortableMgba(home, preferSoftwareDisplay: smokeClose, isolated: instance?.IsTest == true);
         string profileKey = profile is null ? "local" : profile.Id.ToString("N");
         var rom = new RomSelection(Path.Combine(home, $"rom-{profileKey}.txt"));
         if (smokeTest)
@@ -94,6 +96,7 @@ internal static class Program
                 DockSmokeTest.VerifyScrollDesign();
                 DockSmokeTest.VerifyFirstHostConnection(home);
                 DockSmokeTest.VerifyLinkEditor();
+                DockSmokeTest.VerifyTestPlayers(home);
             }
             catch (Exception error)
             {
@@ -124,10 +127,10 @@ internal static class Program
                 emptyParty: args.Length == 4 && args[3] == "empty");
             return;
         }
-        string? requestedRom = args.Length == 1 ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
+        string? requestedRom = args.Length == 1 && !newTestPlayer ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
         using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
-            Path.Combine(home, "Artwork"), customHome ? null : profiles);
+            Path.Combine(home, "Artwork"), customHome ? null : profiles, instance?.IsTest == true ? instance.Slot : null);
         Application.Run(form);
         if (form.PendingUpdate is { } update)
         {
@@ -142,11 +145,15 @@ internal static class Program
         else if (form.RequestedProfile is Guid runProfile)
         {
             var restart = new ProcessStartInfo(executable) { UseShellExecute = false };
+            if (instance is { IsTest: true })
+            {
+                restart.ArgumentList.Add("--test-player-slot");
+                restart.ArgumentList.Add(instance.Slot.ToString());
+            }
             restart.ArgumentList.Add("--run-profile");
             restart.ArgumentList.Add(runProfile.ToString("D"));
             try
             {
-                instance.ReleaseMutex();
                 using var process = Process.Start(restart);
             }
             catch (System.ComponentModel.Win32Exception error)

@@ -112,7 +112,7 @@ public sealed class AutomationHub : Hub
         if (requester.PlayerId == playerId || !SpeciesCatalog.IsValid(species) ||
             !this.engine.View(requester).Players.Any(player => player.Id == playerId && this.engine.Connection(player) == "Ready" &&
                 (player.Pokemon.Any(mon => !mon.State.IsEgg && mon.State.Species == species) ||
-                    player.LastSnapshot?.Battle?.Combatants.Any(mon => mon.Species == species) == true)) ||
+                    player.LastSnapshot?.Battle?.ForSpectator().Combatants.Any(mon => mon.Species == species) == true)) ||
             this.updates.Peer(playerId) is not { } connection)
         {
             return null;
@@ -186,6 +186,7 @@ public sealed class AutomationHub : Hub
 
             if (player.Id != registration.PlayerId)
             {
+                player.DisplayBattle = player.DisplayBattle?.ForSpectator();
                 foreach (var pokemon in player.Pokemon)
                 {
                     pokemon.PendingDeath = null;

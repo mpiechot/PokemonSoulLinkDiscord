@@ -387,6 +387,14 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 snapshot.Frame >= previous.Frame && snapshot.PlaySeconds + 1 >= previous.PlaySeconds &&
                 !snapshot.Pokemon.Any(mon => previous.Pokemon.Any(old => old.Identity == mon.Identity && old.Experience > mon.Experience));
             bool import = !sameTimeline || run.Phase == RunPhase.Lobby;
+            if (snapshot.Battle is { } battle)
+            {
+                bool hidden = previous?.Battle is { HideOpponent: true } oldBattle && oldBattle.Key == battle.Key ||
+                    battle is { CatchEncounter: true, Trainer: null } && snapshot.Area < 255 &&
+                    !player.FirstWildAreas.Contains(snapshot.Area) &&
+                    !run.Encounters.Any(link => link.Area == snapshot.Area && link.Members.ContainsKey(player.Id));
+                snapshot = snapshot with { Battle = battle with { HideOpponent = hidden } };
+            }
             if (!import) this.RecordWildResults(tx, run, player, snapshot, previous!.Frame);
             foreach (var tracked in player.Pokemon) tracked.Present = false;
             foreach (var state in snapshot.Pokemon)
@@ -712,6 +720,10 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         var state = tracked.State;
         var trace = run.DeathRule == DeathRule.ConfirmFaint && state.Container == Placement.Party
             ? snapshot.Faints?.FirstOrDefault(f => f.PartySlot == state.Slot) : null;
+        if (trace is not null && (snapshot.Battle?.HideOpponent == true ||
+            snapshot.Battle is null && previous?.Battle?.HideOpponent == true ||
+            tracked.PendingDeath?.Battle?.OpponentHidden == true || tracked.FaintBattle?.OpponentHidden == true && state.Hp == 0))
+            trace = trace with { OpponentHidden = true };
         if (state.Hp > 0 && trace is null) tracked.FaintDismissed = false;
         if (tracked.Dead) return;
         if (tracked.PendingDeath is { } pending)
@@ -764,6 +776,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 linked.PendingDeath = null;
             }
         }
+        if (battle is { OpponentHidden: true })
+            battle = battle with { OpponentSpecies = null, Move = null, FinishingBlow = false };
         string detail = string.Join(" · ", new[] { reason, battle?.Trainer,
             battle?.OpponentSpecies is int species ? RubyNames.Pokemon(species) : null, RubyNames.Move(battle?.Move) }
             .Where(v => !string.IsNullOrEmpty(v)));

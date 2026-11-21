@@ -301,6 +301,41 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void FirstEncounterSpectatorsGetHealthAndTheSpeciesIsRevealedByTheRecordedCatch()
+    {
+        var (_, client) = this.Active(DeathRule.ConfirmFaint);
+        var battle = new BattleStatus("fixture:2", null,
+            [new(0, 280, 1, 20, 1), new(1, 25, 7, 16, 123)], CatchEncounter: true);
+        Assert.True(this.Send(client, 2, false, Snapshot(2, Mon(1)) with { InBattle = true, Battle = battle }).Accepted);
+        var trace = new BattleTrace(0, 25, 33, null, FinishingBlow: true);
+        Assert.True(this.Send(client, 3, false, Snapshot(3, Mon(1) with { Hp = 0 }) with
+        {
+            InBattle = true,
+            Battle = battle with { CatchEncounter = false },
+            Faints = [trace],
+        }).Accepted);
+
+        var player = Assert.Single(this.engine.View(client.Registration).Players);
+        var ownBattle = Assert.IsType<BattleStatus>(player.LastSnapshot?.Battle);
+        Assert.Equal(25, ownBattle.Combatants[1].Species);
+        Assert.Equal(new BattleCombatant(1, 0, 7, 16, 0), ownBattle.ForSpectator().Combatants[1]);
+        var incident = Assert.Single(player.Pokemon).PendingDeath!;
+        Assert.Equal(25, incident.Battle?.OpponentSpecies);
+        this.engine.ResolveFaint(client.Registration, incident.PokemonId, incident.IncidentId, true, null);
+        var death = Assert.Single(this.engine.View(client.Registration).History, item => item.Kind == "death");
+        Assert.Null(death.Details?.Battle?.OpponentSpecies);
+        Assert.DoesNotContain("Pikachu", death.Message);
+
+        Assert.True(this.Send(client, 4, false, Snapshot(4, Mon(1) with { Hp = 0 }, Mon(2) with { Species = 25 }) with
+        {
+            WildBattles = [new(16, 2, 4, 7)],
+        }).Accepted);
+        var view = this.engine.View(client.Registration);
+        Assert.Null(Assert.Single(view.Players).LastSnapshot?.Battle);
+        Assert.Equal(25, Assert.Single(view.History, item => item.Kind == "caught").Details?.Pokemon?.Species);
+    }
+
+    [Fact]
     public void AutomaticCatchCheckUsesTheWildOpponentFamilyAndTheEncounterSlot()
     {
         var (_, client) = this.Active();

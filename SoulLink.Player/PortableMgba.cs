@@ -1,10 +1,11 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Security.Cryptography;
 
 namespace SoulLink.Player;
 
 /// <summary>Installs and starts the bundled copy without changing the system mGBA installation.</summary>
-internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = false)
+internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = false, bool isolated = false)
 {
     public bool Available => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
 
@@ -31,15 +32,52 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
         }
         start.ArgumentList.Add("--script");
         start.ArgumentList.Add(bridge);
-        start.ArgumentList.Add(rom);
+        start.ArgumentList.Add(this.PrepareRom(rom));
         return Process.Start(start) ?? throw new InvalidOperationException("mGBA konnte nicht gestartet werden.");
     }
 
-    public static bool IsAlreadyRunning()
+    internal string PrepareRom(string original)
     {
+        if (!isolated) return original;
+        using var source = File.OpenRead(original);
+        string directory = Path.Combine(home, "Games", Convert.ToHexString(SHA256.HashData(source)));
+        string target = Path.Combine(directory, Path.GetFileName(original));
+        if (File.Exists(target)) return target;
+        Directory.CreateDirectory(directory);
+        string temporary = target + ".tmp";
+        try
+        {
+            source.Position = 0;
+            using (var copy = File.Create(temporary)) source.CopyTo(copy);
+            File.Move(temporary, target);
+        }
+        finally { File.Delete(temporary); }
+        return target;
+    }
+
+    public bool IsAlreadyRunning()
+    {
+        if (isolated) return false;
+        string testDirectory = Path.Combine(home, "TestPlayers") + Path.DirectorySeparatorChar;
         var processes = Process.GetProcessesByName("mGBA");
-        foreach (var process in processes) process.Dispose();
-        return processes.Length != 0;
+        try
+        {
+            foreach (var process in processes)
+            {
+                try
+                {
+                    if (!process.HasExited && process.MainModule?.FileName.StartsWith(testDirectory, StringComparison.OrdinalIgnoreCase) != true)
+                        return true;
+                }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { return true; }
+            }
+            return false;
+        }
+        finally
+        {
+            foreach (var process in processes) process.Dispose();
+        }
     }
 
     private string Install()

@@ -22,7 +22,9 @@ local itemSession = SOULLINK_ITEM_SESSION
 SOULLINK_ITEM_SESSION = nil
 local peer, pending, position = nil, nil, 1
 local itemInput, itemReply, lastItemRequest = "", nil, nil
-local itemIds = {[1] = true, [2] = true, [3] = true, [4] = true, [68] = true}
+local function isPcGrantItem(item)
+    return item and ((item >= 1 and item <= 12) or item == 68)
+end
 local epochSeed = tostring({}):gsub("[^%w]", "") .. tostring(os.time()) .. "_"
 local epochSerial, epoch = 0, epochSeed .. "0"
 local tick, lastFrame = 0, -1
@@ -172,9 +174,9 @@ local function receivePcItem()
     local line = itemInput:sub(1, ending - 1)
     itemInput = itemInput:sub(ending + 1)
     local token, expectedEpoch, trainer, request, kind, expires =
-        line:match("^PC (%x+) (%w+) (%d+) ([%x%-]+) (%d+) (%d+)$")
+        line:match("^PC (%x+) ([%w_]+) (%d+) ([%x%-]+) (%d+) (%d+)$")
     local item = tonumber(kind)
-    if token ~= itemSession or not request or #request ~= 36 or not itemIds[item] or request == lastItemRequest then return end
+    if token ~= itemSession or not request or #request ~= 36 or not isPcGrantItem(item) or request == lastItemRequest then return end
     lastItemRequest = request
     local ok, outcome, quantity = pcall(grantPcItem, expectedEpoch, tonumber(trainer), item, tonumber(expires))
     itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","itemQuantity":%s}\n',
@@ -268,7 +270,7 @@ local function observeLiveBattle(profile, frame)
             end
             if #combatants > 0 then
                 scene = string.format('{"started":%d,"trainerHex":%s,"catchEncounter":%s,"combatants":[%s]}',
-                    battleStarted, battleTrainer(profile), tostring(wildBattle ~= nil and read8(addresses.outcome) == 0), table.concat(combatants, ","))
+                    battleStarted, battleTrainer(profile), tostring(wildBattle ~= nil), table.concat(combatants, ","))
             end
         end
     else
