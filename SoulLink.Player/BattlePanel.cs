@@ -11,6 +11,7 @@ internal sealed class BattlePanel : DashboardScrollView
     private const int FlashDuration = 425;
     private const TextFormatFlags LabelFlags = TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
     private readonly RubySprites sprites;
+    private readonly Image? placeholder;
     private readonly System.Windows.Forms.Timer animation = new() { Interval = 33 };
     private readonly Dictionary<(Guid Player, int Position), (long Ends, int Damage)> hits = [];
     private readonly Font small = new("Segoe UI", 8);
@@ -19,9 +20,10 @@ internal sealed class BattlePanel : DashboardScrollView
 
     public event Action<Guid, PokemonState>? PokemonOpened;
 
-    public BattlePanel(RubySprites sprites)
+    public BattlePanel(RubySprites sprites, Image? placeholder)
     {
         this.sprites = sprites;
+        this.placeholder = placeholder;
         this.AccessibleName = "Live-Kämpfe";
         this.animation.Tick += (_, _) =>
         {
@@ -161,8 +163,8 @@ internal sealed class BattlePanel : DashboardScrollView
         int shake = struck ? (int)(Math.Sin((hit.Ends - Environment.TickCount64) / 18.0) * 3) : 0;
         if (mon.Species == 0)
         {
-            TextRenderer.DrawText(canvas, "?", this.Font, new Rectangle(bounds.X + shake, bounds.Y, 32, 32),
-                DashboardTheme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            if (this.placeholder is { } unknown)
+                DashboardTheme.DrawImage(canvas, unknown, new Rectangle(bounds.X + shake, bounds.Y, 32, 32), pixelArt: true);
         }
         else if (RubyDashboardCatalog.Appearance(mon.Species) is { } appearance && this.sprites.Find(appearance, false) is { } sprite)
         {

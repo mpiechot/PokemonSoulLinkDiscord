@@ -65,6 +65,7 @@ internal sealed class CompanionForm : Form
     private RosterGrid? openRoster;
     private RosterView openRosterFilter;
     private HostingForm? hosting;
+    private readonly HostingSession? hostingSession;
     private RulesForm? rules;
     private TypeChartForm? typeChart;
     private RunEndForm? runEnd;
@@ -76,7 +77,7 @@ internal sealed class CompanionForm : Form
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
         string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null,
-        int? testSlot = null)
+        int? testSlot = null, HostingSession? hostingSession = null, bool restoreHosting = false)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -85,6 +86,7 @@ internal sealed class CompanionForm : Form
         this.requestedRom = requestedRom;
         this.profile = profile;
         this.profiles = profiles;
+        this.hostingSession = hostingSession;
         this.updater = testSlot.HasValue ? null : PlayerUpdater.Create();
         this.instanceLabel = testSlot is int slot ? $"Testspieler {slot}" : null;
         this.dock = new EmulatorDock(this.surface);
@@ -135,12 +137,7 @@ internal sealed class CompanionForm : Form
         if (this.updater is not null) this.programMenu.Items.Add(this.updateMenu);
         if (profiles is not null)
         {
-            this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, (_, _) =>
-            {
-                if (this.closing) return;
-                this.hosting ??= new HostingForm(profiles, this.runtime.Status().Server);
-                ShowTool(this.hosting);
-            }));
+            this.programMenu.Items.Insert(2, new ToolStripMenuItem("Gastgeber", null, async (_, _) => await this.OpenHostingAsync()));
             this.programMenu.Items.Insert(3, new ToolStripMenuItem("Run-Server neu verbinden", null, async (_, _) =>
             {
                 if (!this.closing) await this.RunActionAsync(() => this.runtime.ReconnectAsync());
@@ -177,7 +174,7 @@ internal sealed class CompanionForm : Form
             }),
             Button("Typen", (_, _) =>
             {
-                if (this.typeChart is null || this.typeChart.IsDisposed) this.typeChart = new TypeChartForm();
+                if (this.typeChart is null || this.typeChart.IsDisposed) this.typeChart = new TypeChartForm(this.spriteCache);
                 ShowTool(this.typeChart);
             }),
             this.cheats, this.checkCatch, this.pendingDeathButton, this.pendingEndButton,
@@ -209,18 +206,18 @@ internal sealed class CompanionForm : Form
         this.dashboard.ArenaChanged += async (runId, number, complete) =>
             await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
         this.feed = new RunFeed(this.discordIcons, this.spriteCache) { Dock = DockStyle.Fill, BackColor = DashboardTheme.Surface };
-        this.battles = new BattlePanel(this.spriteCache) { Dock = DockStyle.Fill };
+        this.battles = new BattlePanel(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         this.battles.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
-        this.team = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
+        this.team = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         this.team.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
         var places = Button("Fangorte", (_, _) => this.ShowPlaces());
         places.Font = new Font("Segoe UI", 8.5f);
         places.Margin = new Padding(0);
         var news = Section("Newsfeed", this.feed, places);
         var teamPanel = Section("Aktuelles Team", this.team,
-            this.RosterButton(DashboardIcon.Box, "Box", RosterView.Box),
-            this.RosterButton(DashboardIcon.Death, "Tot", RosterView.Dead),
-            this.RosterButton(DashboardIcon.Shiny, "Shinies", RosterView.Shiny));
+            this.RosterButton("storage-box", "Box", RosterView.Box),
+            this.RosterButton("death", "Tot", RosterView.Dead),
+            this.RosterButton("shiny", "Shinies", RosterView.Shiny));
         var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
         sidebar.RowStyles.Add(this.catchRow);
@@ -247,6 +244,7 @@ internal sealed class CompanionForm : Form
         this.Shown += async (_, _) =>
         {
             await this.StartAsync();
+            if (restoreHosting) await this.OpenHostingAsync();
             await this.CheckUpdatesAsync(interactive: false);
         };
         this.Render();
@@ -256,6 +254,10 @@ internal sealed class CompanionForm : Form
     internal string ConnectionStatus => this.status.Text;
 
     internal Guid? RequestedProfile { get; private set; }
+
+    internal HostingSession? NextHostingSession { get; private set; }
+
+    internal bool RestoreHosting { get; private set; }
     internal StagedPlayerUpdate? PendingUpdate { get; private set; }
 
     private async Task CheckUpdatesAsync(bool interactive)
@@ -332,7 +334,23 @@ internal sealed class CompanionForm : Form
         Guid current = this.profile?.Id ?? Guid.Empty;
         using var dialog = new ProfilePicker(this.profiles, current, this.runtime.Status());
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-        if (dialog.SelectedProfile == current)
+        await this.SwitchProfileAsync(dialog.SelectedProfile);
+    }
+
+    private async Task OpenHostingAsync()
+    {
+        if (this.closing || this.profiles is null) return;
+        bool firstOpen = this.hosting is null;
+        this.hosting ??= new HostingForm(this.profiles, this.runtime.Status().Server, this.hostingSession, this.SwitchProfileAsync);
+        this.ShowTool(this.hosting);
+        if (firstOpen && this.hostingSession is not null) await this.hosting.ConnectAsync();
+    }
+
+    private async Task SwitchProfileAsync(Guid selection)
+    {
+        if (this.closing) return;
+        Guid current = this.profile?.Id ?? Guid.Empty;
+        if (selection == current)
         {
             if (current == Guid.Empty) await this.StartGameAsync();
             else await this.OpenIdentityAsync();
@@ -341,7 +359,9 @@ internal sealed class CompanionForm : Form
         if (this.game is { HasExited: false } &&
             MessageBox.Show(this, "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.",
                 "Run wechseln", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
-        this.RequestedProfile = dialog.SelectedProfile;
+        this.RequestedProfile = selection;
+        this.NextHostingSession = this.hosting?.Session ?? this.hostingSession;
+        this.RestoreHosting = this.hosting?.Visible == true;
         this.Close();
     }
 
@@ -418,9 +438,9 @@ internal sealed class CompanionForm : Form
         return button;
     }
 
-    private Button RosterButton(DashboardIcon icon, string title, RosterView filter)
+    private Button RosterButton(string icon, string title, RosterView filter)
     {
-        var button = DashboardTheme.IconButton(icon, title, DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
+        var button = DashboardTheme.ImageButton(title, this.discordIcons.Get(icon));
         button.Size = new Size(30, 24);
         button.Margin = new Padding(2, 0, 0, 0);
         button.Click += (_, _) => this.ShowRoster(title, filter);
@@ -494,7 +514,7 @@ internal sealed class CompanionForm : Form
         if (this.closing) return;
         using var dialog = new Form();
         RunDialogs.Configure(dialog, title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 560));
-        var roster = new RosterGrid(this.spriteCache) { Dock = DockStyle.Fill };
+        var roster = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         roster.PokemonOpened += (player, pokemon) => this.ShowPokemon(dialog, player, pokemon);
         dialog.Controls.Add(roster);
         this.openRoster = roster;
@@ -521,22 +541,41 @@ internal sealed class CompanionForm : Form
         using var dialog = new Form();
         RunDialogs.Configure(dialog, "Fangorte", new Size(540, 330));
         var tags = new FlowLayoutPanel { Padding = new Padding(4), BackColor = DashboardTheme.Surface };
-        var places = (this.runtime.Status().Run?.CaughtAreas ?? []).Select(RubyNames.Area).Distinct().ToArray();
-        if (places.Length == 0)
-            tags.Controls.Add(new Label { Text = "Noch keine Fänge erfasst.", AutoSize = true, ForeColor = DashboardTheme.Muted });
-        foreach (string place in places)
-        {
-            var tag = DashboardTheme.Button(place);
-            tag.TabStop = false;
-            tag.AccessibleRole = AccessibleRole.StaticText;
-            tag.ForeColor = DashboardTheme.Accent;
-            tags.Controls.Add(tag);
-        }
-        dialog.Controls.Add(new DashboardScrollHost(tags, width => tags.GetPreferredSize(new Size(width, 0)).Height)
+        var scroll = new DashboardScrollHost(tags, width => tags.GetPreferredSize(new Size(width, 0)).Height)
         {
             Dock = DockStyle.Fill,
             AccessibleName = "Fangorte",
-        });
+        };
+        dialog.Controls.Add(scroll);
+        (int Area, bool Failed)[]? displayed = null;
+        void RenderPlaces()
+        {
+            var run = this.runtime.Status().Run;
+            var failed = (run?.Links ?? []).Where(link => link.State == "FAILED").Select(link => link.AreaId).ToHashSet();
+            var places = (run?.CaughtAreas ?? []).Select(area => (Area: area, Failed: failed.Contains(area))).ToArray();
+            if (displayed is not null && displayed.SequenceEqual(places)) return;
+            displayed = places;
+            tags.SuspendLayout();
+            foreach (var old in tags.Controls.Cast<Control>().ToArray()) old.Dispose();
+            if (places.Length == 0)
+                tags.Controls.Add(new Label { Text = "Noch keine Fangorte erfasst.", AutoSize = true, ForeColor = DashboardTheme.Muted });
+            foreach (var place in places)
+            {
+                string name = RubyNames.Area(place.Area);
+                var tag = DashboardTheme.Button(place.Failed ? $"{name} · Verpasst" : name);
+                tag.TabStop = false;
+                tag.AccessibleRole = AccessibleRole.StaticText;
+                tag.ForeColor = place.Failed ? DashboardTheme.Danger : DashboardTheme.Accent;
+                tags.Controls.Add(tag);
+            }
+            tags.ResumeLayout(performLayout: true);
+            scroll.ResizeDocument();
+        }
+
+        using var refreshPlaces = new System.Windows.Forms.Timer { Interval = 350 };
+        refreshPlaces.Tick += (_, _) => RenderPlaces();
+        RenderPlaces();
+        refreshPlaces.Start();
         dialog.ShowDialog(this);
     }
 

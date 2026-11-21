@@ -355,7 +355,12 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         });
     }
 
-    public AutomationRun View(Registration registration) => store.Execute(tx => tx.Run(registration.RunId));
+    public AutomationRun View(Registration registration) => store.Execute(tx =>
+    {
+        var run = tx.Run(registration.RunId);
+        if (this.QueueRunEnd(tx, run)) tx.Save(run);
+        return run;
+    });
 
     public void AddRule(Registration registration, string text)
     {
@@ -541,7 +546,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 throw new InvalidOperationException("Der Todesfall ist in diesem Run nicht verfügbar.");
             if (pokemon.PendingDeath is not { } pending || pending.IncidentId != incidentId) return false;
             pokemon.PendingDeath = null;
-            if (confirm) this.MarkDeath(tx, run, player, pokemon, reason, pending.Battle, pending.At);
+            if (confirm)
+            {
+                this.MarkDeath(tx, run, player, pokemon, reason, pending.Battle, pending.At);
+                this.QueueRunEnd(tx, run);
+            }
             else pokemon.FaintDismissed = true;
             tx.Save(run);
             return true;
@@ -818,7 +827,6 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         pokemon.Dead = true;
         var links = run.Encounters.Where(e => e.Members.GetValueOrDefault(player.Id) == pokemon.Id).ToArray();
-        bool lostLink = links.Any(IsLiveLink);
         foreach (var encounter in links)
         {
             encounter.Dead = true;
@@ -829,9 +837,6 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 linked.PendingDeath = null;
             }
         }
-        if (lostLink && !run.Encounters.Any(IsLiveLink))
-            run.PendingEnd = new PendingRunEnd(Guid.NewGuid(), player.Id);
-
         if (battle is { OpponentHidden: true })
             battle = battle with { OpponentSpecies = null, Move = null, FinishingBlow = false };
         string detail = string.Join(" · ", new[] { reason, battle?.Trainer,
@@ -842,6 +847,27 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             (detail.Length > 0 ? " " + detail : ""), player: player, area: links.FirstOrDefault()?.Area ?? pokemon.State.MetArea,
             details: new EventDetails(new EventPokemon(player.Name, pokemon.State.Species, pokemon.State.IsShiny),
                 Members: affected, Battle: battle, Reason: reason, HasLink: links.Length > 0), at: at);
+    }
+
+    private bool QueueRunEnd(AutomationStore.StoreTransaction tx, AutomationRun run)
+    {
+        if (run.Phase != RunPhase.Active || run.PendingEnd is not null || run.Encounters.Any(IsLiveLink)) return false;
+
+        var deaths = run.History.AsEnumerable().Reverse()
+            .TakeWhile(item => item.Kind is not ("run-end-pending" or "linked" or "death-undone" or "links-corrected"))
+            .Where(item => item.Kind == "death" && item.PlayerId.HasValue).ToArray();
+        var lastLinkDeath = deaths.FirstOrDefault(item => item.Details?.HasLink == true &&
+            run.Encounters.Any(link => link.Area == item.Area && !link.Failed && link.Dead && link.GroupId.HasValue));
+        var lastPokemonDeath = lastLinkDeath ?? deaths.FirstOrDefault(item => run.Players.Any(player => player.Id == item.PlayerId &&
+            player.Pokemon.Any(pokemon => pokemon.Dead) &&
+            !player.Pokemon.Any(pokemon => pokemon.Present && !pokemon.Dead && !pokemon.State.IsEgg)));
+        if (lastPokemonDeath?.PlayerId is not Guid playerId) return false;
+
+        var responsible = run.Players.Single(player => player.Id == playerId);
+        run.PendingEnd = new PendingRunEnd(Guid.NewGuid(), playerId);
+        this.Event(tx, run, "run-end-pending", $"Run-Ende erkannt. {responsible.Name} kann den Grund eintragen.",
+            notify: false, player: responsible);
+        return true;
     }
 
     private static IEnumerable<EventPokemon> DescribeLink(AutomationRun run, Encounter link, Guid? except = null)

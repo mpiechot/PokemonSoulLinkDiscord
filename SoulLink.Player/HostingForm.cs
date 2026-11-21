@@ -3,6 +3,11 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
+internal sealed record HostingSession(string Server, string Key, Guid? GroupId = null, Guid? RunId = null)
+{
+    public override string ToString() => nameof(HostingSession);
+}
+
 internal sealed class HostingForm : Form
 {
     private const string Connecting = "Verbinde mit dem Run-Server …";
@@ -21,18 +26,23 @@ internal sealed class HostingForm : Form
     private readonly Button end;
     private readonly Button saveProfile;
     private readonly Button invite;
+    private readonly Button join;
+    private HostingSession? session;
     private readonly Button players;
     private readonly Button editLinks;
     private bool busy;
 
-    public HostingForm(PlayerProfileLibrary profiles, string currentServer)
+    public HostingForm(PlayerProfileLibrary profiles, string currentServer, HostingSession? session = null, Func<Guid, Task>? joinRun = null)
     {
         this.profiles = profiles;
         RunDialogs.Configure(this, "Gruppen und Runs verwalten", new Size(742, 525));
-        this.server.Text = currentServer;
+        this.session = session;
+        this.server.Text = session?.Server ?? currentServer;
         this.key.UseSystemPasswordChar = true;
+        this.key.Text = session?.Key ?? "";
         this.groupName.MaxLength = this.runName.MaxLength = 64;
         this.groups.DisplayMember = nameof(RunGroup.Name);
+        DashboardTheme.StyleComboBox(this.groups);
         this.runs.DisplayMember = nameof(Row.Label);
         this.runs.BackColor = DashboardTheme.Background;
         this.runs.ForeColor = DashboardTheme.Text;
@@ -62,6 +72,13 @@ internal sealed class HostingForm : Form
         this.saveProfile.Click += (_, _) => this.SaveInvitation(copy: false);
         this.invite = DashboardTheme.Button("Einladung kopieren");
         this.invite.Click += (_, _) => this.SaveInvitation(copy: true);
+        this.join = DashboardTheme.Button("Selbst beitreten");
+        this.join.Visible = joinRun is not null;
+        this.join.Click += async (_, _) =>
+        {
+            if (joinRun is not null && this.SaveInvitation(copy: false) is { } profile)
+                await joinRun(profile.Id);
+        };
         this.players = DashboardTheme.Button("Spieler und Spielstände");
         this.players.Click += async (_, _) => await this.UseServerAsync(this.ShowPlayersAsync);
         this.editLinks = DashboardTheme.Button("Links bearbeiten");
@@ -90,7 +107,7 @@ internal sealed class HostingForm : Form
         layout.Controls.Add(Line(this.runName, this.createRun), 0, 2);
         layout.Controls.Add(this.runs, 0, 3);
         layout.Controls.Add(Line(this.start, this.pause, this.resume, this.end, this.players), 0, 4);
-        layout.Controls.Add(Line(this.invite, this.saveProfile, this.editLinks), 0, 5);
+        layout.Controls.Add(Line(this.invite, this.join, this.saveProfile, this.editLinks), 0, 5);
         layout.Controls.Add(this.feedback, 0, 6);
         this.Controls.Add(layout);
         this.ClearServerView();
@@ -110,7 +127,12 @@ internal sealed class HostingForm : Form
 
     private HostRun? Run => (this.runs.SelectedItem as Row)?.Run;
 
-    internal Task ConnectAsync() => this.UseServerAsync(client => this.LoadGroupsAsync(client));
+    internal HostingSession? Session => this.session is { } verified
+        ? verified with { GroupId = this.Group?.Id ?? verified.GroupId, RunId = this.Run?.Id ?? verified.RunId }
+        : null;
+
+    internal Task ConnectAsync() => this.UseServerAsync(client => this.LoadGroupsAsync(client, this.Group?.Id ?? this.session?.GroupId,
+        this.Run?.Id ?? this.session?.RunId));
 
     private static TextBox Input(string label) => new() { PlaceholderText = label, AccessibleName = label, Width = 200 };
 
@@ -179,15 +201,16 @@ internal sealed class HostingForm : Form
         }
     }
 
-    private async Task LoadGroupsAsync(HostAdminClient client, Guid? preferred = null)
+    private async Task LoadGroupsAsync(HostAdminClient client, Guid? preferred = null, Guid? preferredRun = null)
     {
         preferred ??= this.Group?.Id;
         var available = await client.GroupsAsync();
         if (this.IsDisposed) return;
+        this.session = new HostingSession(this.server.Text.Trim(), this.key.Text);
         this.groups.DataSource = available;
         int index = Array.FindIndex(available, group => group.Id == preferred);
         if (index >= 0) this.groups.SelectedIndex = index;
-        await this.LoadRunsAsync(client);
+        await this.LoadRunsAsync(client, preferredRun);
     }
 
     private async Task LoadRunsAsync(HostAdminClient client, Guid? preferred = null)
@@ -220,7 +243,7 @@ internal sealed class HostingForm : Form
         this.end.Enabled = !this.busy && run is { Phase: not RunPhase.Finished };
         this.players.Enabled = !this.busy && run is { Players: > 0 };
         this.editLinks.Enabled = !this.busy && run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
-        this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
+        this.join.Enabled = this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
     }
 
     private async Task ShowLinkEditorAsync(HostAdminClient client)
@@ -269,22 +292,24 @@ internal sealed class HostingForm : Form
         MessageBox.Show(this, "Der Spielstand ist freigegeben. Die aktuelle SoulLink-Version gleicht ihn automatisch neu ab.", "Neuer Abgleich");
     }
 
-    private void SaveInvitation(bool copy)
+    private PlayerProfile? SaveInvitation(bool copy)
     {
-        if (this.Group is not { } group || this.Run is not { Invitation.Length: > 0 } run) return;
+        if (this.Group is not { } group || this.Run is not { Invitation.Length: > 0 } run) return null;
         try
         {
             var profile = PlayerProfileLibrary.ForHostedRun(this.server.Text, group, run);
-            this.profiles.AddInvitation(profile.Server, profile.Invitation, profile.Label!);
+            var saved = this.profiles.AddInvitation(profile.Server, profile.Invitation, profile.Label!);
             if (copy) Clipboard.SetText(PlayerInvitation.Encode(profile));
             this.feedback.ForeColor = DashboardTheme.Accent;
             this.feedback.Text = copy ? "Einladung kopiert. Deine Mitspieler können sie in ihrer EXE einfügen."
-                : "Der Run steht jetzt unter „Run beitreten / wechseln“.";
+                : "Die Einladung wurde gespeichert.";
+            return saved;
         }
         catch (Exception error) when (RunDialogs.IsActionError(error) || error is FormatException or System.Runtime.InteropServices.ExternalException)
         {
             this.feedback.ForeColor = DashboardTheme.Danger;
             this.feedback.Text = error.Message;
+            return null;
         }
     }
 
@@ -312,6 +337,7 @@ internal sealed class ProfilePicker : Form
     public ProfilePicker(PlayerProfileLibrary profiles, Guid current, ClientView view)
     {
         RunDialogs.Configure(this, "Run beitreten / wechseln", new Size(540, 310));
+        DashboardTheme.StyleComboBox(this.choices);
         var invite = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Einladung einfügen", AccessibleName = "Einladung", MaxLength = 4096 };
         var server = new TextBox { Dock = DockStyle.Top, Text = view.Server, PlaceholderText = "Serveradresse", AccessibleName = "Serveradresse für einen alten Code", Visible = false };
         var join = DashboardTheme.Button("Beitreten");

@@ -165,7 +165,44 @@ public sealed class PlayerClientTests : IDisposable
         Assert.Null(team.Rows[1].LinkName);
         Assert.Equal(unlinked, team.Rows[1].Slots[0]);
         Assert.Null(team.Rows[1].Slots[1]);
-        Assert.Equal(inBox, Assert.Single(RosterGridData.From(view, RosterView.Box).Rows).Slots[1]);
+        var box = RosterGridData.From(view, RosterView.Box);
+        Assert.True(box.ShowRouteColumn);
+        Assert.False(team.ShowRouteColumn);
+        Assert.Equal(inBox, Assert.Single(box.Rows).Slots[1]);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void MissedEncounterIsVisibleWithAnyNumberOfPriorCatches(int caught)
+    {
+        var players = Enumerable.Range(0, 3).Select(i => new AutomationPlayer { Name = $"Player {i + 1}" }).ToArray();
+        var failed = new Encounter { Area = 18, Failed = true, Dead = true };
+        foreach (var player in players.Take(caught))
+        {
+            var mon = new TrackedPokemon
+            {
+                State = new PokemonState { Identity = player.Name, Species = 25, MetArea = 18 },
+                Dead = true,
+            };
+            player.Pokemon.Add(mon);
+            failed.Members.Add(player.Id, mon.Id);
+        }
+
+        var progress = DashboardProjection.FromRun(new AutomationRun { Players = [.. players], Encounters = [failed] });
+        Assert.Equal(new[] { 18 }, progress.CaughtAreas);
+        var view = new ClientView("", "", true, "", 0, "", null, null, progress, [], false);
+        var dead = RosterGridData.From(view, RosterView.Dead);
+        Assert.True(dead.ShowRouteColumn);
+        Assert.Equal(players.Select(player => player.Id), dead.Columns.Select(column => column.Id));
+        var row = Assert.Single(dead.Rows);
+        Assert.True(row.Failed);
+        Assert.Equal("Route 103", row.LinkName);
+        Assert.Equal(3, row.Slots.Length);
+        Assert.Equal(caught, row.Slots.Count(mon => mon is not null));
+        Assert.Equal(3 - caught, row.MissingMembers!.Count(missing => missing));
+        Assert.Empty(RosterGridData.From(view, RosterView.Box).Rows);
     }
 
     [Fact]

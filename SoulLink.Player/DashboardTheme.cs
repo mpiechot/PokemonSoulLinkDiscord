@@ -3,7 +3,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo, Box, Death, Shiny }
+internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo }
 
 internal static class DashboardTheme
 {
@@ -32,6 +32,48 @@ internal static class DashboardTheme
         button.FlatAppearance.BorderColor = Border;
         button.FlatAppearance.MouseOverBackColor = Border;
         return button;
+    }
+
+    public static Button ImageButton(string name, Image? image)
+    {
+        var button = Button("");
+        button.AccessibleName = name;
+        button.Image = image;
+        button.AutoSize = false;
+        button.Padding = new Padding(3);
+        return button;
+    }
+
+    public static void StyleComboBox(ComboBox combo)
+    {
+        combo.BackColor = Background;
+        combo.ForeColor = Text;
+        combo.FlatStyle = FlatStyle.Flat;
+        combo.DrawMode = DrawMode.OwnerDrawFixed;
+        combo.ItemHeight = 24;
+        combo.DrawItem += (_, args) =>
+        {
+            bool highlighted = args.State.HasFlag(DrawItemState.Selected);
+            using var background = new SolidBrush(highlighted ? Panel : Background);
+            args.Graphics.FillRectangle(background, args.Bounds);
+            if (args.Index >= 0 && args.Index < combo.Items.Count)
+                TextRenderer.DrawText(args.Graphics, combo.GetItemText(combo.Items[args.Index]), combo.Font, args.Bounds,
+                    combo.Enabled ? Text : Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            args.DrawFocusRectangle();
+        };
+    }
+
+    public static void DrawImage(Graphics canvas, Image image, Rectangle bounds, bool pixelArt = false)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+        double scale = Math.Min((double)bounds.Width / image.Width, (double)bounds.Height / image.Height);
+        int width = Math.Max(1, (int)Math.Round(image.Width * scale));
+        int height = Math.Max(1, (int)Math.Round(image.Height * scale));
+        var saved = canvas.Save();
+        canvas.InterpolationMode = pixelArt ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBicubic;
+        canvas.PixelOffsetMode = PixelOffsetMode.Half;
+        canvas.DrawImage(image, new Rectangle(bounds.X + (bounds.Width - width) / 2, bounds.Y + (bounds.Height - height) / 2, width, height));
+        canvas.Restore(saved);
     }
 
     public static Button IconButton(DashboardIcon icon, string name, Color background, Color hover, Color foreground)
@@ -96,6 +138,18 @@ internal static class DashboardTheme
                 this.DrawIcon(e.Graphics, bounds, symbol, foreground);
                 return;
             }
+            if (this.Image is { } image)
+            {
+                int size = Math.Min((int)Math.Round(20 * this.DeviceDpi / 96f), bounds.Height - this.Padding.Vertical);
+                var imageBounds = this.Text.Length == 0
+                    ? Rectangle.Inflate(bounds, -this.Padding.Left, -this.Padding.Top)
+                    : new Rectangle(bounds.X + this.Padding.Left, bounds.Y, size, bounds.Height);
+                if (this.Text.Length == 0) imageBounds.Inflate(-Math.Max(0, (imageBounds.Width - size) / 2), 0);
+                DrawImage(e.Graphics, image, imageBounds, pixelArt: this.Text.Length == 0);
+                if (this.Text.Length == 0) return;
+                bounds.X += size + this.Padding.Left + 2;
+                bounds.Width -= size + this.Padding.Horizontal + 2;
+            }
             TextRenderer.DrawText(e.Graphics, this.Text, this.Font, bounds, foreground,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
                 TextFormatFlags.NoPrefix | TextFormatFlags.PreserveGraphicsClipping);
@@ -126,19 +180,6 @@ internal static class DashboardTheme
                     break;
                 case DashboardIcon.Check:
                     canvas.DrawLines(pen, [new Point(-7, 0), new Point(-2, 5), new Point(7, -5)]);
-                    break;
-                case DashboardIcon.Box:
-                    canvas.DrawRectangle(pen, -7, -5, 14, 11);
-                    canvas.DrawLine(pen, -7, -1, 7, -1);
-                    canvas.DrawLine(pen, -2, 2, 2, 2);
-                    break;
-                case DashboardIcon.Death:
-                    canvas.DrawLine(pen, -6, 1, 6, 1);
-                    canvas.DrawLine(pen, 0, -7, 0, 7);
-                    break;
-                case DashboardIcon.Shiny:
-                    canvas.DrawPolygon(pen, [new Point(0, -7), new Point(2, -2), new Point(7, 0), new Point(2, 2),
-                        new Point(0, 7), new Point(-2, 2), new Point(-7, 0), new Point(-2, -2)]);
                     break;
                 case DashboardIcon.Undo:
                     canvas.DrawLines(pen, [new Point(-3, -7), new Point(-7, -3), new Point(-3, 1)]);

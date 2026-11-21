@@ -21,11 +21,12 @@ internal static class DashboardProjection
                 return (player.Id, player.Name, Pokemon: player.Pokemon.Single(p => p.Id == pair.Value));
             }).ToArray();
             return new DashboardLink(RubyNames.Area(encounter.Area), StatusPresenter.LinkState(encounter, members.Select(m => m.Pokemon)),
-                members.Select(m => new DashboardLinkMember(m.Name, ProjectPokemon(m.Pokemon), m.Id)).ToArray());
+                members.Select(m => new DashboardLinkMember(m.Name, ProjectPokemon(m.Pokemon), m.Id)).ToArray(), encounter.Area);
         }).ToArray();
         var caught = run.Players.SelectMany(p => p.Pokemon)
             .Where(p => !p.Imported && !p.State.IsEgg && p.State.MetArea != 255)
-            .Select(p => p.State.MetArea).Distinct().Order().ToArray();
+            .Select(p => p.State.MetArea).Concat(run.Encounters.Where(encounter => encounter.Failed).Select(encounter => encounter.Area))
+            .Distinct().Order().ToArray();
         return new ClientRunView(run.Name, run.Phase, run.Id, players, StatusPresenter.Lines(run, p => p.Connection).ToArray(),
             run.History.TakeLast(50).ToArray(), links, caught, run.AdditionalRules.ToArray(), run.PendingEnd);
     }

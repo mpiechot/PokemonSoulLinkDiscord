@@ -18,4 +18,4 @@ public sealed record ClientPlayerView(string Name, Guid Id, string Diagnostic, s
 
 public sealed record DashboardPokemon(PokemonState State, bool Dead, bool Present);
 public sealed record DashboardLinkMember(string Player, DashboardPokemon Pokemon, Guid PlayerId = default);
-public sealed record DashboardLink(string Area, string State, DashboardLinkMember[] Members);
+public sealed record DashboardLink(string Area, string State, DashboardLinkMember[] Members, int? AreaId = null);

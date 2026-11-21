@@ -9,7 +9,9 @@ internal sealed class RosterGrid : DashboardScrollView
     private const int Header = 35;
     private const int RowHeight = 122;
     private const int Gap = 18;
+    private const int RouteWidth = 136;
     private readonly RubySprites sprites;
+    private readonly Image? placeholder;
     private readonly Font heading = new("Segoe UI Semibold", 10);
     private readonly Font small = new("Segoe UI", 8.5f);
     private readonly ToolTip cellHint = new();
@@ -20,9 +22,10 @@ internal sealed class RosterGrid : DashboardScrollView
 
     public event Action<Guid, PokemonState>? PokemonOpened;
 
-    public RosterGrid(RubySprites sprites)
+    public RosterGrid(RubySprites sprites, Image? placeholder)
     {
         this.sprites = sprites;
+        this.placeholder = placeholder;
         this.sprites.Changed += this.Invalidate;
         this.BackColor = DashboardTheme.Background;
         this.AccessibleName = "Pokémon-Grid";
@@ -41,6 +44,8 @@ internal sealed class RosterGrid : DashboardScrollView
         this.ResizeContent();
     }
 
+    private int RouteOffset => this.data.ShowRouteColumn ? RouteWidth + Gap : 0;
+
     private void ResizeContent()
     {
         int count = this.data.Columns.Length;
@@ -50,11 +55,11 @@ internal sealed class RosterGrid : DashboardScrollView
             return;
         }
         int height = Header + this.data.Rows.Length * RowHeight + 3;
-        int minimumWidth = count * 152 + (count - 1) * Gap;
+        int minimumWidth = this.RouteOffset + count * 152 + (count - 1) * Gap;
         int availableHeight = this.ClientSize.Height - (minimumWidth > this.ClientSize.Width ? this.RailSize : 0);
         int scrollbar = height > availableHeight ? this.RailSize : 0;
-        this.cellWidth = Math.Max(152, (this.ClientSize.Width - scrollbar - (count - 1) * Gap) / count);
-        this.ContentSize = new Size((this.cellWidth + Gap) * count - Gap, height);
+        this.cellWidth = Math.Max(152, (this.ClientSize.Width - this.RouteOffset - scrollbar - (count - 1) * Gap) / count);
+        this.ContentSize = new Size(this.RouteOffset + (this.cellWidth + Gap) * count - Gap, height);
     }
 
     protected override void PaintViewport(PaintEventArgs e)
@@ -69,9 +74,11 @@ internal sealed class RosterGrid : DashboardScrollView
             TextRenderer.DrawText(canvas, "Keine Pokémon in dieser Ansicht", this.heading, this.Viewport, DashboardTheme.Muted, center);
             return;
         }
+        if (this.data.ShowRouteColumn)
+            TextRenderer.DrawText(canvas, "Route", this.heading, new Rectangle(scroll.X, scroll.Y, RouteWidth, Header), DashboardTheme.Text, center);
         for (int col = 0; col < this.data.Columns.Length; col++)
         {
-            int x = scroll.X + col * (this.cellWidth + Gap);
+            int x = scroll.X + this.RouteOffset + col * (this.cellWidth + Gap);
             TextRenderer.DrawText(canvas, this.data.Columns[col].Name, this.heading,
                 new Rectangle(x, scroll.Y, this.cellWidth, Header), DashboardTheme.Text, center);
         }
@@ -80,22 +87,44 @@ internal sealed class RosterGrid : DashboardScrollView
             int y = scroll.Y + Header + row * RowHeight;
             if (y + RowHeight < this.Viewport.Top || y > this.Viewport.Bottom) continue;
             var group = this.data.Rows[row];
+            if (this.data.ShowRouteColumn)
+                this.DrawRoute(canvas, new Rectangle(scroll.X, y, RouteWidth, RowHeight - 7), group);
             int first = Array.FindIndex(group.Slots, p => p is not null);
             int last = Array.FindLastIndex(group.Slots, p => p is not null);
             for (int col = 0; col < group.Slots.Length; col++)
             {
-                int x = scroll.X + col * (this.cellWidth + Gap);
+                int x = scroll.X + this.RouteOffset + col * (this.cellWidth + Gap);
                 var box = new Rectangle(x, y, this.cellWidth, RowHeight - 7);
                 if (group.Slots[col] is { } pokemon) this.DrawPokemon(canvas, box, pokemon, group.LinkName);
                 else
                 {
                     DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
-                    TextRenderer.DrawText(canvas, "–", this.heading, box, DashboardTheme.Muted, center);
+                    if (this.placeholder is { } unknown && group.MissingMembers?[col] == true)
+                    {
+                        var icon = new Rectangle(box.X + (box.Width - 52) / 2, box.Y + (box.Height - 52) / 2, 52, 52);
+                        DashboardTheme.DrawImage(canvas, unknown, icon, pixelArt: true);
+                        this.hints.Add((icon, "Noch kein Pokémon für diesen Link"));
+                    }
                 }
                 if (group.Linked && col >= first && col < last)
                     DrawLink(canvas, box.Right + Gap / 2f, box.Top + box.Height / 2f);
             }
         }
+    }
+
+    private void DrawRoute(Graphics canvas, Rectangle box, RosterRow row)
+    {
+        DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
+        var mon = row.Slots.FirstOrDefault(slot => slot is not null);
+        string route = row.LinkName ?? (mon is null || mon.State.MetArea == 255 ? "Unbekannt" : RubyNames.Area(mon.State.MetArea));
+        var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
+        var title = Rectangle.Inflate(box, -8, -12);
+        if (row.Failed)
+        {
+            title.Height -= 20;
+            this.DrawTag(canvas, new Rectangle(box.X + 8, box.Bottom - 33, box.Width - 16, 22), "Erstfang verpasst", DashboardTheme.Danger);
+        }
+        TextRenderer.DrawText(canvas, route, this.heading, title, row.Failed ? DashboardTheme.Danger : DashboardTheme.Text, flags);
     }
 
     private void DrawPokemon(Graphics canvas, Rectangle box, DashboardPokemon pokemon, string? linkName)
@@ -126,13 +155,15 @@ internal sealed class RosterGrid : DashboardScrollView
                 portrait, DashboardTheme.Muted, flags);
         }
         string? metArea = state.MetArea == 255 ? null : RubyNames.Area(state.MetArea);
-        if (!state.IsEgg && (linkName ?? metArea) is { } tag)
+        if (!this.data.ShowRouteColumn && !state.IsEgg && (linkName ?? metArea) is { } tag)
         {
             int tagWidth = Math.Min(leftWidth, TextRenderer.MeasureText(tag, this.small).Width + 15);
             var tagBounds = new Rectangle(left + (leftWidth - tagWidth) / 2, box.Y + 87, tagWidth, 19);
             this.DrawTag(canvas, tagBounds, tag, DashboardTheme.Accent);
             if (metArea is not null && metArea != tag) this.hints.Add((tagBounds, $"Ursprünglicher Fangort: {metArea}"));
         }
+        if (this.data.ShowRouteColumn && metArea is not null && linkName is not null && metArea != linkName)
+            this.hints.Add((portrait, $"Ursprünglicher Fangort: {metArea}"));
         var details = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
         bool inTeam = state.Container == Placement.Party;
         TextRenderer.DrawText(canvas, inTeam ? $"Level: {state.Level}" : $"Box: {(state.Box ?? 0) + 1}", this.small,
@@ -149,11 +180,7 @@ internal sealed class RosterGrid : DashboardScrollView
             if (icon is not null)
             {
                 var slot = new Rectangle(iconLeft, box.Y + 68, size, size);
-                double scale = Math.Min((double)size / icon.Width, (double)size / icon.Height);
-                int badgeWidth = (int)Math.Round(icon.Width * scale);
-                int badgeHeight = (int)Math.Round(icon.Height * scale);
-                canvas.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                canvas.DrawImage(icon, new Rectangle(slot.X + (size - badgeWidth) / 2, slot.Y + (size - badgeHeight) / 2, badgeWidth, badgeHeight));
+                DashboardTheme.DrawImage(canvas, icon, slot);
                 this.hints.Add((slot, label));
             }
             iconLeft += size + 5;
@@ -181,9 +208,9 @@ internal sealed class RosterGrid : DashboardScrollView
     private (Guid Player, DashboardPokemon Pokemon)? CardAt(Point point)
     {
         if (!this.Viewport.Contains(point) || this.cellWidth == 0) return null;
-        int x = point.X + this.ScrollPosition.X;
+        int x = point.X + this.ScrollPosition.X - this.RouteOffset;
         int y = point.Y + this.ScrollPosition.Y - Header;
-        if (y < 0 || y % RowHeight >= RowHeight - 7 || x % (this.cellWidth + Gap) >= this.cellWidth) return null;
+        if (x < 0 || y < 0 || y % RowHeight >= RowHeight - 7 || x % (this.cellWidth + Gap) >= this.cellWidth) return null;
         int row = y / RowHeight;
         int column = x / (this.cellWidth + Gap);
         if (row >= this.data.Rows.Length || column >= this.data.Columns.Length ||

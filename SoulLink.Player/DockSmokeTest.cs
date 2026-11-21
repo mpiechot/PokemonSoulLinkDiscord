@@ -473,20 +473,34 @@ internal static class DockSmokeTest
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var response = ReplyWithEmptyGroupsAsync();
-        using var form = new HostingForm(new PlayerProfileLibrary(home), $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}");
+        string server = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
+        string adminKey = new('a', 64);
+        var profiles = new PlayerProfileLibrary(home);
+        using var form = new HostingForm(profiles, server);
         var status = Descendants(form).OfType<Label>().Single();
-        Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar).Text = new string('a', 64);
-        var connection = Task.WhenAll(response, form.ConnectAsync()).WaitAsync(timeout.Token);
-        while (!connection.IsCompleted)
-        {
-            Application.DoEvents();
-            Thread.Sleep(10);
-        }
-        connection.GetAwaiter().GetResult();
+        Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar).Text = adminKey;
+        ConnectAndWait(form);
         if (status.ForeColor != DashboardTheme.Accent || !status.Text.StartsWith("Verbunden.", StringComparison.Ordinal) ||
             !status.Text.Contains("Gruppe anlegen", StringComparison.Ordinal))
             throw new InvalidOperationException("An empty groups response must confirm the connection and explain how to create the first group.");
+
+        if (form.Session is not { } session)
+            throw new InvalidOperationException("The host dialog did not retain its verified in-memory session.");
+        using var nextRun = new HostingForm(profiles, "https://example.invalid", session);
+        ConnectAndWait(nextRun);
+        if (nextRun.Session?.Server != server)
+            throw new InvalidOperationException("Opening the host controls in the next run changed the authenticated server.");
+
+        void ConnectAndWait(HostingForm target)
+        {
+            var connection = Task.WhenAll(ReplyWithEmptyGroupsAsync(), target.ConnectAsync()).WaitAsync(timeout.Token);
+            while (!connection.IsCompleted)
+            {
+                Application.DoEvents();
+                Thread.Sleep(10);
+            }
+            connection.GetAwaiter().GetResult();
+        }
 
         async Task ReplyWithEmptyGroupsAsync()
         {
@@ -496,10 +510,29 @@ internal static class DockSmokeTest
             var line = await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false);
             if (line != "GET /api/soullink/admin/groups HTTP/1.1")
                 throw new InvalidOperationException("The host dialog requested an unexpected URL.");
-            while (!string.IsNullOrEmpty(await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false))) { }
+            bool authorized = false;
+            while (await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false) is { Length: > 0 } header)
+                authorized |= header.EndsWith(adminKey, StringComparison.Ordinal);
+            if (!authorized) throw new InvalidOperationException("The host dialog did not send the verified admin key.");
             await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"u8.ToArray(), timeout.Token)
                 .ConfigureAwait(false);
         }
+    }
+
+    internal static void VerifyRosterAndTypeArtwork(string home)
+    {
+        using var icons = new DiscordIcons();
+        foreach (string icon in new[] { "storage-box", "death", "shiny", "unknown-pokemon" })
+        {
+            if (icons.Get(icon) is not { Width: > 0, Height: > 0 })
+                throw new InvalidDataException($"The player package is missing {icon} artwork.");
+        }
+
+        using var sprites = new RubySprites(home);
+        using var chart = new TypeChartForm(sprites);
+        var selector = Descendants(chart).OfType<FlowLayoutPanel>().Single(panel => panel.AccessibleName == "Pokémon-Typen");
+        if (selector.Controls.Count != 17 || selector.Controls.OfType<Button>().Count(button => button.Text == "Feuer") != 1)
+            throw new InvalidOperationException("The type chart should expose all 17 types as buttons.");
     }
 
     internal static void VerifyScrollDesign()

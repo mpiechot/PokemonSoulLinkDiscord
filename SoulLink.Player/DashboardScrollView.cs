@@ -307,7 +307,7 @@ internal sealed class DashboardScrollHost : DashboardScrollView
         this.PositionDocument();
     }
 
-    private void ResizeDocument()
+    internal void ResizeDocument()
     {
         if (this.document is null || !this.IsHandleCreated || this.ClientSize.Width < 1) return;
         int height = this.measure(this.ClientSize.Width);

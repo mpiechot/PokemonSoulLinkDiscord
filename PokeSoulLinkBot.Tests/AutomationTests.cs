@@ -446,6 +446,53 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void RunEndRecoversForThePlayerWhoLostTheLastLinkEvenWhenTheirPartnerHasNoReserve()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test", DeathRule.ConfirmFaint);
+        var first = this.Join(run, "Testspieler");
+        var second = this.Join(run, "Marco");
+        foreach (var client in new[] { first, second })
+            this.Send(client, 1, true, Snapshot(1));
+        this.engine.ChangeRun("guild", run.Id, "start");
+        var onRoute = Mon(1);
+        var spare = Mon(2) with { MetArea = 17 };
+        this.Send(first, 2, false, Snapshot(2, onRoute, spare));
+        this.Send(second, 2, false, Snapshot(2, onRoute));
+        this.Send(first, 3, false, Snapshot(3, onRoute with { Hp = 0 }, spare) with { InBattle = true });
+        var pending = this.engine.View(first.Registration).Players[0].Pokemon.Select(p => p.PendingDeath).OfType<PendingDeath>().Single();
+        this.engine.ResolveFaint(first.Registration, pending.PokemonId, pending.IncidentId, true, "Volltreffer");
+
+        // Simulate persisted deaths from before the server recorded run-end prompts.
+        this.store.Execute(tx =>
+        {
+            var legacy = tx.Run(run.Id);
+            legacy.PendingEnd = null;
+            legacy.History.RemoveAll(item => item.Kind == "run-end-pending");
+            tx.Save(legacy);
+            return true;
+        });
+
+        var restarted = new AutomationEngine(this.store);
+        var restored = restarted.View(second.Registration);
+        var end = Assert.IsType<PendingRunEnd>(restored.PendingEnd);
+        Assert.Equal(first.Registration.PlayerId, end.PlayerId);
+        Assert.Single(restored.History, item => item.Kind == "run-end-pending");
+        Assert.Equal(end, restarted.View(first.Registration).PendingEnd);
+        restarted.CompleteWipedRun(first.Registration, end.Id, "Keine Links übrig");
+        Assert.Equal(RunPhase.Finished, restarted.View(second.Registration).Phase);
+    }
+
+    [Fact]
+    public void APlayerLosingTheirLastPokemonBeforeCompletingALinkCanFinishTheRun()
+    {
+        var (_, client) = this.Active(DeathRule.ConfirmFaint);
+        this.Send(client, 2, false, Snapshot(2, Mon(1) with { Hp = 0 }) with { InBattle = true });
+        var pending = this.engine.View(client.Registration).Players[0].Pokemon.Single().PendingDeath!;
+        this.engine.ResolveFaint(client.Registration, pending.PokemonId, pending.IncidentId, true, null);
+        Assert.Equal(client.Registration.PlayerId, this.engine.View(client.Registration).PendingEnd?.PlayerId);
+    }
+
+    [Fact]
     public void SequenceGapResynchronizesFromTheServerOnReconnect()
     {
         var (_, client) = this.Active();

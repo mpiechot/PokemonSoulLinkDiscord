@@ -4,23 +4,24 @@ namespace SoulLink.Player;
 
 internal sealed class PlayerIdentityForm : Form
 {
-    private readonly TextBox name = new() { MaxLength = 64, Dock = DockStyle.Top };
+    private readonly TextBox name = RunDialogs.TextInput("Spielername", 64);
     private readonly ComboBox marker = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
 
     public PlayerIdentityForm(string? initialName, PlayerMarker initialMarker)
     {
-        this.Text = "Dein Profil für diesen Run";
+        RunDialogs.Configure(this, "Dein Profil für diesen Run", new Size(415, 225));
         this.Font = new Font("Segoe UI", 11);
-        this.ClientSize = new Size(415, 225);
-        this.FormBorderStyle = FormBorderStyle.FixedDialog;
-        this.MaximizeBox = this.MinimizeBox = false;
-        this.StartPosition = FormStartPosition.CenterParent;
-        this.Padding = new Padding(21);
+        this.name.Dock = DockStyle.Top;
+        DashboardTheme.StyleComboBox(this.marker);
         this.name.Text = initialName ?? "";
         foreach (var icon in Enum.GetValues<PlayerMarker>()) this.marker.Items.Add(MarkerPalette.Label(icon));
         this.marker.SelectedIndex = Enum.IsDefined(initialMarker) ? (int)initialMarker : 0;
-        var confirm = new Button { Text = "Run beitreten", DialogResult = DialogResult.OK, Dock = DockStyle.Fill };
-        var later = new Button { Text = "Später", DialogResult = DialogResult.Cancel, Dock = DockStyle.Fill };
+        var confirm = DashboardTheme.Button("Run beitreten");
+        confirm.Dock = DockStyle.Fill;
+        confirm.DialogResult = DialogResult.OK;
+        var later = DashboardTheme.Button("Später");
+        later.Dock = DockStyle.Fill;
+        later.DialogResult = DialogResult.Cancel;
         confirm.Enabled = !string.IsNullOrWhiteSpace(this.name.Text);
         this.name.TextChanged += (_, _) => confirm.Enabled = !string.IsNullOrWhiteSpace(this.name.Text);
         var buttons = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 40, ColumnCount = 2 };

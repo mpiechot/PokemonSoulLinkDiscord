@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using SoulLink;
 using SoulLink.Client;
@@ -75,18 +74,17 @@ internal static class Program
                 return;
             }
         }
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["SettingsPath"] = Path.Combine(home, profile is null ? "player.json" : $"player-{profile.Id:N}.json"),
-            ["AllowSyntheticFrames"] = "false",
-            ["EnableLocalRun"] = (profile is null && !smokeTest).ToString(),
-            ["LocalRunDirectory"] = Path.Combine(home, "LocalRuns"),
-            ["BridgePort"] = "0",
-        }).Build();
-        using var runtime = new ClientRuntime(configuration);
         var emulator = new PortableMgba(home, preferSoftwareDisplay: smokeClose, isolated: instance?.IsTest == true);
-        string profileKey = profile is null ? "local" : profile.Id.ToString("N");
-        var rom = new RomSelection(Path.Combine(home, $"rom-{profileKey}.txt"));
+        if (!smoke)
+        {
+            string? requestedRom = args.Length == 1 && !newTestPlayer ? Path.GetFullPath(args[0])
+                : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
+            RunPlayer(args, executable, home, profile, customHome ? null : profiles, emulator,
+                instance is { IsTest: true } ? instance.Slot : null, requestedRom);
+            return;
+        }
+        using var runtime = CreateRuntime(home, profile, localTracking: !smokeTest);
+        var rom = RomFor(home, profile);
         if (smokeTest)
         {
             try
@@ -94,6 +92,7 @@ internal static class Program
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();
+                DockSmokeTest.VerifyRosterAndTypeArtwork(home);
                 DockSmokeTest.VerifyFirstHostConnection(home);
                 DockSmokeTest.VerifyLinkEditor();
                 DockSmokeTest.VerifyTestPlayers(home);
@@ -127,40 +126,57 @@ internal static class Program
                 emptyParty: args.Length == 4 && args[3] == "empty");
             return;
         }
-        string? requestedRom = args.Length == 1 && !newTestPlayer ? Path.GetFullPath(args[0]) : customHome && args.Length == 3 ? Path.GetFullPath(args[2]) : null;
+    }
+
+    private static void RunPlayer(string[] args, string executable, string home, PlayerProfile? profile,
+        PlayerProfileLibrary? profiles, PortableMgba emulator, int? testSlot, string? requestedRom)
+    {
+        HostingSession? session = null;
+        bool restoreHosting = false;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
-        using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge", profileKey), requestedRom, profile, sprites,
-            Path.Combine(home, "Artwork"), customHome ? null : profiles, instance?.IsTest == true ? instance.Slot : null);
-        Application.Run(form);
-        if (form.PendingUpdate is { } update)
+        while (true)
         {
-            try { PlayerUpdater.StartInstaller(update, executable, args); }
-            catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
-                System.ComponentModel.Win32Exception or InvalidOperationException)
+            string profileKey = profile?.Id.ToString("N") ?? "local";
+            using var runtime = CreateRuntime(home, profile, localTracking: true);
+            using var form = new CompanionForm(runtime, emulator, RomFor(home, profile), Path.Combine(home, "Bridge", profileKey),
+                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting);
+            Application.Run(form);
+            if (form.PendingUpdate is { } update)
             {
-                PlayerUpdater.CleanStage(update.Directory);
-                MessageBox.Show(error.Message, "SoulLink-Update fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                try { PlayerUpdater.StartInstaller(update, executable, args); }
+                catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or
+                    System.ComponentModel.Win32Exception or InvalidOperationException)
+                {
+                    PlayerUpdater.CleanStage(update.Directory);
+                    MessageBox.Show(error.Message, "SoulLink-Update fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return;
             }
-        }
-        else if (form.RequestedProfile is Guid runProfile)
-        {
-            var restart = new ProcessStartInfo(executable) { UseShellExecute = false };
-            if (instance is { IsTest: true })
+
+            if (form.RequestedProfile is not Guid runProfile || profiles is null) return;
+            try { profile = profiles.OpenForStartup(null, runProfile); }
+            catch (Exception error) when (RunDialogs.IsActionError(error))
             {
-                restart.ArgumentList.Add("--test-player-slot");
-                restart.ArgumentList.Add(instance.Slot.ToString());
+                MessageBox.Show(error.Message, "SoulLink – Run-Profil", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
             }
-            restart.ArgumentList.Add("--run-profile");
-            restart.ArgumentList.Add(runProfile.ToString("D"));
-            try
-            {
-                using var process = Process.Start(restart);
-            }
-            catch (System.ComponentModel.Win32Exception error)
-            {
-                MessageBox.Show(error.Message, "SoulLink – Neustart", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            session = form.NextHostingSession;
+            restoreHosting = form.RestoreHosting;
+            requestedRom = null;
+            args = ["--run-profile", runProfile.ToString("D")];
         }
     }
 
+    private static ClientRuntime CreateRuntime(string home, PlayerProfile? profile, bool localTracking) => new(
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = Path.Combine(home, profile is null ? "player.json" : $"player-{profile.Id:N}.json"),
+            ["AllowSyntheticFrames"] = "false",
+            ["EnableLocalRun"] = (localTracking && profile is null).ToString(),
+            ["LocalRunDirectory"] = Path.Combine(home, "LocalRuns"),
+            ["BridgePort"] = "0",
+        }).Build());
+
+    private static RomSelection RomFor(string home, PlayerProfile? profile) =>
+        new(Path.Combine(home, $"rom-{profile?.Id.ToString("N") ?? "local"}.txt"));
 }
