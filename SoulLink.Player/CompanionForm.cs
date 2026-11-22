@@ -84,7 +84,8 @@ internal sealed class CompanionForm : Form
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
         string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null,
-        int? testSlot = null, HostingSession? hostingSession = null, bool restoreHosting = false, bool launchOnOpen = false)
+        int? testSlot = null, HostingSession? hostingSession = null, bool restoreHosting = false,
+        bool launchOnOpen = false, bool resumeOnOpen = false)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -211,8 +212,9 @@ internal sealed class CompanionForm : Form
         this.surface.Controls.Add(this.gameStatus);
         this.resumeRun = Button("Run fortsetzen", async (_, _) =>
         {
-            if (this.profiles?.Current() is { } last) await this.SwitchProfileAsync(last.Id);
-            else await this.StartGameAsync();
+            if (this.LastRunWithSave() is not Guid last) { this.Render(); return; }
+            if (this.profiles is null) await this.StartGameAsync(resume: true);
+            else await this.SwitchProfileAsync(last, resume: true);
         });
         this.resumeRun.ForeColor = DashboardTheme.Accent;
         this.loadRun = Button("Run laden", async (_, _) => await this.JoinOrSwitchAsync(ProfilePickerMode.Load));
@@ -286,7 +288,7 @@ internal sealed class CompanionForm : Form
         };
         this.Shown += async (_, _) =>
         {
-            if (launchOnOpen || this.requestedRom is not null) await this.StartGameAsync(path: this.requestedRom);
+            if (launchOnOpen || this.requestedRom is not null) await this.StartGameAsync(path: this.requestedRom, resume: resumeOnOpen);
             if (restoreHosting) await this.OpenHostingAsync();
             await this.CheckUpdatesAsync(interactive: false);
         };
@@ -297,6 +299,7 @@ internal sealed class CompanionForm : Form
     internal string ConnectionStatus => this.status.Text;
 
     internal Guid? RequestedProfile { get; private set; }
+    internal bool RequestedResume { get; private set; }
 
     internal HostingSession? NextHostingSession { get; private set; }
 
@@ -385,18 +388,18 @@ internal sealed class CompanionForm : Form
     {
         if (this.closing || this.profiles is null) return;
         bool firstOpen = this.hosting is null;
-        this.hosting ??= new HostingForm(this.profiles, this.profile?.Server ?? this.runtime.Status().Server, this.hostingSession, this.SwitchProfileAsync);
+        this.hosting ??= new HostingForm(this.profiles, this.profile?.Server ?? this.runtime.Status().Server, this.hostingSession, id => this.SwitchProfileAsync(id));
         this.ShowTool(this.hosting);
         if (firstOpen && this.hostingSession is not null) await this.hosting.ConnectAsync();
     }
 
-    private async Task SwitchProfileAsync(Guid selection)
+    private async Task SwitchProfileAsync(Guid selection, bool resume = false)
     {
         if (this.closing) return;
         Guid current = this.profile?.Id ?? Guid.Empty;
         if (selection == current)
         {
-            if (this.game is not { HasExited: false }) await this.StartGameAsync();
+            if (this.game is not { HasExited: false }) await this.StartGameAsync(resume: resume);
             else await this.OpenIdentityAsync();
             return;
         }
@@ -404,6 +407,7 @@ internal sealed class CompanionForm : Form
             MessageBox.Show(this, "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.",
                 "Run wechseln", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
         this.RequestedProfile = selection;
+        this.RequestedResume = resume;
         this.NextHostingSession = this.hosting?.Session ?? this.hostingSession;
         this.RestoreHosting = this.hosting?.Visible == true;
         this.Close();
@@ -674,14 +678,22 @@ internal sealed class CompanionForm : Form
         }
     }
 
-    private Task StartGameAsync(bool chooseRom = false, string? path = null)
+    private Guid? LastRunWithSave()
+    {
+        Guid current = this.profile?.Id ?? Guid.Empty;
+        Guid previous = this.profiles is null ? current : this.profiles.Current()?.Id ?? Guid.Empty;
+        var previousRom = previous == current ? this.rom : this.rom.ForProfile(previous);
+        return this.emulator.HasResumeState(previousRom.Read()) ? previous : null;
+    }
+
+    private Task StartGameAsync(bool chooseRom = false, string? path = null, bool resume = false)
     {
         if (this.closing || this.game is { HasExited: false }) return Task.CompletedTask;
         if (this.launching) return this.gameLaunch ?? Task.CompletedTask;
-        return this.gameLaunch = this.LaunchGameAsync(chooseRom, path);
+        return this.gameLaunch = this.LaunchGameAsync(chooseRom, path, resume);
     }
 
-    private async Task LaunchGameAsync(bool chooseRom, string? path)
+    private async Task LaunchGameAsync(bool chooseRom, string? path, bool resume)
     {
         this.dock.Dispose();
         this.game?.Dispose();
@@ -697,6 +709,8 @@ internal sealed class CompanionForm : Form
                 throw new InvalidOperationException("mGBA ist bereits geöffnet. Schließe es und klicke auf „Spiel starten“.");
 
             path ??= chooseRom ? null : this.rom.Read();
+            if (resume && !this.emulator.HasResumeState(path))
+                throw new InvalidDataException("Für diesen Run gibt es keinen Spielstand in Slot 1 oder 2.");
             if (path is null || !File.Exists(path))
             {
                 using var picker = new OpenFileDialog
@@ -726,7 +740,7 @@ internal sealed class CompanionForm : Form
                 if (this.closing) return;
             }
             string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort, this.runtime.BeginLocalItemSession());
-            this.game = await Task.Run(() => this.emulator.Start(path, bridge));
+            this.game = await Task.Run(() => this.emulator.Start(path, bridge, resume: resume));
             if (this.closing) return;
             this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), attempted: true);
             this.dockingEnabled = true;
@@ -802,8 +816,7 @@ internal sealed class CompanionForm : Form
         this.launcher.Visible = idle;
         if (idle)
         {
-            this.resumeRun.Visible = this.profiles?.Current() is not null ||
-                ((this.profiles is null || this.profile is null) && this.rom.Read() is not null);
+            this.resumeRun.Visible = this.LastRunWithSave() is not null;
             this.loadRun.Visible = this.profiles?.List().Length > 0;
             this.joinFromLauncher.Visible = this.profiles is not null || this.profile is not null;
         }

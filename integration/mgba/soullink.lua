@@ -11,6 +11,7 @@ local profiles = {
         storage = 0x020300A0, save1 = 0x02025734, save2 = 0x02024EA4, main = 0x03001770,
         stats = 0x0820BBE8, trainers = 0x081FD478,
         mapHeader = 0x0202E828, avatar = 0x0202E858, objects = 0x030048B0,
+        fieldCallbacks = {[0x080546D8] = true, [0x080546E4] = true},
         battle = {flags = 0x020239F8, outcome = 0x02024D26, count = 0x02024A68, slots = 0x02024A6A, sides = 0x02024A72,
             mons = 0x02024A80, lastMoves = 0x02024C3C, lastHitBy = 0x02024C5C, trainer = 0x0202FF5E,
             active = 0x02024A60, move = 0x02024BE6, damage = 0x02024BEC, dealt = 0x02024BF0,
@@ -35,6 +36,7 @@ local battleFaints, lastPosition = {}, "null"
 local faintDirty = false
 local canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
 local battleStarted, liveBattle, battleDirty = nil, "null", false
+local autosaveInBattle, autosavePending = false, false
 local nextHit
 local gymLineups, rubyTypes
 
@@ -329,6 +331,24 @@ local function observeWildBattle(profile, frame)
     canStartWild = false
 end
 
+local function autosaveAfterBattle(profile)
+    if (read8(profile.main + 0x43D) & 2) ~= 0 then
+        autosaveInBattle, autosavePending = true, false
+        return
+    end
+    if autosaveInBattle then
+        autosaveInBattle = false
+        local outcome = read8(profile.battle.outcome)
+        autosavePending = (outcome >= 1 and outcome <= 10) or (outcome & 0x80) ~= 0
+    end
+    -- Wait for the field callback so map loading and whiteouts have finished.
+    if not autosavePending or not profile.fieldCallbacks[read32(profile.main + 4) & ~1] or
+        readPosition(profile, read8(profile.save1 + 4)) == "null" then return end
+    autosavePending = false
+    local ok, saved = pcall(function() return readCore():saveStateSlot(2) end)
+    if not ok or not saved then report("Automatisches Speichern auf Slot 2 fehlgeschlagen.") end
+end
+
 local function sendPending()
     if not peer or not pending then return end
     local index, err = peer:send(pending, position)
@@ -459,6 +479,7 @@ local function reset()
     faintDirty, nextHit, lastFrame = false, nil, -1
     canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
     battleStarted, liveBattle, battleDirty = nil, "null", false
+    autosaveInBattle, autosavePending = false, false
     stop()
 end
 
@@ -494,6 +515,7 @@ local function onFrame()
         if not peer or not pending then reset() end
         return
     end
+    if itemSession and activeProfile == profiles.AXVD then autosaveAfterBattle(activeProfile) end
     if (tick % 30 ~= 0 and not faintDirty and not wildDirty and not battleDirty) or pending then return end
     if not peer then
         local valid, codeOrError, profile = pcall(readProfile)

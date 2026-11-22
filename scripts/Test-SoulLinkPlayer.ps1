@@ -85,6 +85,7 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species, [switch]$Em
         '0202E828' = 0x08000600u # Map header: pointer to a 28 x 24 layout.
         '030048B0' = 0x00010001u # Active player object.
         '030048C0' = 0x000E000Cu # Live (5, 7), padding of seven metatiles.
+        '03001774' = 0x080546E5u # Main.callback2 points to CB2_Overworld.
     }
     [BitConverter]::GetBytes(28).CopyTo($rom, 0x600)
     [BitConverter]::GetBytes(24).CopyTo($rom, 0x604)
@@ -162,6 +163,11 @@ try {
         }
         if ((Get-Content -LiteralPath $mapResult -Raw) -ne '224×120') {
             throw "The original-map decoder failed for revision $revision."
+        }
+        if ($revision -eq 0) {
+            $resumeHome = Join-Path $testRoot 'resume'
+            Run-Player $player @('--smoke-close', $resumeHome, $romPath, 'resume')
+            if (-not (Test-Path -LiteralPath (Join-Path $resumeHome 'shutdown-result.txt'))) { throw 'Resume from slot 2 was not verified.' }
         }
     }
     if ($ShutdownOnly) {

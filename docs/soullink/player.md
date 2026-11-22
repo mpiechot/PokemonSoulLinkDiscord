@@ -1,12 +1,12 @@
 # Für Mitspieler: SoulLink starten
 
-Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** öffnet den zuletzt gestarteten Run. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
+Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** erscheint, wenn für den zuletzt gestarteten Run ein mGBA-Spielstand in Slot 1 oder 2 liegt. Es lädt den neueren Stand. Sind beide Zeitstempel gleich, hat Slot 1 Vorrang. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
 
 SoulLink merkt sich pro Run die Anmeldung und die ROM-Auswahl. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
 Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Das Menü **SoulLink** oben links enthält **Spiel starten**, **mGBA lösen** und **Einrichtung**. Unten zeigen die farbigen Punkte den Status von Run-Server und Spieldaten an. Beim Darüberfahren erscheint ein kurzer Hinweis.
 
-Im **SoulLink**-Menü legst du mit **Speichern (Slot 1)** einen mGBA-Spielstand ab. **Schnellladen (Slot 1)** stellt ihn wieder her und ist auch am Titelbildschirm verfügbar. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
+Im **SoulLink**-Menü legst du mit **Speichern (Slot 1)** einen manuellen mGBA-Spielstand ab. **Schnellladen (Slot 1)** stellt ihn wieder her und ist auch am Titelbildschirm verfügbar. Nach einem Kampf speichert SoulLink automatisch in **Slot 2**, sobald du wieder im Spielfeld bist. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
 
 Links stehen Fänge, vollständige Links und Todesfälle im scrollbaren Newsfeed. Unter dem Spiel ordnet das Team-Grid die Spieler in Spalten und die verbundenen Pokémon in gemeinsamen Zeilen an. Oben öffnen **Box**, **Tot** und **Shinies** eigene Grids. **Fangorte** zeigt die bisher erfassten Fanggebiete als Tags. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
 

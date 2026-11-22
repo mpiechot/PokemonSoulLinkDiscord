@@ -8,6 +8,12 @@ internal sealed class RomSelection(string settingsPath)
         new("POKEMON RUBY", "AXVD", [0, 1]),
     ];
 
+    public static RomSelection ForProfile(string home, Guid? id) =>
+        new(Path.Combine(home, $"rom-{id?.ToString("N") ?? "local"}.txt"));
+
+    public RomSelection ForProfile(Guid id) =>
+        ForProfile(Path.GetDirectoryName(settingsPath)!, id == Guid.Empty ? null : id);
+
     public string? Read()
     {
         return File.Exists(settingsPath) ? File.ReadAllText(settingsPath) : null;

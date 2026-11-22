@@ -84,7 +84,7 @@ internal static class Program
             return;
         }
         using var runtime = CreateRuntime(home, profile, localTracking: !smokeTest);
-        var rom = RomFor(home, profile);
+        var rom = RomSelection.ForProfile(home, profile?.Id);
         if (smokeTest)
         {
             try
@@ -124,7 +124,7 @@ internal static class Program
         if (smokeClose)
         {
             DockSmokeTest.RunClose(runtime, emulator, rom, home, args[2], detached: args.Length == 4 && args[3] == "detached",
-                emptyParty: args.Length == 4 && args[3] == "empty");
+                emptyParty: args.Length == 4 && args[3] == "empty", resume: args.Length == 4 && args[3] == "resume");
             return;
         }
     }
@@ -135,13 +135,14 @@ internal static class Program
         HostingSession? session = null;
         bool restoreHosting = false;
         bool launchOnOpen = false;
+        bool resumeOnOpen = false;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
         while (true)
         {
             string profileKey = profile?.Id.ToString("N") ?? "local";
             using var runtime = CreateRuntime(home, profile, localTracking: true);
-            using var form = new CompanionForm(runtime, emulator, RomFor(home, profile), Path.Combine(home, "Bridge", profileKey),
-                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting, launchOnOpen);
+            using var form = new CompanionForm(runtime, emulator, RomSelection.ForProfile(home, profile?.Id), Path.Combine(home, "Bridge", profileKey),
+                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting, launchOnOpen, resumeOnOpen);
             Application.Run(form);
             if (form.PendingUpdate is { } update)
             {
@@ -169,6 +170,7 @@ internal static class Program
             session = form.NextHostingSession;
             restoreHosting = form.RestoreHosting;
             launchOnOpen = true;
+            resumeOnOpen = form.RequestedResume;
             requestedRom = null;
             args = ["--run-profile", runProfile.ToString("D")];
         }
@@ -183,7 +185,4 @@ internal static class Program
             ["LocalRunDirectory"] = Path.Combine(home, "LocalRuns"),
             ["BridgePort"] = "0",
         }).Build());
-
-    private static RomSelection RomFor(string home, PlayerProfile? profile) =>
-        new(Path.Combine(home, $"rom-{profile?.Id.ToString("N") ?? "local"}.txt"));
 }

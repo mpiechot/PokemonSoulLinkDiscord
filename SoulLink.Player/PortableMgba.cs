@@ -11,8 +11,13 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
 
     internal string ExecutablePath => Path.Combine(home, "mGBA-9187", "mGBA.exe");
 
-    public Process Start(string rom, string bridge, string? testState = null, bool softwareDisplay = false)
+    public Process Start(string rom, string bridge, string? initialState = null, bool softwareDisplay = false, bool resume = false)
     {
+        string gameRom = this.PrepareRom(rom);
+        if (resume)
+        {
+            initialState = this.LatestState(gameRom) ?? throw new InvalidDataException("Für diesen Run gibt es keinen Spielstand in Slot 1 oder 2.");
+        }
         string executable = this.Install();
         string directory = Path.GetDirectoryName(executable)!;
         if (softwareDisplay || preferSoftwareDisplay)
@@ -25,25 +30,80 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
             WorkingDirectory = directory,
             UseShellExecute = false,
         };
-        if (testState is not null)
+        if (initialState is not null)
         {
             start.ArgumentList.Add("--savestate");
-            start.ArgumentList.Add(testState);
+            start.ArgumentList.Add(initialState);
         }
         start.ArgumentList.Add("--script");
         start.ArgumentList.Add(bridge);
-        start.ArgumentList.Add(this.PrepareRom(rom));
+        start.ArgumentList.Add(gameRom);
         return Process.Start(start) ?? throw new InvalidOperationException("mGBA konnte nicht gestartet werden.");
     }
+
+    internal bool HasResumeState(string? rom)
+    {
+        if (!File.Exists(rom)) return false;
+        try
+        {
+            if (!isolated) return this.LatestState(rom!) is not null;
+            using var source = File.OpenRead(rom!);
+            string copy = this.TestRomPath(rom!, source);
+            return File.Exists(copy) && this.LatestState(copy) is not null;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    internal string? LatestState(string rom)
+    {
+        string directory = this.StateDirectory() ?? Path.GetDirectoryName(Path.GetFullPath(rom))!;
+        string stem = Path.GetFileNameWithoutExtension(rom);
+        var manual = new FileInfo(Path.Combine(directory, stem + ".ss1"));
+        var automatic = new FileInfo(Path.Combine(directory, stem + ".ss2"));
+        bool hasManual = manual.Exists && manual.Length > 0;
+        bool hasAutomatic = automatic.Exists && automatic.Length > 0;
+        if (hasAutomatic && (!hasManual || automatic.LastWriteTimeUtc > manual.LastWriteTimeUtc)) return automatic.FullName;
+        return hasManual ? manual.FullName : null;
+    }
+
+    private string? StateDirectory()
+    {
+        string portableDirectory = Path.GetDirectoryName(this.ExecutablePath)!;
+        string configuration = Path.Combine(portableDirectory, "config.ini");
+        if (!File.Exists(configuration)) return null;
+
+        string section = "";
+        string? general = null;
+        string? qt = null;
+        foreach (string line in File.ReadLines(configuration))
+        {
+            string entry = line.Trim();
+            if (entry.StartsWith('[') && entry.EndsWith(']')) section = entry[1..^1];
+            int separator = entry.IndexOf('=');
+            if (separator < 0 || !entry.AsSpan(0, separator).Trim().SequenceEqual("savestatePath")) continue;
+            if (section == "ports.qt") qt = entry[(separator + 1)..].Trim();
+            if (section.Length == 0) general = entry[(separator + 1)..].Trim();
+        }
+
+        string? configured = qt ?? general;
+        if (string.IsNullOrEmpty(configured)) return null;
+        string path = Path.GetFullPath(configured, portableDirectory);
+        return Directory.Exists(path) ? path : null;
+    }
+
+    private string TestRomPath(string original, Stream source) =>
+        Path.Combine(home, "Games", Convert.ToHexString(SHA256.HashData(source)), Path.GetFileName(original));
 
     internal string PrepareRom(string original)
     {
         if (!isolated) return original;
         using var source = File.OpenRead(original);
-        string directory = Path.Combine(home, "Games", Convert.ToHexString(SHA256.HashData(source)));
-        string target = Path.Combine(directory, Path.GetFileName(original));
+        string target = this.TestRomPath(original, source);
         if (File.Exists(target)) return target;
-        Directory.CreateDirectory(directory);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         string temporary = target + ".tmp";
         try
         {

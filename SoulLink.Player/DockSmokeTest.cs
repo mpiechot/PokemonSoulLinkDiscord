@@ -9,9 +9,11 @@ namespace SoulLink.Player;
 
 internal static class DockSmokeTest
 {
-    public static void RunClose(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path, bool detached, bool emptyParty)
+    public static void RunClose(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string home, string path,
+        bool detached, bool emptyParty, bool resume)
     {
-        using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), path, null, home);
+        if (resume) rom.Save(path);
+        using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), resume ? null : path, null, home);
         int port = 0;
         string? failure = null;
         Process? game = null;
@@ -28,6 +30,7 @@ internal static class DockSmokeTest
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
             try
             {
+                if (resume) Descendants(form).OfType<Button>().Single(button => button.Text == "Run fortsetzen").PerformClick();
                 while (!form.IsGameDocked || game is null)
                 {
                     game ??= FindFixtureEmulator(emulator);
@@ -36,6 +39,12 @@ internal static class DockSmokeTest
                 port = runtime.Status().BridgePort;
                 File.WriteAllText(progress, $"The emulator is docked with bridge port {port}.");
                 VerifySidebar(form);
+                if (resume)
+                {
+                    while (runtime.Status().Snapshot is null) await Task.Delay(50, timeout.Token);
+                    if (runtime.Status().Snapshot is not { MapNumber: 16, InBattle: false })
+                        throw new InvalidDataException("The launcher did not load the newest autosave at startup.");
+                }
                 if (emptyParty)
                 {
                     while (!runtime.OwnedBridgeReady || runtime.Status().Snapshot is null || EmulatorDock.HasScriptingWindow(game))
@@ -147,7 +156,10 @@ internal static class DockSmokeTest
                 readCore():write8(0x02026962, 0x10) -- Adventure flag set, but balls only in PC storage.
                 startBattle()
             elseif testFrame == 120 then
+                readCore():write32(0x03001774, 0) -- Return to the field only after the transition.
                 escape()
+            elseif testFrame == 140 then
+                readCore():write32(0x03001774, 0x080546E5)
             elseif testFrame == 150 then
                 readCore():write8(0x02026962, 0)
                 readCore():write32(0x02025D38, 0x00010003) -- One Great Ball in the second bag slot.
@@ -157,11 +169,17 @@ internal static class DockSmokeTest
                 readCore():write32(0x02024B00, 7)
             elseif testFrame == 270 then
                 escape()
+            elseif testFrame == 300 then
+                startBattle()
+                readCore():write32(0x020239F8, 8)
+            elseif testFrame == 360 then
+                readCore():write32(0x02024D24, 0x00010000)
+                readCore():write32(0x03001BAC, 0)
             end
         end
         """;
 
-    private static async Task VerifyWildBattlesAsync(ClientRuntime runtime, CancellationToken cancellationToken)
+    private static async Task VerifyBattleAutosavesAsync(ClientRuntime runtime, string autoSlot, CancellationToken cancellationToken)
     {
         async Task<GameSnapshot> WaitFor(string stage, Func<GameSnapshot, bool> matches)
         {
@@ -184,13 +202,26 @@ internal static class DockSmokeTest
         var noBalls = await WaitFor("battle with only PC balls", snapshot => snapshot.Battle is { });
         if (noBalls.Battle!.CatchEncounter) throw new InvalidDataException("PC balls counted as balls in the bag.");
         await WaitFor("escape without balls", snapshot => !snapshot.InBattle);
+        if (File.Exists(autoSlot)) throw new InvalidDataException("Autosave ran before the field transition completed.");
         var encounter = await WaitFor("battle with a Great Ball", snapshot => snapshot.Battle is { } battle && battle.Key != noBalls.Battle.Key);
+        DateTime firstSave = SaveTime();
         if (encounter.Battle!.CatchEncounter is false || encounter.WildBattles is { Length: > 0 })
             throw new InvalidDataException("The first wild battle with a ball in the bag was not recognized.");
         await WaitFor("last ball used", snapshot => snapshot.Battle is { CatchEncounter: true, Combatants: [_, { Hp: 7 }] });
+        if (SaveTime() != firstSave) throw new InvalidDataException("Slot 2 was written again before the second battle ended.");
         var escaped = await WaitFor("eligible escape", snapshot => !snapshot.InBattle && snapshot.WildBattles is { Length: > 0 });
         if (escaped.WildBattles is not [{ Area: 16, Species: 280, Outcome: 4 }])
             throw new InvalidDataException("The wild encounter outcome did not retain its route and opponent.");
+        DateTime secondSave = SaveTime();
+        if (secondSave <= firstSave) throw new InvalidDataException("The second wild battle did not update slot 2.");
+        var trainer = await WaitFor("trainer battle", snapshot => snapshot.Battle is { } battle && battle.Key != encounter.Battle.Key);
+        if (trainer.Battle!.CatchEncounter || SaveTime() != secondSave)
+            throw new InvalidDataException("Slot 2 changed before the trainer battle ended.");
+        await WaitFor("trainer victory", snapshot => !snapshot.InBattle);
+        if (SaveTime() <= secondSave) throw new InvalidDataException("Trainer victory did not update slot 2.");
+
+        DateTime SaveTime() => new FileInfo(autoSlot) is { Exists: true, Length: > 0 } file ? file.LastWriteTimeUtc
+            : throw new InvalidDataException("A completed battle did not produce a slot 2 save.");
     }
 
     private static IEnumerable<Control> Descendants(Control parent) =>
@@ -302,7 +333,9 @@ internal static class DockSmokeTest
                         }
                         catch (IOException error) when (error.Message.StartsWith("Slot 1 ist leer", StringComparison.Ordinal)) { }
                         await runtime.SaveSlotOneAsync(timeout.Token);
-                        if (new FileInfo(Path.ChangeExtension(path, ".ss1")) is not { Exists: true, Length: > 0 })
+                        string manualSlot = Path.ChangeExtension(path, ".ss1");
+                        string autoSlot = Path.ChangeExtension(path, ".ss2");
+                        if (new FileInfo(manualSlot) is not { Exists: true, Length: > 0 } manual)
                             throw new InvalidDataException("mGBA did not write the quick save to slot 1.");
                         if (after.InBattle)
                         {
@@ -322,8 +355,9 @@ internal static class DockSmokeTest
                             foreach (var ball in Enum.GetValues<PcItem>().Where(item => item != PcItem.RareCandy))
                                 if (await runtime.AddPcItemsAsync(ball, timeout.Token) != 99)
                                     throw new InvalidOperationException($"The fixture did not receive 99 {ball}.");
-                            await VerifyWildBattlesAsync(runtime, timeout.Token);
+                            await VerifyBattleAutosavesAsync(runtime, autoSlot, timeout.Token);
                         }
+                        DateTime automatic = File.GetLastWriteTimeUtc(autoSlot);
                         await runtime.LoadSlotOneAsync(timeout.Token);
                         while (!runtime.CanLoadState || runtime.Status().Snapshot is not { } loaded || loaded.Epoch == after.Epoch)
                             await Task.Delay(25, timeout.Token);
@@ -333,6 +367,8 @@ internal static class DockSmokeTest
                             if (await runtime.AddPcItemsAsync(PcItem.RareCandy, timeout.Token) != 1049)
                                 throw new InvalidDataException("Quick load did not restore the PC inventory saved in slot 1.");
                         }
+                        if (File.GetLastWriteTimeUtc(autoSlot) != automatic || File.GetLastWriteTimeUtc(manualSlot) != manual.LastWriteTimeUtc)
+                            throw new InvalidDataException("Quick load or autosave changed a slot unexpectedly.");
                     }
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
@@ -536,16 +572,40 @@ internal static class DockSmokeTest
 
     internal static void VerifyIdleStartup(ClientRuntime runtime, PortableMgba emulator, string home)
     {
-        var profiles = new PlayerProfileLibrary(Path.Combine(home, "Launcher"));
-        var rom = new RomSelection(Path.Combine(home, "unused-rom.txt"));
-        VerifyChoices(null, ["Run beitreten"]);
+        string launcherHome = Path.Combine(home, "Launcher");
+        var profiles = new PlayerProfileLibrary(launcherHome);
+        VerifyChoices(null, RomSelection.ForProfile(launcherHome, null), ["Run beitreten"]);
         var saved = profiles.AddInvitation("https://example.invalid", "STARTUP", "Rubin-Runde");
         profiles.Choose(saved.Id);
-        VerifyChoices(saved, ["Run fortsetzen", "Run laden", "Run beitreten"]);
+        var rom = RomSelection.ForProfile(launcherHome, saved.Id);
+        string cartridge = Path.Combine(launcherHome, "Resume probe.gba");
+        var header = new byte[0xBD];
+        "POKEMON RUBYAXVD"u8.CopyTo(header.AsSpan(0xA0));
+        File.WriteAllBytes(cartridge, header);
+        rom.Save(cartridge);
+        VerifyChoices(saved, rom, ["Run laden", "Run beitreten"]);
 
-        void VerifyChoices(PlayerProfile? profile, string[] expected)
+        string manual = Path.ChangeExtension(cartridge, ".ss1");
+        string automatic = Path.ChangeExtension(cartridge, ".ss2");
+        File.WriteAllBytes(manual, []);
+        VerifyChoices(saved, rom, ["Run laden", "Run beitreten"]);
+        File.WriteAllText(automatic, "slot 2");
+        VerifyChoices(saved, rom, ["Run fortsetzen", "Run laden", "Run beitreten"]);
+        if (emulator.LatestState(cartridge) != automatic) throw new InvalidDataException("Slot 2 must be selected when slot 1 is empty.");
+
+        var time = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.WriteAllText(manual, "slot 1");
+        File.SetLastWriteTimeUtc(manual, time);
+        File.SetLastWriteTimeUtc(automatic, time);
+        if (emulator.LatestState(cartridge) != manual) throw new InvalidDataException("Slot 1 must win a tie.");
+        File.SetLastWriteTimeUtc(automatic, time.AddSeconds(1));
+        if (emulator.LatestState(cartridge) != automatic) throw new InvalidDataException("The newer autosave must be selected.");
+        File.SetLastWriteTimeUtc(manual, time.AddSeconds(2));
+        if (emulator.LatestState(cartridge) != manual) throw new InvalidDataException("The newer manual save must be selected.");
+
+        void VerifyChoices(PlayerProfile? profile, RomSelection selection, string[] expected)
         {
-            using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), null, profile, home, profiles: profiles, testSlot: 2);
+            using var form = new CompanionForm(runtime, emulator, selection, Path.Combine(home, "Bridge"), null, profile, home, profiles: profiles, testSlot: 2);
             form.Show();
             Application.DoEvents();
             var surface = Descendants(form).OfType<EmulatorSurface>().Single();
