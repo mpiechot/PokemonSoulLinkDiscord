@@ -2,85 +2,73 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class SetupForm : Form
+internal sealed class SetupForm : ToolWindow
 {
-    private readonly ClientRuntime runtime;
-    private readonly bool canChooseRom;
-
-    public SetupForm(ClientRuntime runtime, bool canChooseRom, bool canSwitchRun)
+    public SetupForm(ClientView view, string? rom, bool canChooseRom)
+        : base("Einrichtung", new Size(630, 474))
     {
-        this.runtime = runtime;
-        this.canChooseRom = canChooseRom;
-        this.Text = "SoulLink – Einrichtung";
-        this.ClientSize = new Size(590, 500);
-        this.FormBorderStyle = FormBorderStyle.FixedDialog;
-        this.MaximizeBox = false;
-        this.MinimizeBox = false;
-        this.StartPosition = FormStartPosition.CenterParent;
-        this.Font = new Font("Segoe UI", 10);
-        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 10) };
-        tabs.TabPages.Add(this.GamePage());
-        if (canSwitchRun) tabs.TabPages.Add(this.JoinPage());
-        tabs.TabPages.Add(this.DiagnosticsPage());
-        this.Controls.Add(tabs);
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 138));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.Controls.Add(GameCard(rom, canChooseRom, (_, _) => this.DialogResult = DialogResult.Retry), 0, 0);
+        layout.Controls.Add(Diagnostics(view), 0, 1);
+        this.Body.Controls.Add(layout);
     }
 
-    private TabPage GamePage()
+    private static ToolCard GameCard(string? rom, bool canChooseRom, EventHandler change)
     {
-        var page = new TabPage("Spiel");
-        AddText(page, "ROM für diesen Run", 22, 25, 530, 30, true);
-        AddText(page, this.canChooseRom
-            ? "SoulLink merkt sich die ROM für diesen Run. Beim Wechsel startet mGBA automatisch mit der neuen ROM."
-            : "Schließe mGBA, um eine andere ROM für diesen Run zu wählen.", 22, 72, 530, 65);
-        var choose = AddButton(page, "Andere ROM auswählen", 22, 145, (_, _) => this.DialogResult = DialogResult.Retry);
-        choose.Enabled = this.canChooseRom;
-        return page;
+        var card = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 10) };
+        var title = Heading("Spieldatei");
+        title.Dock = DockStyle.Top;
+        title.Height = 24;
+        var details = new Label
+        {
+            Dock = DockStyle.Top, Height = 26, AutoEllipsis = true, AccessibleDescription = rom,
+            ForeColor = DashboardTheme.Muted, Text = rom ?? "Für diesen Run wurde noch keine ROM gewählt.",
+        };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 36, WrapContents = false };
+        if (canChooseRom)
+        {
+            var choose = Action(rom is null ? "ROM auswählen" : "ROM wechseln", DashboardTheme.Accent);
+            choose.Click += change;
+            actions.Controls.Add(choose);
+        }
+        else
+        {
+            actions.Controls.Add(new Label
+            {
+                AutoSize = true, ForeColor = DashboardTheme.Gold, Padding = new Padding(0, 7, 0, 0),
+                Text = "Schließe mGBA, um die ROM zu wechseln.",
+            });
+        }
+        card.Controls.Add(actions);
+        card.Controls.Add(details);
+        card.Controls.Add(title);
+        return card;
     }
 
-    private TabPage JoinPage()
+    private static ToolCard Diagnostics(ClientView view)
     {
-        var page = new TabPage("Run verbinden");
-        AddText(page, "Füge eine neue Einladung ein oder öffne einen gespeicherten Run.", 22, 25, 530, 56);
-        AddButton(page, "Run beitreten / wechseln", 22, 92, (_, _) => this.DialogResult = DialogResult.Yes);
-        return page;
-    }
-
-    private TabPage DiagnosticsPage()
-    {
-        var page = new TabPage("Diagnose");
-        var view = this.runtime.Status();
-        AddText(page, "Nur bei Verbindungsproblemen benötigt", 22, 25, 530, 32, true);
+        var card = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var heading = Heading("Verbindung");
+        heading.Dock = DockStyle.Top;
+        heading.Height = 26;
+        var status = new Label
+        {
+            Dock = DockStyle.Top, Height = 44, AutoEllipsis = true, ForeColor = DashboardTheme.Muted,
+            Text = $"mGBA  ·  {view.Bridge}\nRun-Server  ·  {view.State}",
+        };
         var details = new RichTextBox
         {
-            Multiline = true,
-            ReadOnly = true,
-            BorderStyle = BorderStyle.None,
-            BackColor = DashboardTheme.Background,
-            ForeColor = DashboardTheme.Text,
-            DetectUrls = false,
-            Text = $"mGBA: {view.Bridge}\r\nRun: {view.State}\r\n\r\n" + string.Join("\r\n", view.Log),
+            ReadOnly = true, BorderStyle = BorderStyle.None, DetectUrls = false,
+            BackColor = DashboardTheme.Background, ForeColor = DashboardTheme.Text, AccessibleName = "Verbindungsprotokoll",
+            Text = view.Log.Length == 0 ? "Noch keine Diagnosemeldungen." : string.Join(Environment.NewLine, view.Log),
         };
         var diagnostics = DashboardScrollHost.ForText(details);
-        diagnostics.Bounds = new Rectangle(22, 80, 530, 350);
-        page.Controls.Add(diagnostics);
-        return page;
-    }
-
-    private static void AddText(Control parent, string text, int x, int y, int width, int height, bool bold = false)
-    {
-        parent.Controls.Add(new Label
-        {
-            Bounds = new Rectangle(x, y, width, height),
-            Text = text,
-            Font = new Font("Segoe UI", bold ? 13 : 10, bold ? FontStyle.Bold : FontStyle.Regular)
-        });
-    }
-
-    private static Button AddButton(Control parent, string text, int x, int y, EventHandler click)
-    {
-        var button = new Button { Bounds = new Rectangle(x, y, 225, 36), Text = text };
-        button.Click += click;
-        parent.Controls.Add(button);
-        return button;
+        diagnostics.Dock = DockStyle.Fill;
+        card.Controls.Add(diagnostics);
+        card.Controls.Add(status);
+        card.Controls.Add(heading);
+        return card;
     }
 }

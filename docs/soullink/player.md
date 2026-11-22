@@ -36,13 +36,15 @@ Die nächste Arena richtet sich nach dem gemeinsamen Fortschritt. **Abschließen
 
 **Cheats** zeigt Sonderbonbons, Pokébälle, Superbälle, Hyperbälle und Meisterbälle. Kehre im Spiel aufs Spielfeld zurück. Ein Klick auf **+99** legt 99 Stück der ausgewählten Sorte ins Item-Lager deines PCs. Der Dialog meldet den neuen Bestand. Hole die Items am PC ab und speichere wie gewohnt im Spiel.
 
-**Regeln** zeigt die SoulLink-Grundregeln und eure Zusatzregeln. Alle angemeldeten Teilnehmer können dem gemeinsamen Run eine Zusatzregel hinzufügen. Im lokalen Spieltest speichert SoulLink Zusatzregeln mit dem lokalen Verlauf.
+**Regeln** zeigt jede Grundregel einzeln und stellt eure eigenen Regeln als Karten dar. Alle angemeldeten Teilnehmer können in einem laufenden Run Zusatzregeln hinzufügen, bearbeiten und löschen. Fahr mit der Maus über eine Karte oder wähle sie mit der Tab-Taste, um die Aktionen zu sehen. Im lokalen Spieltest speichert SoulLink Zusatzregeln mit dem lokalen Verlauf.
+
+**Effekte** erklärt die Statusregeln von Pokémon Rubin, einschließlich Initiative und Angriffsausfall bei Paralyse, Rundenschaden und Adrenalin bei Verbrennung sowie normalem und schwerem Gift. Die Übersicht enthält außerdem vorübergehende Kampfeffekte und Wertestufen. [Rubin-Kampfmechanik](https://github.com/pret/pokeruby/blob/master/src/battle_util.c) · [Schadensformel](https://github.com/pret/pokeruby/blob/master/src/calculate_base_damage.c) · [Fangformel](https://github.com/pret/pokeruby/blob/master/src/battle_script_commands.c)
 
 Sobald die Lesebrücke läuft, schließt sich das Scripting-Fenster automatisch. Die Spieldaten werden grün, sobald ihr im Spielfeld seid. Ein leeres Team ist dafür in Ordnung. Gespeichert wird wie gewohnt im Emulator. Der lokale Spieltest startet seinen Feed beim ersten gültigen Spielstand. Die allgemeine Spielerdatei zeigt den lokalen Feed auch bei einer gespeicherten Anmeldung, solange der Run-Server nicht verbunden ist. Die lokale Erfassung gilt nur für diese Sitzung. Sobald der Server wieder erreichbar ist, wechselt die Anzeige zum gemeinsamen Run. Dort erscheinen Fänge, sobald der Gastgeber den Run gestartet hat.
 
 Neue Runs zeigen einen erkannten K. o. bereits im Kampf an. Das Popup öffnet sich ohne Tastaturfokus. Darin kannst du den Tod bestätigen und einen Grund angeben. SoulLink zeigt den Gegner und die K.-o.-Attacke, wenn die Lesebrücke den direkten Treffer zuordnen konnte. In anderen Fällen zeigt es die zuletzt erfasste Attacke, sofern bekannt. Die Bestätigung markiert den gesamten Link als tot. **Später** hält den Fall unter **Todesfall prüfen** offen.
 
-Für einen ROM-Wechsel mGBA schließen und in SoulLink **Einrichtung → Spiel → Andere ROM auswählen** öffnen. Falls mGBA bereits offen ist, fordert SoulLink vor dem Start zum Schließen auf. So läuft jeweils nur eine Emulatorinstanz.
+Für einen ROM-Wechsel schließt du mGBA und gehst zu **SoulLink → Einrichtung → ROM wechseln**. Unter **Verbindung** findest du den Status von mGBA und Run-Server und das Diagnoseprotokoll.
 
 ## Anmeldung am gemeinsamen Run
 
@@ -50,7 +52,7 @@ Für einen neuen Run bekommst du eine Einladung als Text. Derselbe Dialog öffne
 
 ## Für Gastgeber
 
-Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Lege eine Gruppe und darin einen Run an. Über **Einladung kopieren** erhältst du den Text zum Weitergeben. Der Run wird dabei auch für dich gemerkt. Sobald alle Mitspieler gültige Spieldaten übertragen haben, aktualisierst du die Ansicht und klickst auf **Starten**. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
+Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden**. Wähle eine Gruppe oder lege eine neue an. Links kannst du einen Run anlegen oder auswählen. Rechts stehen die Aktionen zum ausgewählten Run. Über **Einladung kopieren** erhältst du den Text zum Weitergeben. SoulLink merkt sich dabei die Einladung. **Selbst beitreten** öffnet den Run direkt auf deinem Rechner.
 
 Für alte Discord-Runs wählst du in der Gastgeberverwaltung die Zielgruppe und klickst auf **Discord-Runs importieren**. Wähle die `runs.json` oder ihre `.json.bak` bis 20 MB. Der aktualisierte Server archiviert alle Runs aus der Datei mit ihren Originaldaten in SQLite für eine spätere Gruppenstatistik. Ein erneuter Import in dieselbe Gruppe überspringt vorhandene Runs. Enthält die Datei einen bereits einer anderen Gruppe zugeordneten Run, wird der gesamte Import abgelehnt.
 
@@ -68,7 +70,7 @@ Für den Betrieb mit einem laufenden manuellen Run gelten weiterhin die Hinweise
 
 1. Verbinde dich unter **SoulLink → Gastgeber** mit eurem HTTPS-Run-Server und lege eine Testgruppe mit einem Test-Run an.
 2. Gib beiden Spielern einmal die SoulLink.exe. Schick ihnen die Einladung aus **Einladung kopieren**.
-3. Beide fügen die Einladung unter **Run beitreten / wechseln** ein und wählen Name, Karten-Icon und lokale Rubin-ROM. Sobald beide im Spielfeld sind, klickt der Gastgeber auf **Verbinden / aktualisieren** und dann auf **Starten**.
+3. Beide fügen die Einladung unter **Run beitreten / wechseln** ein und wählen Name, Karten-Icon und lokale Rubin-ROM. Sobald beide im Spielfeld sind, klickt der Gastgeber auf **Aktualisieren** und beim gewählten Run auf **Starten**.
 4. Fangt beide ein Pokémon im gleichen Fanggebiet. Der Link erscheint auf beiden Rechnern. Fügt unter **Regeln** eine Testregel hinzu und prüft, ob sie beim anderen Spieler erscheint.
 
 Für einen automatischen Test der Mehrspieler-Verbindung auf einem Rechner gibt es `./scripts/Start-SoulLinkDemo.ps1 -Verify`.

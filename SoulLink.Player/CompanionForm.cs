@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using SoulLink;
 using SoulLink.Client;
 
@@ -75,6 +74,7 @@ internal sealed class CompanionForm : Form
     private readonly HostingSession? hostingSession;
     private RulesForm? rules;
     private TypeChartForm? typeChart;
+    private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
     private Guid? shownRunEnd;
     private string? stateFeedback;
@@ -158,7 +158,7 @@ internal sealed class CompanionForm : Form
         this.status.TextAlign = ContentAlignment.MiddleLeft;
         this.status.AutoEllipsis = true;
         this.status.Padding = new Padding(9, 0, 0, 0);
-        this.status.MouseDown += (_, args) => { if (args.Button == MouseButtons.Left) this.DragWindow(); };
+        this.status.MouseDown += (_, args) => { if (args.Button == MouseButtons.Left) ToolWindow.DragWindow(this.Handle); };
         this.status.DoubleClick += (_, _) => this.ToggleMaximize();
         var navigation = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
         this.checkCatch = Button("Catch-Check", (_, _) =>
@@ -186,6 +186,11 @@ internal sealed class CompanionForm : Form
             {
                 if (this.typeChart is null || this.typeChart.IsDisposed) this.typeChart = new TypeChartForm(this.spriteCache);
                 ShowTool(this.typeChart);
+            }),
+            Button("Effekte", (_, _) =>
+            {
+                if (this.statusEffects is null || this.statusEffects.IsDisposed) this.statusEffects = new StatusEffectsForm();
+                ShowTool(this.statusEffects);
             }),
             this.cheats, this.checkCatch, this.pendingDeathButton, this.pendingEndButton,
         ]);
@@ -634,12 +639,6 @@ internal sealed class CompanionForm : Form
         this.WindowState = this.WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
     }
 
-    private void DragWindow()
-    {
-        ReleaseCapture();
-        SendMessage(this.Handle, 0x00A1, 2, 0);
-    }
-
     protected override void WndProc(ref Message message)
     {
         base.WndProc(ref message);
@@ -651,12 +650,6 @@ internal sealed class CompanionForm : Form
         else if (point.Y >= this.ClientSize.Height - 7) message.Result = side switch { -1 => 16, 1 => 17, _ => 15 };
         else if (side != 0) message.Result = side < 0 ? 10 : 11;
     }
-
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
-    private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
 
     private sealed class ProgramMenuColors : ProfessionalColorTable
     {
@@ -994,10 +987,9 @@ internal sealed class CompanionForm : Form
     private async void OpenSetup(object? sender, EventArgs e)
     {
         if (this.closing) return;
-        using var dialog = new SetupForm(this.runtime, !this.launching && this.game is not { HasExited: false }, this.profiles is not null);
+        using var dialog = new SetupForm(this.runtime.Status(), this.rom.Read(), !this.launching && this.game is not { HasExited: false });
         var result = dialog.ShowDialog(this);
         if (result == DialogResult.Retry) await this.StartGameAsync(chooseRom: true);
-        else if (result == DialogResult.Yes) await this.JoinOrSwitchAsync();
         this.Render();
     }
 }

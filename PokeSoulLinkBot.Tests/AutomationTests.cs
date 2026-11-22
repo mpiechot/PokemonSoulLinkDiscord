@@ -210,6 +210,30 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void ParticipantsCanEditAndRemoveRulesWithoutOverwritingAConcurrentChange()
+    {
+        var run = this.engine.Initialize("guild", 0, "Test");
+        var first = this.Join(run, "Player one").Registration;
+        var partner = this.Join(run, "Player two").Registration;
+        var outsider = this.Join(this.engine.Initialize("other", 0, "Other"), "Outsider").Registration;
+        this.engine.AddRule(first, "Alte Regel");
+        this.engine.AddRule(first, "Unveränderte Regel");
+
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.ChangeRule(outsider with { RunId = run.Id }, "Alte Regel", null));
+        Assert.Throws<InvalidOperationException>(() => this.engine.ChangeRule(partner, "Alte Regel", "UNVERÄNDERTE REGEL"));
+        Assert.Throws<InvalidDataException>(() => this.engine.ChangeRule(partner, "Alte Regel", "Zwei\nZeilen"));
+        this.engine.ChangeRule(partner, "Alte Regel", "Neue Regel");
+        Assert.Throws<InvalidOperationException>(() => this.engine.ChangeRule(first, "Alte Regel", null));
+        Assert.Equal(["Neue Regel", "Unveränderte Regel"], this.engine.View(first).AdditionalRules);
+        this.engine.ChangeRule(first, "Neue Regel", null);
+
+        var reopened = new AutomationEngine(new AutomationStore(Path.Combine(this.directory, "runs.sqlite")));
+        Assert.Equal("Unveränderte Regel", Assert.Single(reopened.View(partner).AdditionalRules));
+        this.engine.ChangeRun("guild", run.Id, "end");
+        Assert.Throws<InvalidOperationException>(() => this.engine.ChangeRule(partner, "Unveränderte Regel", null));
+    }
+
+    [Fact]
     public void ThreePlayersCreateExactlyOneDurableGroupIncludingDirectBoxCatch()
     {
         var run = this.engine.Initialize("guild", 123, "Test");

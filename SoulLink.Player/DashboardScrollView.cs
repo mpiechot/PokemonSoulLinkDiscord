@@ -36,6 +36,8 @@ internal class DashboardScrollView : Control
 
     internal Point ScrollPosition => this.scrollPosition;
 
+    internal void ScrollToTop() => this.UpdateScroll(new Point(this.scrollPosition.X, 0));
+
     internal Rectangle Viewport
     {
         get

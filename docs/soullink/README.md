@@ -14,7 +14,7 @@ $env:SoulLink__AdminKey
 .\scripts\Start-SoulLinkServer.ps1 -WithoutDiscord -DatabasePath .\artifacts\automation-test\standalone.sqlite
 ```
 
-Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Lege eine Gruppe und darin einen Run an. Mit **Für mich merken** erscheint er unter **SoulLink → Run beitreten / wechseln**. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
+Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Klicke auf **Verbinden** und lege eine Gruppe und darin einen Run an. Mit **Selbst beitreten** öffnet sich der Run auf deinem Rechner. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
 
 Für Mitspieler auf anderen Rechnern braucht ihr einen gemeinsamen HTTPS-Run-Server mit WebSocket-Unterstützung. Die Linux-Veröffentlichung und der Update-Ablauf sind in der [Betriebsanleitung](development.md#linux-release-and-updates) beschrieben. Sobald der Server erreichbar ist, könnt ihr der [Anleitung für zwei Spieler](player.md#zu-zweit-ohne-discord-testen) folgen.
 

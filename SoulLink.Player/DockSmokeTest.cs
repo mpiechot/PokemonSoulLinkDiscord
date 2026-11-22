@@ -528,46 +528,141 @@ internal static class DockSmokeTest
         string adminKey = new('a', 64);
         var profiles = new PlayerProfileLibrary(home);
         using var form = new HostingForm(profiles, server);
-        var status = Descendants(form).OfType<Label>().Single();
-        Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar).Text = adminKey;
-        ConnectAndWait(form);
-        if (status.ForeColor != DashboardTheme.Accent || !status.Text.StartsWith("Verbunden.", StringComparison.Ordinal) ||
-            !status.Text.Contains("Gruppe anlegen", StringComparison.Ordinal))
-            throw new InvalidOperationException("An empty groups response must confirm the connection and explain how to create the first group.");
-
-        if (form.Session is not { } session)
-            throw new InvalidOperationException("The host dialog did not retain its verified in-memory session.");
-        using var nextRun = new HostingForm(profiles, "https://example.invalid", session);
-        ConnectAndWait(nextRun);
-        if (nextRun.Session?.Server != server)
-            throw new InvalidOperationException("Opening the host controls in the next run changed the authenticated server.");
-
-        void ConnectAndWait(HostingForm target)
+        Exception? failure = null;
+        form.Shown += async (_, _) =>
         {
-            var connection = Task.WhenAll(ReplyWithEmptyGroupsAsync(), target.ConnectAsync()).WaitAsync(timeout.Token);
-            while (!connection.IsCompleted)
+            try { await VerifyHostAsync(); }
+            catch (Exception error) { failure = error; }
+            finally { form.Close(); }
+        };
+        Application.Run(form);
+        if (failure is not null) throw new InvalidOperationException("The host window verification failed.", failure);
+
+        async Task VerifyHostAsync()
+        {
+            SaveToolPreview(form, home, "host-sign-in");
+            var status = (Label)form.Controls.Find("HostFeedback", true).Single();
+            var signIn = form.Controls.Find("HostSignIn", true).Single();
+            var workspace = form.Controls.Find("HostWorkspace", true).Single();
+            if (!signIn.Visible || workspace.Visible || form.Session is not null)
+                throw new InvalidOperationException("The host workspace was visible before authentication.");
+            var key = Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar);
+            key.Text = new string('b', 64);
+            const string groupsPath = "/api/soullink/admin/groups";
+            await ConnectAndWait(form, ReplyAsync(groupsPath, key.Text, "401 Unauthorized", ""));
+            if (!signIn.Visible || workspace.Visible || status.ForeColor != DashboardTheme.Danger)
+                throw new InvalidOperationException("Invalid credentials exposed the host workspace.");
+            key.Text = adminKey;
+            await ConnectAndWait(form, ReplyAsync(groupsPath, adminKey, "200 OK", "[]"));
+            if (status.ForeColor != DashboardTheme.Accent || !status.Text.StartsWith("Verbunden.", StringComparison.Ordinal) ||
+                !status.Text.Contains("Neue Gruppe", StringComparison.Ordinal) || signIn.Visible || !workspace.Visible)
+                throw new InvalidOperationException("An empty groups response must confirm the connection and explain how to create the first group.");
+
+            if (form.Session is not { } session)
+                throw new InvalidOperationException("The host dialog did not retain its verified in-memory session.");
+            using var nextRun = new HostingForm(profiles, "https://example.invalid", session, _ => Task.CompletedTask);
+            nextRun.Show();
+            if (nextRun.Session is not null || nextRun.Controls.Find("HostWorkspace", true).Single().Visible)
+                throw new InvalidOperationException("A remembered key must be verified before exposing host actions.");
+            var group = new RunGroup(Guid.NewGuid(), "Rubin-Runde");
+            var run = new HostRun(Guid.NewGuid(), "Run 5", RunPhase.Active, true, "EXAMPLE", 2, 2);
+            await ConnectAndWait(nextRun, ReplyToGroupAndRunsAsync());
+            if (nextRun.Session?.Server != server)
+                throw new InvalidOperationException("Opening the host controls in the next run changed the authenticated server.");
+            string[] visibleActions = Descendants(nextRun).OfType<Button>().Where(button => button.Visible).Select(button => button.Text).ToArray();
+            if (!visibleActions.Contains("Pausieren") || !visibleActions.Contains("Links bearbeiten") ||
+                !visibleActions.Contains("Discord-Runs importieren") || !visibleActions.Contains("Selbst beitreten") ||
+                visibleActions.Contains("Starten") || visibleActions.Contains("Fortsetzen") || visibleActions.Contains("Für mich merken"))
+                throw new InvalidOperationException("The selected active run did not expose exactly its applicable actions.");
+            SaveToolPreview(nextRun, home, "host");
+            nextRun.Close();
+
+            async Task ReplyToGroupAndRunsAsync()
             {
-                Application.DoEvents();
-                Thread.Sleep(10);
+                await ReplyAsync(groupsPath, adminKey, "200 OK", Protocol.Serialize(new[] { group })).ConfigureAwait(false);
+                await ReplyAsync($"{groupsPath}/{group.Id:D}/runs", adminKey, "200 OK", Protocol.Serialize(new[] { run })).ConfigureAwait(false);
             }
-            connection.GetAwaiter().GetResult();
         }
 
-        async Task ReplyWithEmptyGroupsAsync()
+        Task ConnectAndWait(HostingForm target, Task serverReply) => Task.WhenAll(serverReply, target.ConnectAsync()).WaitAsync(timeout.Token);
+
+        async Task ReplyAsync(string path, string expectedKey, string reply, string data)
         {
             using var request = await listener.AcceptTcpClientAsync(timeout.Token).ConfigureAwait(false);
             using var stream = request.GetStream();
             using var headers = new StreamReader(stream, leaveOpen: true);
             var line = await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false);
-            if (line != "GET /api/soullink/admin/groups HTTP/1.1")
+            if (line != $"GET {path} HTTP/1.1")
                 throw new InvalidOperationException("The host dialog requested an unexpected URL.");
             bool authorized = false;
             while (await headers.ReadLineAsync(timeout.Token).ConfigureAwait(false) is { Length: > 0 } header)
-                authorized |= header.EndsWith(adminKey, StringComparison.Ordinal);
+                authorized |= header.EndsWith(expectedKey, StringComparison.Ordinal);
             if (!authorized) throw new InvalidOperationException("The host dialog did not send the verified admin key.");
-            await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"u8.ToArray(), timeout.Token)
+            var bytes = System.Text.Encoding.UTF8.GetBytes(data);
+            string response = $"HTTP/1.1 {reply}\r\nContent-Type: application/json\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes(response), timeout.Token).ConfigureAwait(false);
+            await stream.WriteAsync(bytes, timeout.Token)
                 .ConfigureAwait(false);
         }
+    }
+
+    internal static void VerifyToolWindows(ClientRuntime runtime, string home)
+    {
+        TraceToolPreviews(home, "Checking setup");
+        using var setup = new SetupForm(runtime.Status(), "C:\\ROMs\\Pokémon Rubin.gba", true);
+        setup.Show();
+        if (Descendants(setup).OfType<TabControl>().Any() || !Descendants(setup).OfType<Button>().Any(button => button.Text == "ROM wechseln" && button.Visible))
+            throw new InvalidOperationException("Setup did not expose the ROM action in the themed window.");
+        SaveToolPreview(setup, home, "setup");
+
+        TraceToolPreviews(home, "Checking effects");
+        using var effects = new StatusEffectsForm();
+        effects.Show();
+        var toxic = Descendants(effects).OfType<Button>().Single(button => button.Text == "Schwere Vergiftung");
+        toxic.PerformClick();
+        if (!Descendants(effects).OfType<Label>().Any(label => label.Text.Contains("überspringt schwere Vergiftung", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Opening the Ruby toxic effect did not show its catch-rate exception.");
+        SaveToolPreview(effects, home, "effects");
+
+        TraceToolPreviews(home, "Checking rules");
+        using var rules = new RulesForm(runtime);
+        rules.Show();
+        if (Descendants(rules).OfType<RuleRow>().Any() || Descendants(rules).OfType<Button>().Single(button => button.Text == "Hinzufügen").Enabled)
+            throw new InvalidOperationException("A player without an active run should only read the base rules.");
+        SaveToolPreview(rules, home, "rules");
+        using var ruleSample = new Form { ClientSize = new Size(640, 70), BackColor = DashboardTheme.Background };
+        bool edited = false;
+        var row = new RuleRow("Ein Fang pro Gebiet.", () => { edited = true; return Task.CompletedTask; }, () => Task.CompletedTask)
+        {
+            Width = 630,
+            Height = 60,
+        };
+        ruleSample.Controls.Add(row);
+        ruleSample.Show();
+        var edit = Descendants(row).OfType<Button>().Single(button => button.Text == "Bearbeiten");
+        row.Focus();
+        Application.DoEvents();
+        if (!edit.Visible || !row.ClientRectangle.Contains(row.RectangleToClient(edit.RectangleToScreen(edit.ClientRectangle))))
+            throw new InvalidOperationException("Rule actions must be reachable inside the rule card.");
+        SaveToolPreview(ruleSample, home, "rule-actions");
+        edit.PerformClick();
+        if (!edited) throw new InvalidOperationException("The rule edit control was not actionable.");
+        TraceToolPreviews(home, "Rule action invoked");
+    }
+
+    private static void SaveToolPreview(Form form, string home, string name)
+    {
+        if (Environment.GetEnvironmentVariable("SOULLINK_SMOKE_PREVIEWS") != "1") return;
+        Application.DoEvents();
+        using var image = new Bitmap(form.ClientSize.Width, form.ClientSize.Height);
+        form.DrawToBitmap(image, form.ClientRectangle);
+        image.Save(Path.Combine(home, name + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+    }
+
+    internal static void TraceToolPreviews(string home, string stage)
+    {
+        if (Environment.GetEnvironmentVariable("SOULLINK_SMOKE_PREVIEWS") == "1")
+            File.AppendAllText(Path.Combine(home, "tool-previews.txt"), stage + Environment.NewLine);
     }
 
     internal static void VerifyIdleStartup(ClientRuntime runtime, PortableMgba emulator, string home)

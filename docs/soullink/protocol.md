@@ -47,6 +47,8 @@ After `Hello`, the client calls `Subscribe` to receive `RunChanged` signals scop
 
 `PokemonDetails` requests a small cartridge-derived learnset, base stats and evolution list from a ready participant in the same run for an observed species. The server relays the request to the owning player and applies a short timeout. The ROM file and save data stay local.
 
+`AddRule(text)` adds a rule for the caller's run. `ChangeRule(current, replacement)` matches the exact current text and replaces it, or removes it if `replacement` is null. A changed or missing rule fails the request so an older editor cannot overwrite a teammate's change. Both calls require participation in a run that has yet to finish.
+
 ## Optional administration API
 
 Disabled unless `SoulLink:AdminKey` contains at least 32 characters. Send it only in `X-SoulLink-Admin`. It permits guild-scoped run creation, lifecycle operations and explicit player rebaseline. Intended for isolated demos/operations; normal administration uses permission-checked Discord commands. Do not expose it publicly without TLS and an operator-controlled key.

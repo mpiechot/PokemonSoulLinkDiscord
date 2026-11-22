@@ -8,111 +8,122 @@ internal sealed record HostingSession(string Server, string Key, Guid? GroupId =
     public override string ToString() => nameof(HostingSession);
 }
 
-internal sealed class HostingForm : Form
+internal sealed class HostingForm : ToolWindow
 {
     private const string Connecting = "Verbinde mit dem Run-Server …";
     private readonly PlayerProfileLibrary profiles;
-    private readonly TextBox server = Input("HTTPS-Serveradresse");
-    private readonly TextBox key = Input("Admin-Schlüssel");
-    private readonly ComboBox groups = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280, AccessibleName = "Gruppe" };
-    private readonly ListBox runs = new() { Dock = DockStyle.Fill, AccessibleName = "Runs" };
-    private readonly TextBox groupName = Input("Neue Gruppe");
-    private readonly TextBox runName = Input("Name des neuen Runs");
-    private readonly Label feedback = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly TextBox server = RunDialogs.TextInput("HTTPS-Serveradresse", 2048);
+    private readonly TextBox key = RunDialogs.TextInput("Admin-Schlüssel", 2048);
+    private readonly ComboBox groups = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, AccessibleName = "Gruppe" };
+    private readonly ListBox runs = new() { Dock = DockStyle.Fill, AccessibleName = "Runs", BorderStyle = BorderStyle.None };
+    private readonly Label feedback = new() { Name = "HostFeedback", Dock = DockStyle.Bottom, Height = 42, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly Label serverName = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Accent, AutoEllipsis = true };
+    private readonly Label runName = Heading("");
+    private readonly Label runStatus = new() { Dock = DockStyle.Top, Height = 44, ForeColor = DashboardTheme.Muted };
+    private readonly Label emptyRuns = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, ForeColor = DashboardTheme.Muted };
+    private readonly Button connect = Action("Verbinden", DashboardTheme.Accent);
+    private readonly Button addGroup = Action("Neue Gruppe");
+    private readonly Button refresh = Action("Aktualisieren");
+    private readonly ToolCard signIn;
+    private readonly TableLayoutPanel workspace;
+    private readonly Control invitations;
+    private readonly Control management;
+    private readonly Control lifecycle;
     private readonly Button createRun;
     private readonly Button importDiscordRuns;
-    private readonly Button start;
-    private readonly Button pause;
-    private readonly Button resume;
+    private readonly Button primary;
     private readonly Button end;
-    private readonly Button saveProfile;
     private readonly Button invite;
     private readonly Button join;
     private HostingSession? session;
+    private HostingSession? restoreSession;
+    private readonly bool canJoin;
     private readonly Button players;
     private readonly Button editLinks;
     private bool busy;
 
     public HostingForm(PlayerProfileLibrary profiles, string currentServer, HostingSession? session = null, Func<Guid, Task>? joinRun = null)
+        : base("Gastgeber", new Size(484, 332))
     {
         this.profiles = profiles;
-        RunDialogs.Configure(this, "Gruppen und Runs verwalten", new Size(742, 525));
-        this.session = session;
+        this.restoreSession = session;
+        this.canJoin = joinRun is not null;
         this.server.Text = session?.Server ?? currentServer;
         this.key.UseSystemPasswordChar = true;
         this.key.Text = session?.Key ?? "";
-        this.groupName.MaxLength = this.runName.MaxLength = 64;
         this.groups.DisplayMember = nameof(RunGroup.Name);
         DashboardTheme.StyleComboBox(this.groups);
         this.runs.DisplayMember = nameof(Row.Label);
         this.runs.BackColor = DashboardTheme.Background;
         this.runs.ForeColor = DashboardTheme.Text;
+        this.runs.DrawMode = DrawMode.OwnerDrawFixed;
+        this.runs.ItemHeight = 49;
+        this.runs.DrawItem += this.DrawRun;
 
-        var connect = DashboardTheme.Button("Verbinden / aktualisieren");
-        connect.Click += async (_, _) => await this.ConnectAsync();
-        var addGroup = DashboardTheme.Button("Gruppe anlegen");
-        addGroup.Click += async (_, _) => await this.UseServerAsync(async client =>
+        this.connect.Click += async (_, _) => await this.ConnectAsync();
+        this.refresh.Click += async (_, _) => await this.ConnectAsync();
+        this.addGroup.Click += async (_, _) =>
         {
-            var group = await client.CreateGroupAsync(this.groupName.Text);
-            this.groupName.Clear();
-            await this.LoadGroupsAsync(client, group.Id);
-        });
-        this.createRun = DashboardTheme.Button("Run anlegen");
-        this.createRun.Click += async (_, _) => await this.UseServerAsync(async client =>
+            if (Prompt(this, "Neue Gruppe", "Gruppenname", 64) is not { } name) return;
+            await this.UseServerAsync(async client =>
+            {
+                var group = await client.CreateGroupAsync(name);
+                await this.LoadGroupsAsync(client, group.Id);
+            });
+        };
+        this.createRun = Action("Neuer Run", DashboardTheme.Accent);
+        this.createRun.Click += async (_, _) =>
         {
             if (this.Group is not { } group) return;
-            var run = await client.CreateRunAsync(group.Id, this.runName.Text);
-            this.runName.Clear();
-            await this.LoadRunsAsync(client, run.Id);
-        });
-        this.importDiscordRuns = DashboardTheme.Button("Discord-Runs importieren");
+            if (Prompt(this, "Neuer Run", "Run-Name", 64) is not { } name) return;
+            await this.UseServerAsync(async client =>
+            {
+                var run = await client.CreateRunAsync(group.Id, name);
+                await this.LoadRunsAsync(client, run.Id);
+            });
+        };
+        this.importDiscordRuns = Action("Discord-Runs importieren");
         this.importDiscordRuns.Click += async (_, _) => await this.ImportDiscordRunsAsync();
-        this.start = this.ActionButton("Starten", "start");
-        this.pause = this.ActionButton("Pausieren", "pause");
-        this.resume = this.ActionButton("Auswählen / fortsetzen", "load");
-        this.end = this.ActionButton("Abschließen", "end");
-        this.saveProfile = DashboardTheme.Button("Für mich merken");
-        this.saveProfile.Click += (_, _) => this.SaveInvitation(copy: false);
-        this.invite = DashboardTheme.Button("Einladung kopieren");
+        this.primary = Action("Starten", DashboardTheme.Accent);
+        this.primary.Click += async (_, _) =>
+        {
+            if (PrimaryAction(this.Run) is { } action) await this.ChangeRunAsync(action.Command);
+        };
+        this.end = Action("Abschließen", DashboardTheme.Danger);
+        this.end.Click += async (_, _) =>
+        {
+            if (MessageBox.Show(this, "Diesen Run abschließen?", "Run abschließen", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                await this.ChangeRunAsync("end");
+        };
+        this.invite = Action("Einladung kopieren");
         this.invite.Click += (_, _) => this.SaveInvitation(copy: true);
-        this.join = DashboardTheme.Button("Selbst beitreten");
-        this.join.Visible = joinRun is not null;
+        this.join = Action("Selbst beitreten", DashboardTheme.Accent);
         this.join.Click += async (_, _) =>
         {
             if (joinRun is not null && this.SaveInvitation(copy: false) is { } profile)
                 await joinRun(profile.Id);
         };
-        this.players = DashboardTheme.Button("Spieler und Spielstände");
+        this.players = Action("Spieler und Spielstände");
         this.players.Click += async (_, _) => await this.UseServerAsync(this.ShowPlayersAsync);
-        this.editLinks = DashboardTheme.Button("Links bearbeiten");
+        this.editLinks = Action("Links bearbeiten");
         this.editLinks.Click += async (_, _) => await this.UseServerAsync(this.ShowLinkEditorAsync);
         this.groups.SelectedIndexChanged += async (_, _) =>
         {
-            if (this.busy) return;
-            this.runs.DataSource = null;
+            if (this.busy || this.IsDisposed || this.Disposing) return;
+            this.runs.Items.Clear();
             if (this.Group is not null) await this.UseServerAsync(client => this.LoadRunsAsync(client));
         };
         this.runs.SelectedIndexChanged += (_, _) => this.UpdateActions();
-        this.server.TextChanged += (_, _) => this.ClearServerView();
-        this.key.TextChanged += (_, _) => this.ClearServerView();
-
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
-        layout.Controls.Add(Line(this.server, this.key, connect), 0, 0);
-        layout.Controls.Add(Line(this.groups, this.groupName, addGroup), 0, 1);
-        layout.Controls.Add(Line(this.runName, this.createRun, this.importDiscordRuns), 0, 2);
-        layout.Controls.Add(this.runs, 0, 3);
-        layout.Controls.Add(Line(this.start, this.pause, this.resume, this.end, this.players), 0, 4);
-        layout.Controls.Add(Line(this.invite, this.join, this.saveProfile, this.editLinks), 0, 5);
-        layout.Controls.Add(this.feedback, 0, 6);
-        this.Controls.Add(layout);
+        this.lifecycle = ActionGroup("Run-Fortschritt", this.primary, this.end);
+        this.invitations = ActionGroup("Einladung", this.invite, this.join);
+        this.management = ActionGroup("Run verwalten", this.players, this.editLinks);
+        this.signIn = this.SignInCard();
+        this.workspace = this.BuildWorkspace();
+        this.Body.Controls.Add(this.workspace);
+        this.Body.Controls.Add(this.signIn);
+        this.Body.Controls.Add(this.feedback);
+        this.server.TextChanged += (_, _) => this.UpdateActions();
+        this.key.TextChanged += (_, _) => this.UpdateActions();
         this.ClearServerView();
     }
 
@@ -134,34 +145,143 @@ internal sealed class HostingForm : Form
         ? verified with { GroupId = this.Group?.Id ?? verified.GroupId, RunId = this.Run?.Id ?? verified.RunId }
         : null;
 
-    internal Task ConnectAsync() => this.UseServerAsync(client => this.LoadGroupsAsync(client, this.Group?.Id ?? this.session?.GroupId,
-        this.Run?.Id ?? this.session?.RunId));
+    internal Task ConnectAsync() => this.UseServerAsync(client => this.LoadGroupsAsync(client, this.Group?.Id ?? this.restoreSession?.GroupId,
+        this.Run?.Id ?? this.restoreSession?.RunId));
 
-    private static TextBox Input(string label) => new() { PlaceholderText = label, AccessibleName = label, Width = 200 };
-
-    private static FlowLayoutPanel Line(params Control[] controls)
+    private ToolCard SignInCard()
     {
-        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 5, 0, 0) };
-        row.Controls.AddRange(controls);
-        return row;
+        var card = new ToolCard { Dock = DockStyle.Fill, Name = "HostSignIn" };
+        var fields = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 5 };
+        foreach (int height in new[] { 24, 41, 24, 44, 42 }) fields.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+        this.server.Dock = this.key.Dock = DockStyle.Fill;
+        this.connect.Anchor = AnchorStyles.Left;
+        var serverLabel = Heading("Serveradresse");
+        serverLabel.Dock = DockStyle.Fill;
+        var keyLabel = Heading("Admin-Schlüssel");
+        keyLabel.Dock = DockStyle.Fill;
+        fields.Controls.Add(serverLabel, 0, 0);
+        fields.Controls.Add(this.server, 0, 1);
+        fields.Controls.Add(keyLabel, 0, 2);
+        fields.Controls.Add(this.key, 0, 3);
+        fields.Controls.Add(this.connect, 0, 4);
+        card.Controls.Add(fields);
+        return card;
     }
 
-    private Button ActionButton(string label, string action)
+    private TableLayoutPanel BuildWorkspace()
     {
-        var button = DashboardTheme.Button(label);
-        button.Click += async (_, _) =>
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Name = "HostWorkspace" };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 43));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 103));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var connection = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 8) };
+        var switchServer = Action("Server wechseln");
+        switchServer.Dock = DockStyle.Right;
+        switchServer.Click += (_, _) =>
         {
-            if (action == "end" && MessageBox.Show(this, "Diesen Run abschließen?", "Run abschließen", MessageBoxButtons.YesNo) != DialogResult.Yes)
-                return;
-            await this.UseServerAsync(async client =>
-            {
-                if (this.Group is not { } group || this.Run is not { } run) return;
-                await client.ChangeRunAsync(group.Id, run.Id, action);
-                await this.LoadRunsAsync(client, run.Id);
-            });
+            if (this.busy) return;
+            this.key.Clear();
+            this.ClearServerView();
+            this.server.Focus();
         };
-        return button;
+        connection.Controls.Add(this.serverName);
+        connection.Controls.Add(switchServer);
+        layout.Controls.Add(connection, 0, 0);
+        layout.SetColumnSpan(connection, 2);
+
+        var groupCard = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 0, 10) };
+        var groupTitle = Heading("Gruppe");
+        groupTitle.Dock = DockStyle.Top;
+        groupTitle.Height = 23;
+        var groupActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+        groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        this.groups.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        this.groups.Dock = DockStyle.None;
+        groupActions.Controls.Add(this.groups, 0, 0);
+        groupActions.Controls.Add(this.addGroup, 1, 0);
+        groupActions.Controls.Add(this.importDiscordRuns, 2, 0);
+        groupCard.Controls.Add(groupActions);
+        groupCard.Controls.Add(groupTitle);
+        layout.Controls.Add(groupCard, 0, 1);
+        layout.SetColumnSpan(groupCard, 2);
+
+        var listCard = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 5, 0) };
+        var listTitle = Heading("Runs");
+        listTitle.Dock = DockStyle.Top;
+        listTitle.Height = 26;
+        var listActions = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false };
+        listActions.Controls.AddRange([this.createRun, this.refresh]);
+        listCard.Controls.Add(this.emptyRuns);
+        listCard.Controls.Add(this.runs);
+        listCard.Controls.Add(listActions);
+        listCard.Controls.Add(listTitle);
+        layout.Controls.Add(listCard, 0, 2);
+
+        var details = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(5, 0, 0, 0) };
+        this.runName.Dock = DockStyle.Top;
+        this.runName.Height = 31;
+        this.runName.AutoEllipsis = true;
+        var detailsActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        detailsActions.Controls.AddRange([this.lifecycle, this.invitations, this.management]);
+        detailsActions.SizeChanged += (_, _) =>
+        {
+            foreach (Control section in detailsActions.Controls) section.Width = detailsActions.ClientSize.Width;
+        };
+        details.Controls.Add(detailsActions);
+        details.Controls.Add(this.runStatus);
+        details.Controls.Add(this.runName);
+        layout.Controls.Add(details, 1, 2);
+        return layout;
     }
+
+    private static Control ActionGroup(string title, params Button[] actions)
+    {
+        var section = new Panel { Height = 75, Margin = new Padding(0) };
+        var label = Heading(title);
+        label.Dock = DockStyle.Top;
+        label.Height = 26;
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
+        row.Controls.AddRange(actions);
+        section.Controls.Add(row);
+        section.Controls.Add(label);
+        return section;
+    }
+
+    private void DrawRun(object? sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || this.runs.Items[e.Index] is not Row row) return;
+        bool selected = e.State.HasFlag(DrawItemState.Selected);
+        using var fill = new SolidBrush(selected ? DashboardTheme.Panel : DashboardTheme.Background);
+        e.Graphics.FillRectangle(fill, e.Bounds);
+        var name = new Rectangle(e.Bounds.X + 9, e.Bounds.Y + 5, e.Bounds.Width - 18, 21);
+        TextRenderer.DrawText(e.Graphics, row.Run.Name, this.Font, name, selected ? DashboardTheme.Accent : DashboardTheme.Text,
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        var status = new Rectangle(name.X, name.Bottom, name.Width, 19);
+        TextRenderer.DrawText(e.Graphics, Phase(row.Run), this.Font, status, DashboardTheme.Muted,
+            TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        e.DrawFocusRectangle();
+    }
+
+    private static (string Label, string Command, bool Enabled)? PrimaryAction(HostRun? run) => run switch
+    {
+        { Phase: RunPhase.Lobby, Selected: true } => ("Starten", "start", run.Players > 0 && run.Ready == run.Players),
+        { Phase: RunPhase.Lobby } => ("Lobby aktivieren", "load", true),
+        { Phase: RunPhase.Active } => ("Pausieren", "pause", true),
+        { Phase: RunPhase.Paused } => ("Fortsetzen", "load", true),
+        _ => null,
+    };
+
+    private Task ChangeRunAsync(string action) => this.UseServerAsync(async client =>
+    {
+        if (this.Group is not { } group || this.Run is not { } run) return;
+        await client.ChangeRunAsync(group.Id, run.Id, action);
+        await this.LoadRunsAsync(client, run.Id);
+    });
 
     private async Task UseServerAsync(Func<HostAdminClient, Task> action)
     {
@@ -178,17 +298,14 @@ internal sealed class HostingForm : Form
             if (!this.IsDisposed && this.feedback.Text == Connecting)
             {
                 this.feedback.ForeColor = DashboardTheme.Accent;
-                this.feedback.Text = this.Group is null
-                    ? "Verbunden. Gib einen Gruppennamen ein und klicke auf „Gruppe anlegen“."
-                    : this.Run is null
-                        ? "Verbunden. Gib einen Run-Namen ein und klicke auf „Run anlegen“."
-                        : "Mit dem Run-Server verbunden.";
+                this.feedback.Text = this.Group is null ? "Verbunden. Lege mit „Neue Gruppe“ deine erste Gruppe an." : "";
             }
         }
         catch (Exception error) when (RunDialogs.IsActionError(error) || error is HttpRequestException or System.Text.Json.JsonException)
         {
             if (!this.IsDisposed)
             {
+                if (error is UnauthorizedAccessException) this.ClearServerView();
                 this.feedback.ForeColor = DashboardTheme.Danger;
                 this.feedback.Text = error.Message;
             }
@@ -210,6 +327,8 @@ internal sealed class HostingForm : Form
         var available = await client.GroupsAsync();
         if (this.IsDisposed) return;
         this.session = new HostingSession(this.server.Text.Trim(), this.key.Text);
+        this.restoreSession = null;
+        this.ShowWorkspace(true);
         this.groups.DataSource = available;
         int index = Array.FindIndex(available, group => group.Id == preferred);
         if (index >= 0) this.groups.SelectedIndex = index;
@@ -221,33 +340,68 @@ internal sealed class HostingForm : Form
         preferred ??= this.Run?.Id;
         var rows = this.Group is { } group ? (await client.RunsAsync(group.Id)).Select(run => new Row(run)).ToArray() : [];
         if (this.IsDisposed) return;
-        this.runs.DataSource = rows;
+        this.runs.BeginUpdate();
+        this.runs.Items.Clear();
+        this.runs.Items.AddRange(rows);
         int index = Array.FindIndex(rows, row => row.Run.Id == preferred);
-        if (index >= 0) this.runs.SelectedIndex = index;
+        if (rows.Length > 0) this.runs.SelectedIndex = Math.Max(0, index);
+        this.runs.EndUpdate();
         this.UpdateActions();
     }
 
     private void ClearServerView()
     {
+        this.session = null;
         this.groups.DataSource = null;
-        this.runs.DataSource = null;
+        this.runs.Items.Clear();
+        this.ShowWorkspace(false);
         this.feedback.ForeColor = DashboardTheme.Muted;
-        this.feedback.Text = "Gib die Serveradresse und den Admin-Schlüssel ein und klicke auf „Verbinden / aktualisieren“.";
+        this.feedback.Text = "";
         this.UpdateActions();
+    }
+
+    private void ShowWorkspace(bool connected)
+    {
+        this.serverName.Text = connected ? $"Verbunden  ·  {this.session!.Server}" : "";
+        this.signIn.Visible = !connected;
+        this.workspace.Visible = connected;
+        this.AcceptButton = connected ? null : this.connect;
+        var size = this.LogicalToDeviceUnits(connected ? new Size(824, 626) : new Size(484, 332));
+        if (size == this.ClientSize) return;
+        var center = new Point(this.Left + this.Width / 2, this.Top + this.Height / 2);
+        this.ClientSize = size;
+        if (this.IsHandleCreated)
+        {
+            var area = Screen.FromPoint(center).WorkingArea;
+            this.Location = new Point(Math.Clamp(center.X - size.Width / 2, area.Left, Math.Max(area.Left, area.Right - size.Width)),
+                Math.Clamp(center.Y - size.Height / 2, area.Top, Math.Max(area.Top, area.Bottom - size.Height)));
+        }
     }
 
     private void UpdateActions()
     {
+        if (this.IsDisposed || this.Disposing) return;
         var run = this.Run;
-        this.createRun.Enabled = !this.busy && this.Group is not null;
-        this.importDiscordRuns.Enabled = !this.busy && this.Group is not null;
-        this.start.Enabled = !this.busy && run is { Phase: RunPhase.Lobby, Selected: true, Players: > 0 } && run.Ready == run.Players;
-        this.pause.Enabled = !this.busy && run is { Phase: RunPhase.Active };
-        this.resume.Enabled = !this.busy && (run is { Phase: RunPhase.Paused } or { Phase: RunPhase.Lobby, Selected: false });
-        this.end.Enabled = !this.busy && run is { Phase: not RunPhase.Finished };
-        this.players.Enabled = !this.busy && run is { Players: > 0 };
-        this.editLinks.Enabled = !this.busy && run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
-        this.join.Enabled = this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
+        this.connect.Enabled = !this.busy && !string.IsNullOrWhiteSpace(this.server.Text) && this.key.Text.Trim().Length >= 32;
+        this.refresh.Enabled = this.addGroup.Enabled = !this.busy && this.session is not null;
+        this.createRun.Enabled = this.importDiscordRuns.Enabled = !this.busy && this.Group is not null;
+        this.emptyRuns.Visible = run is null;
+        this.runs.TabStop = run is not null;
+        this.emptyRuns.Text = this.Group is null ? "Wähle eine Gruppe." : "In dieser Gruppe gibt es noch keine Runs.";
+        this.runName.Text = run?.Name ?? "Run-Details";
+        this.runStatus.Text = run is null ? "Wähle links einen Run aus." : $"{Phase(run)}  ·  {run.Ready}/{run.Players} Spielstände bereit";
+        var action = PrimaryAction(run);
+        this.primary.Visible = action.HasValue;
+        this.primary.Enabled = !this.busy && action is { Enabled: true };
+        this.primary.Text = action?.Label ?? "";
+        this.end.Visible = this.lifecycle.Visible = run is { Phase: not RunPhase.Finished };
+        this.end.Enabled = !this.busy;
+        this.players.Visible = this.management.Visible = run is { Players: > 0 };
+        this.editLinks.Visible = run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
+        this.players.Enabled = this.editLinks.Enabled = !this.busy;
+        this.invitations.Visible = run is { Selected: true, Invitation.Length: > 0 };
+        this.join.Visible = this.canJoin;
+        this.join.Enabled = this.invite.Enabled = !this.busy;
     }
 
     private async Task ImportDiscordRunsAsync()
@@ -338,14 +492,17 @@ internal sealed class HostingForm : Form
 
     private sealed record Row(HostRun Run)
     {
-        public string Label => $"{this.Run.Name}   |   {this.Run.Phase switch
-        {
-            RunPhase.Lobby => "Lobby",
-            RunPhase.Active => "Aktiv",
-            RunPhase.Paused => "Pausiert",
-            _ => "Abgeschlossen",
-        }}   |   Spielstände: {this.Run.Ready}/{this.Run.Players}";
+        public string Label => $"{this.Run.Name}  ·  {Phase(this.Run)}";
     }
+
+    private static string Phase(HostRun run) => run.Phase switch
+    {
+        RunPhase.Lobby when !run.Selected => "Inaktive Lobby",
+        RunPhase.Lobby => "Lobby",
+        RunPhase.Active => "Aktiv",
+        RunPhase.Paused => "Pausiert",
+        _ => "Abgeschlossen",
+    };
 
     private sealed record PlayerRow(HostPlayer Player)
     {

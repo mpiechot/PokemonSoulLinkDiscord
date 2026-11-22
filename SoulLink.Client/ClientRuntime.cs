@@ -210,6 +210,9 @@ public sealed class ClientRuntime : BackgroundService
     public Task AddRuleAsync(Guid runId, string text) =>
         this.RunActionAsync(runId, t => t.AddRule(text), c => c.InvokeAsync("AddRule", text));
 
+    public Task ChangeRuleAsync(Guid runId, string current, string? replacement) =>
+        this.RunActionAsync(runId, t => t.ChangeRule(current, replacement), c => c.InvokeAsync("ChangeRule", current, replacement));
+
     public string BeginLocalItemSession() => this.items.Begin();
 
     public bool OwnedBridgeReady => this.items.MatchesSession(Volatile.Read(ref this.startedBridgeSession));

@@ -364,9 +364,45 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public void AddRule(Registration registration, string text)
     {
+        string rule = ValidateRule(text);
+        this.UpdateRules(registration, rules =>
+        {
+            if (rules.Contains(rule, StringComparer.OrdinalIgnoreCase)) return false;
+            if (rules.Count >= 24) throw new InvalidOperationException("Dieser Run hat bereits 24 Zusatzregeln.");
+            rules.Add(rule);
+            return true;
+        });
+    }
+
+    public void ChangeRule(Registration registration, string current, string? replacement)
+    {
+        string? rule = replacement is null ? null : ValidateRule(replacement);
+        this.UpdateRules(registration, rules =>
+        {
+            int index = rules.IndexOf(current);
+            if (index < 0) throw new InvalidOperationException("Die Zusatzregel wurde inzwischen geändert oder gelöscht.");
+            if (rule is null) rules.RemoveAt(index);
+            else
+            {
+                if (rule == current) return false;
+                if (rules.Where((_, i) => i != index).Contains(rule, StringComparer.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Diese Zusatzregel gibt es bereits.");
+                rules[index] = rule;
+            }
+            return true;
+        });
+    }
+
+    private static string ValidateRule(string? text)
+    {
         string rule = text?.Trim() ?? "";
         if (rule.Length is < 1 or > 240 || rule.Any(char.IsControl))
             throw new InvalidDataException("Eine Regel braucht 1 bis 240 Zeichen in einer Zeile.");
+        return rule;
+    }
+
+    private void UpdateRules(Registration registration, Func<List<string>, bool> update)
+    {
         store.Execute(tx =>
         {
             var run = tx.Run(registration.RunId);
@@ -374,10 +410,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 throw new UnauthorizedAccessException("Der Spieler gehört nicht zu diesem Run.");
             if (run.Phase == RunPhase.Finished)
                 throw new InvalidOperationException("Der Run ist abgeschlossen.");
-            if (run.AdditionalRules.Contains(rule, StringComparer.OrdinalIgnoreCase)) return false;
-            if (run.AdditionalRules.Count >= 24) throw new InvalidOperationException("Dieser Run hat bereits 24 Zusatzregeln.");
-            run.AdditionalRules.Add(rule);
-            tx.Save(run);
+            if (update(run.AdditionalRules)) tx.Save(run);
             return true;
         });
     }

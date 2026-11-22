@@ -87,13 +87,17 @@ internal static class Program
         var rom = RomSelection.ForProfile(home, profile?.Id);
         if (smokeTest)
         {
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             try
             {
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();
                 DockSmokeTest.VerifyRosterAndTypeArtwork(home);
+                DockSmokeTest.TraceToolPreviews(home, "Checking host");
                 DockSmokeTest.VerifyFirstHostConnection(home);
+                DockSmokeTest.VerifyToolWindows(runtime, home);
+                DockSmokeTest.TraceToolPreviews(home, "Checking launcher");
                 DockSmokeTest.VerifyIdleStartup(runtime, emulator, home);
                 DockSmokeTest.VerifyLinkEditor();
                 DockSmokeTest.VerifyTestPlayers(home);

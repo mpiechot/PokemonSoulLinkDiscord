@@ -283,6 +283,14 @@ try
         var rulesForPartner = (await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules;
         if (!rulesForPartner.SequenceEqual(new[] { rule }))
             throw new InvalidOperationException("The second player did not receive the shared rule.");
+        const string updatedRule = "Keine Heilitems im Kampf.";
+        await hubs[1].InvokeAsync("ChangeRule", rule, updatedRule, lifetime.Token);
+        if (!(await hubs[0].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules.SequenceEqual([updatedRule]))
+            throw new InvalidDataException("A shared rule edit did not reach the other player.");
+        await hubs[0].InvokeAsync("ChangeRule", updatedRule, (string?)null, lifetime.Token);
+        if ((await hubs[1].InvokeAsync<AutomationRun>("Status", lifetime.Token)).AdditionalRules.Count != 0)
+            throw new InvalidDataException("A shared rule deletion did not reach the other player.");
+        Console.WriteLine("Verified: players can add, edit, and delete shared rules over SignalR.");
         var hub = hubs[0];
         var session = sessions[0];
         var eligibility = await hub.InvokeAsync<CatchCheck>("CheckCatch", "Combusken", lifetime.Token);

@@ -132,18 +132,11 @@ public sealed class AutomationHub : Hub
     }
 
     /// <summary>Adds a shared rule to the caller's run.</summary>
-    public void AddRule(string text)
-    {
-        this.RequireReadTracking();
-        try
-        {
-            this.engine.AddRule(this.Registration(), text);
-        }
-        catch (Exception error) when (error is InvalidDataException or InvalidOperationException)
-        {
-            throw new HubException(error.Message);
-        }
-    }
+    public void AddRule(string text) => this.UpdateRules(registration => this.engine.AddRule(registration, text));
+
+    /// <summary>Replaces or removes an existing shared rule in the caller's run.</summary>
+    public void ChangeRule(string current, string? replacement) =>
+        this.UpdateRules(registration => this.engine.ChangeRule(registration, current, replacement));
 
     /// <summary>Updates shared arena progress for the caller's run.</summary>
     public void ChangeArena(int number, bool complete)
@@ -217,6 +210,19 @@ public sealed class AutomationHub : Hub
         }
 
         return run;
+    }
+
+    private void UpdateRules(Action<Registration> update)
+    {
+        this.RequireReadTracking();
+        try
+        {
+            update(this.Registration());
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException)
+        {
+            throw new HubException(error.Message);
+        }
     }
 
     private Registration Registration() => this.Context.Items["registration"] as Registration
