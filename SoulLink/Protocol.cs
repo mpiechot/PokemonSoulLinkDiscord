@@ -218,6 +218,11 @@ public sealed record RunAction(string Guild, string? Reason = null);
 public sealed record RunGroup(Guid Id, string Name);
 public sealed record CreateGroupRequest(string Name);
 public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint);
+public sealed record DiscordRunImportResult(int Imported, int AlreadyImported)
+{
+    public const int MaxArchiveBytes = 20 * 1024 * 1024;
+}
+
 public sealed record HostRun(Guid Id, string Name, RunPhase Phase, bool Selected, string Invitation, int Players, int Ready);
 public sealed record HostPlayer(Guid Id, string Name, string Connection, string Diagnostic);
 public sealed record HostStarterPlayer(Guid Id, string Name, HostStarterPokemon[] Pokemon);

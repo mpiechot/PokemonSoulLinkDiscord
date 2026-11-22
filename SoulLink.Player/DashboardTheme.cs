@@ -3,7 +3,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo }
+internal enum DashboardIcon { Minimize, Maximize, Close, Check, Undo, Box, Skull, Sparkle }
 
 internal static class DashboardTheme
 {
@@ -184,6 +184,30 @@ internal static class DashboardTheme
                 case DashboardIcon.Undo:
                     canvas.DrawLines(pen, [new Point(-3, -7), new Point(-7, -3), new Point(-3, 1)]);
                     canvas.DrawBezier(pen, -7, -3, 13, -7, 10, 8, -1, 7);
+                    break;
+                case DashboardIcon.Box:
+                    pen.Width = 2;
+                    canvas.DrawRectangle(pen, -9, -7, 18, 5);
+                    canvas.DrawLines(pen, [new Point(-7, -2), new Point(-7, 7), new Point(7, 7), new Point(7, -2)]);
+                    canvas.DrawLine(pen, -2, 2, 2, 2);
+                    break;
+                case DashboardIcon.Skull:
+                    using (var skull = new SolidBrush(foreground))
+                    using (var cutout = new SolidBrush(this.Enabled && this.hovered ? this.FlatAppearance.MouseOverBackColor : this.BackColor))
+                    {
+                        canvas.FillEllipse(skull, -8, -8, 16, 13);
+                        canvas.FillRectangle(skull, -4, 1, 8, 7);
+                        canvas.FillEllipse(cutout, -5, -3, 4, 4);
+                        canvas.FillEllipse(cutout, 1, -3, 4, 4);
+                        canvas.FillRectangle(cutout, -0.7f, 5, 1.4f, 3);
+                    }
+                    break;
+                case DashboardIcon.Sparkle:
+                    using (var sparkle = new SolidBrush(foreground))
+                    {
+                        canvas.FillPolygon(sparkle, [new Point(0, -9), new Point(3, -3), new Point(9, 0), new Point(3, 3),
+                            new Point(0, 9), new Point(-3, 3), new Point(-9, 0), new Point(-3, -3)]);
+                    }
                     break;
             }
             canvas.Restore(state);

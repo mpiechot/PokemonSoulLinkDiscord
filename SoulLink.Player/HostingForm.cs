@@ -20,6 +20,7 @@ internal sealed class HostingForm : Form
     private readonly TextBox runName = Input("Name des neuen Runs");
     private readonly Label feedback = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
     private readonly Button createRun;
+    private readonly Button importDiscordRuns;
     private readonly Button start;
     private readonly Button pause;
     private readonly Button resume;
@@ -64,6 +65,8 @@ internal sealed class HostingForm : Form
             this.runName.Clear();
             await this.LoadRunsAsync(client, run.Id);
         });
+        this.importDiscordRuns = DashboardTheme.Button("Discord-Runs importieren");
+        this.importDiscordRuns.Click += async (_, _) => await this.ImportDiscordRunsAsync();
         this.start = this.ActionButton("Starten", "start");
         this.pause = this.ActionButton("Pausieren", "pause");
         this.resume = this.ActionButton("Auswählen / fortsetzen", "load");
@@ -104,7 +107,7 @@ internal sealed class HostingForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
         layout.Controls.Add(Line(this.server, this.key, connect), 0, 0);
         layout.Controls.Add(Line(this.groups, this.groupName, addGroup), 0, 1);
-        layout.Controls.Add(Line(this.runName, this.createRun), 0, 2);
+        layout.Controls.Add(Line(this.runName, this.createRun, this.importDiscordRuns), 0, 2);
         layout.Controls.Add(this.runs, 0, 3);
         layout.Controls.Add(Line(this.start, this.pause, this.resume, this.end, this.players), 0, 4);
         layout.Controls.Add(Line(this.invite, this.join, this.saveProfile, this.editLinks), 0, 5);
@@ -237,6 +240,7 @@ internal sealed class HostingForm : Form
     {
         var run = this.Run;
         this.createRun.Enabled = !this.busy && this.Group is not null;
+        this.importDiscordRuns.Enabled = !this.busy && this.Group is not null;
         this.start.Enabled = !this.busy && run is { Phase: RunPhase.Lobby, Selected: true, Players: > 0 } && run.Ready == run.Players;
         this.pause.Enabled = !this.busy && run is { Phase: RunPhase.Active };
         this.resume.Enabled = !this.busy && (run is { Phase: RunPhase.Paused } or { Phase: RunPhase.Lobby, Selected: false });
@@ -244,6 +248,25 @@ internal sealed class HostingForm : Form
         this.players.Enabled = !this.busy && run is { Players: > 0 };
         this.editLinks.Enabled = !this.busy && run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
         this.join.Enabled = this.saveProfile.Enabled = this.invite.Enabled = !this.busy && run is { Selected: true, Invitation.Length: > 0 };
+    }
+
+    private async Task ImportDiscordRunsAsync()
+    {
+        if (this.Group is not { } group) return;
+        using var picker = new OpenFileDialog
+        {
+            Title = $"Discord-Runs für „{group.Name}“ auswählen",
+            Filter = "Discord-Run-Archiv (*.json;*.json.bak)|*.json;*.json.bak",
+            CheckFileExists = true,
+        };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        await this.UseServerAsync(async client =>
+        {
+            var result = await client.ImportDiscordRunsAsync(group.Id, picker.FileName);
+            if (this.IsDisposed) return;
+            this.feedback.ForeColor = DashboardTheme.Accent;
+            this.feedback.Text = $"„{group.Name}“ · {result.Imported} importiert, {result.AlreadyImported} bereits vorhanden.";
+        });
     }
 
     private async Task ShowLinkEditorAsync(HostAdminClient client)
@@ -330,25 +353,35 @@ internal sealed class HostingForm : Form
     }
 }
 
+internal enum ProfilePickerMode { Both, Load, Join }
+
 internal sealed class ProfilePicker : Form
 {
     private readonly ComboBox choices = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = nameof(Row.Name) };
 
-    public ProfilePicker(PlayerProfileLibrary profiles, Guid current, ClientView view)
+    public ProfilePicker(PlayerProfileLibrary profiles, Guid current, ClientView view, ProfilePickerMode mode)
     {
-        RunDialogs.Configure(this, "Run beitreten / wechseln", new Size(540, 310));
+        bool showInvitation = mode != ProfilePickerMode.Load;
+        bool showProfiles = mode != ProfilePickerMode.Join;
+        string title = mode switch
+        {
+            ProfilePickerMode.Join => "Run beitreten",
+            ProfilePickerMode.Load => "Run laden",
+            _ => "Run beitreten / wechseln",
+        };
+        RunDialogs.Configure(this, title, new Size(540, mode == ProfilePickerMode.Both ? 310 : 210));
         DashboardTheme.StyleComboBox(this.choices);
         var invite = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Einladung einfügen", AccessibleName = "Einladung", MaxLength = 4096 };
         var server = new TextBox { Dock = DockStyle.Top, Text = view.Server, PlaceholderText = "Serveradresse", AccessibleName = "Serveradresse für einen alten Code", Visible = false };
         var join = DashboardTheme.Button("Beitreten");
-        var open = DashboardTheme.Button("Run öffnen");
+        var open = DashboardTheme.Button("Run laden");
         var feedback = new Label { Dock = DockStyle.Bottom, Height = 35, ForeColor = DashboardTheme.Danger };
         join.Enabled = false;
         invite.TextChanged += (_, _) =>
         {
             join.Enabled = !string.IsNullOrWhiteSpace(invite.Text);
             server.Visible = join.Enabled && !PlayerInvitation.ContainsServer(invite.Text);
-            this.AcceptButton = join.Enabled ? join : open;
+            this.AcceptButton = join.Enabled || !showProfiles ? join : open;
             feedback.Text = "";
         };
         join.Click += (_, _) =>
@@ -371,25 +404,33 @@ internal sealed class ProfilePicker : Form
             this.DialogResult = DialogResult.OK;
         };
         this.Controls.Add(feedback);
-        this.Controls.Add(ButtonRow(open));
-        this.Controls.Add(this.choices);
-        this.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
-        this.Controls.Add(ButtonRow(join));
-        this.Controls.Add(server);
-        this.Controls.Add(invite);
-        this.Controls.Add(new Label { Text = "Neue Einladung", Dock = DockStyle.Top, Height = 30 });
-        this.LoadProfiles(profiles, current);
-        this.AcceptButton = open;
-        this.Shown += (_, _) => invite.Focus();
+        if (showProfiles)
+        {
+            this.Controls.Add(ButtonRow(open));
+            this.Controls.Add(this.choices);
+            this.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
+            this.LoadProfiles(profiles, current, includeLocal: mode == ProfilePickerMode.Both);
+            open.Enabled = this.choices.Items.Count > 0;
+        }
+        if (showInvitation)
+        {
+            this.Controls.Add(ButtonRow(join));
+            this.Controls.Add(server);
+            this.Controls.Add(invite);
+            this.Controls.Add(new Label { Text = "Neue Einladung", Dock = DockStyle.Top, Height = 30 });
+        }
+        this.AcceptButton = showProfiles ? open : join;
+        this.Shown += (_, _) => { if (showInvitation) invite.Focus(); else this.choices.Focus(); };
     }
 
     internal Guid SelectedProfile { get; private set; }
 
-    private void LoadProfiles(PlayerProfileLibrary profiles, Guid selected)
+    private void LoadProfiles(PlayerProfileLibrary profiles, Guid selected, bool includeLocal)
     {
-        Row[] rows = [new(Guid.Empty, "Lokaler Spieltest"), .. profiles.List().Select(p => new Row(p.Id, p.Label ?? p.Server))];
+        var saved = profiles.List().Select(p => new Row(p.Id, p.Label ?? p.Server));
+        Row[] rows = includeLocal ? [new(Guid.Empty, "Lokaler Spieltest"), .. saved] : [.. saved];
         this.choices.DataSource = rows;
-        this.choices.SelectedIndex = Math.Max(0, Array.FindIndex(rows, row => row.Id == selected));
+        if (rows.Length > 0) this.choices.SelectedIndex = Math.Max(0, Array.FindIndex(rows, row => row.Id == selected));
     }
 
     private static FlowLayoutPanel ButtonRow(Button button)

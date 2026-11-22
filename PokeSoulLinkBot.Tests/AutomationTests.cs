@@ -174,7 +174,7 @@ public sealed class AutomationTests : IDisposable
         {
             connection.Open();
             using var command = connection.CreateCommand();
-            command.CommandText = "DROP TABLE run_groups; PRAGMA user_version=1;";
+            command.CommandText = "DROP TABLE discord_run_archive; DROP TABLE run_groups; PRAGMA user_version=1;";
             command.ExecuteNonQuery();
         }
         string backup = Path.Combine(this.directory, "backup.sqlite");

@@ -22,6 +22,7 @@ public static class AutomationHosting
         services.AddSingleton(_ => new AutomationStore(configuration["SoulLink:DatabasePath"] ??
             Path.Combine(AppContext.BaseDirectory, "Data", "soullink.sqlite")));
         services.AddSingleton<AutomationEngine>();
+        services.AddSingleton<DiscordRunArchive>();
         services.AddTransient<AutomationHub>();
         services.AddSignalR(options => options.MaximumReceiveMessageSize = Protocol.MaxMessageBytes)
             .AddJsonProtocol(options => options.PayloadSerializerOptions = Protocol.Json);
@@ -116,6 +117,7 @@ public static class AutomationHosting
         admin.MapPost("/groups", (CreateGroupRequest request, AutomationEngine engine) => engine.CreateGroup(request.Name));
         admin.MapGet("/groups/{id:guid}/runs", (Guid id, AutomationEngine engine) => engine.GroupRuns(id));
         admin.MapPost("/groups/{id:guid}/runs", (Guid id, GroupRunRequest request, AutomationEngine engine) => engine.CreateGroupRun(id, request));
+        admin.MapPost("/groups/{id:guid}/discord-runs/import", DiscordRunArchive.ImportAsync);
         admin.MapPost("/groups/{id:guid}/runs/{run:guid}/{action}", (Guid id, Guid run, string action, AutomationEngine engine) =>
             engine.ChangeGroupRun(id, run, action));
         admin.MapGet("/groups/{id:guid}/runs/{run:guid}/players", (Guid id, Guid run, AutomationEngine engine) => engine.GroupRunPlayers(id, run));

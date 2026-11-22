@@ -217,9 +217,13 @@ public sealed class ClientRuntime : BackgroundService
     public bool CanAddPcItems => this.items.Ready;
 
     public bool CanSaveState => this.items.CanSave;
+    public bool CanLoadState => this.items.CanLoad;
 
     public Task SaveSlotOneAsync(CancellationToken cancellationToken = default) =>
         this.items.SaveSlotOneAsync(cancellationToken);
+
+    public Task LoadSlotOneAsync(CancellationToken cancellationToken = default) =>
+        this.items.LoadSlotOneAsync(cancellationToken);
 
     public Task<int> AddPcItemsAsync(PcItem item, CancellationToken cancellationToken = default) =>
         this.items.AddAsync(item, cancellationToken);
@@ -547,6 +551,7 @@ public sealed class ClientRuntime : BackgroundService
                             var frame = Protocol.Deserialize<BridgeFrame>(line);
                             if (frame is { Version: Protocol.Version, Type: "bridge-ready" })
                             {
+                                this.items.ObserveReady(stream, frame);
                                 if (this.items.MatchesSession(frame.ItemSession)) Volatile.Write(ref this.startedBridgeSession, frame.ItemSession);
                                 continue;
                             }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using PokeSoulLinkBot.Automation;
 using SoulLink;
 using SoulLink.Client;
 using SoulLink.Demo;
@@ -14,6 +15,58 @@ namespace PokeSoulLinkBot.Tests;
 public sealed class PlayerClientTests : IDisposable
 {
     private readonly string directory = Path.Combine(Path.GetTempPath(), "soullink-player-tests-" + Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public async Task HostImportsDiscordRunsIntoOneGroupAndPreservesTheSourceDocument()
+    {
+        const string key = "test-key-for-the-local-host-import-endpoint";
+        string database = Path.Combine(this.directory, "archive.sqlite");
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Logging.ClearProviders();
+        builder.Configuration["SoulLink:AdminKey"] = key;
+        builder.Configuration["SoulLink:DatabasePath"] = database;
+        builder.Services.AddSingleton<Discord.WebSocket.DiscordSocketClient>();
+        builder.Services.AddAutomation(builder.Configuration);
+        await using var app = builder.Build();
+        app.MapAutomation();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        await app.StartAsync(timeout.Token);
+
+        using var host = new HostAdminClient(app.Urls.Single(), key);
+        using var guest = new HostAdminClient(app.Urls.Single(), new string('x', 32));
+        var group = await host.CreateGroupAsync("Rubin-Gruppe");
+        var other = await host.CreateGroupAsync("Andere Gruppe");
+        var live = await host.CreateRunAsync(group.Id, "Aktuelle Lobby");
+        Guid runId = Guid.NewGuid();
+        string run = $$$"""
+            {"Id":"{{{runId}}}","GuildId":"123","Name":"Alter Run","Game":"Rubin",
+             "StartedAtUtc":"2025-02-02T16:00:00Z","EndReason":"Wipe",
+             "Players":[{"UserId":123,"UserName":"Anne"}],"CompletedArenas":[],"LinkGroups":[],
+             "activeLinks":[null],"HistoricalField":{"keep":true}}
+            """;
+        string path = Path.Combine(this.directory, "runs.json");
+        string archive = "[" + run + "]";
+        await File.WriteAllTextAsync(path, archive, new System.Text.UTF8Encoding(true), timeout.Token);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => guest.ImportDiscordRunsAsync(group.Id, path));
+        Assert.Equal(new DiscordRunImportResult(1, 0), await host.ImportDiscordRunsAsync(group.Id, path));
+        Assert.Equal(new DiscordRunImportResult(0, 1), await host.ImportDiscordRunsAsync(group.Id, path));
+        Assert.Equal(archive, await File.ReadAllTextAsync(path, timeout.Token));
+
+        string anotherRun = run.Replace(runId.ToString(), Guid.NewGuid().ToString(), StringComparison.Ordinal);
+        string mixedArchive = Path.Combine(this.directory, "mixed.json");
+        await File.WriteAllTextAsync(mixedArchive, $"[{anotherRun},{run}]", timeout.Token);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.ImportDiscordRunsAsync(other.Id, mixedArchive));
+        await File.WriteAllTextAsync(mixedArchive, "[" + anotherRun + ",{}]", timeout.Token);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.ImportDiscordRunsAsync(other.Id, mixedArchive));
+
+        var reopened = new AutomationStore(database);
+        var saved = Assert.Single(reopened.Execute(tx => tx.ArchivedDiscordRuns(group.Id)));
+        Assert.Equal(runId, saved.Id);
+        Assert.Equal(run, saved.Document);
+        Assert.Empty(reopened.Execute(tx => tx.ArchivedDiscordRuns(other.Id)));
+        Assert.Equal(live.Id, Assert.Single(await host.RunsAsync(group.Id)).Id);
+    }
 
     [Fact]
     public void AnInvitationCanSwitchTheSameExeToAnotherRunAndStaySelectedOnRestart()

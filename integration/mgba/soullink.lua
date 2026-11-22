@@ -22,6 +22,7 @@ local itemSession = SOULLINK_ITEM_SESSION
 SOULLINK_ITEM_SESSION = nil
 local peer, pending, position = nil, nil, 1
 local itemInput, itemReply, lastItemRequest = "", nil, nil
+local loadingSlot, resetAfterReply = false, false
 local function isPcGrantItem(item)
     return item and ((item >= 1 and item <= 12) or item == 68)
 end
@@ -173,17 +174,26 @@ local function receiveLocalAction()
         line:match("^(%u+) (%x+) ([%w_]+) (%d+) ([%x%-]+) (%d+) (%d+)$")
     local item = tonumber(kind)
     local save = action == "SAVE" and item == 1
+    local load = action == "LOAD" and item == 1
     if token ~= itemSession or not request or #request ~= 36 or request == lastItemRequest or
-        not (save or (action == "PC" and isPcGrantItem(item))) then return end
+        not (save or load or (action == "PC" and isPcGrantItem(item))) then return end
     lastItemRequest = request
     local ok, outcome, quantity = pcall(function()
         local profile = activeProfile
-        if profile ~= profiles.AXVD or epoch ~= expectedEpoch or readTrainerId(profile) ~= tonumber(trainer) or tonumber(expires) < os.time() then
+        if profile ~= profiles.AXVD or epoch ~= expectedEpoch or tonumber(expires) < os.time() then
             return "changed"
         end
+        if load then
+            loadingSlot = true
+            local loaded = readCore():loadStateSlot(1)
+            resetAfterReply = resetAfterReply or loaded
+            return loaded and "ok" or "load"
+        end
+        if readTrainerId(profile) ~= tonumber(trainer) then return "changed" end
         if save then return readCore():saveStateSlot(1) and "ok" or "save" end
         return grantPcItem(profile, item)
     end)
+    loadingSlot = false
     itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","itemQuantity":%s}\n',
         itemSession, request, ok and outcome or "changed", quantity or "null")
 end
@@ -442,6 +452,7 @@ local function snapshot(frame)
 end
 
 local function reset()
+    resetAfterReply = false
     epochSerial = epochSerial + 1
     epoch = epochSeed .. tostring(epochSerial)
     activeProfile, battleFaints, lastPosition, gymLineups, rubyTypes = nil, {}, "null", nil, nil
@@ -451,7 +462,20 @@ local function reset()
     stop()
 end
 
+local function flushActionReply()
+    if peer and itemReply and not pending then
+        pending, position, itemReply = itemReply, 1, nil
+        sendPending()
+    end
+end
+
 local function onFrame()
+    if resetAfterReply then
+        sendPending()
+        flushActionReply()
+        if not peer or not pending then reset() end
+        return
+    end
     tick = tick + 1
     local frame = readCore():currentFrame()
     if lastFrame >= 0 and frame < lastFrame then reset() end
@@ -465,19 +489,22 @@ local function onFrame()
     end
     sendPending()
     receiveLocalAction()
-    if itemReply and not pending then
-        pending, position, itemReply = itemReply, 1, nil
-        sendPending()
+    flushActionReply()
+    if resetAfterReply then
+        if not peer or not pending then reset() end
+        return
     end
     if (tick % 30 ~= 0 and not faintDirty and not wildDirty and not battleDirty) or pending then return end
     if not peer then
-        local valid, profileOrError = pcall(readProfile)
-        if not valid then report(tostring(profileOrError)); return end
+        local valid, codeOrError, profile = pcall(readProfile)
+        if not valid then report(tostring(codeOrError)); return end
+        activeProfile = profile
         peer = socket.tcp()
         peer:add("error", function() stop() end)
         if not peer:connect("127.0.0.1", port) then stop(); report("Local client unavailable; retrying."); return end
         if itemSession then
-            pending = string.format('{"version":1,"type":"bridge-ready","itemSession":"%s"}\n', itemSession)
+            pending = string.format('{"version":1,"type":"bridge-ready","itemSession":"%s","epoch":"%s"}\n',
+                itemSession, profile == profiles.AXVD and epoch or "")
             sendPending()
             if not peer or pending then return end
         end
@@ -494,7 +521,10 @@ end
 if SOULLINK_STOP then SOULLINK_STOP() end
 local frameCallback = callbacks:add("frame", onFrame)
 local resetCallback = callbacks:add("reset", reset)
-local loadCallback = callbacks:add("loadState", reset)
+local loadCallback = callbacks:add("loadState", function()
+    -- The client must receive the slot result before resetting the stream and taking a new baseline.
+    if loadingSlot then resetAfterReply = true else reset() end
+end)
 SOULLINK_STOP = function()
     callbacks:remove(frameCallback)
     callbacks:remove(resetCallback)

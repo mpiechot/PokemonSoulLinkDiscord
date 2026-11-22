@@ -94,6 +94,7 @@ internal static class Program
                 DockSmokeTest.VerifyScrollDesign();
                 DockSmokeTest.VerifyRosterAndTypeArtwork(home);
                 DockSmokeTest.VerifyFirstHostConnection(home);
+                DockSmokeTest.VerifyIdleStartup(runtime, emulator, home);
                 DockSmokeTest.VerifyLinkEditor();
                 DockSmokeTest.VerifyTestPlayers(home);
             }
@@ -133,13 +134,14 @@ internal static class Program
     {
         HostingSession? session = null;
         bool restoreHosting = false;
+        bool launchOnOpen = false;
         string sprites = Path.Combine(Path.GetDirectoryName(executable)!, "sprites");
         while (true)
         {
             string profileKey = profile?.Id.ToString("N") ?? "local";
             using var runtime = CreateRuntime(home, profile, localTracking: true);
             using var form = new CompanionForm(runtime, emulator, RomFor(home, profile), Path.Combine(home, "Bridge", profileKey),
-                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting);
+                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting, launchOnOpen);
             Application.Run(form);
             if (form.PendingUpdate is { } update)
             {
@@ -154,7 +156,11 @@ internal static class Program
             }
 
             if (form.RequestedProfile is not Guid runProfile || profiles is null) return;
-            try { profile = profiles.OpenForStartup(null, runProfile); }
+            try
+            {
+                profile = runProfile == Guid.Empty ? null : profiles.Read(runProfile)
+                    ?? throw new InvalidDataException("Das Run-Profil fehlt.");
+            }
             catch (Exception error) when (RunDialogs.IsActionError(error))
             {
                 MessageBox.Show(error.Message, "SoulLink – Run-Profil", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -162,6 +168,7 @@ internal static class Program
             }
             session = form.NextHostingSession;
             restoreHosting = form.RestoreHosting;
+            launchOnOpen = true;
             requestedRom = null;
             args = ["--run-profile", runProfile.ToString("D")];
         }

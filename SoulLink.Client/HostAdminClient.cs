@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using SoulLink;
@@ -34,6 +35,18 @@ public sealed class HostAdminClient : IDisposable
     public Task<HostRun> CreateRunAsync(Guid group, string name) =>
         this.SendAsync<HostRun>(HttpMethod.Post, $"groups/{group:D}/runs", new GroupRunRequest(name));
 
+    public async Task<DiscordRunImportResult> ImportDiscordRunsAsync(Guid group, string path)
+    {
+        using var input = File.OpenRead(path);
+        if (input.Length > DiscordRunImportResult.MaxArchiveBytes) throw new InvalidDataException("Die JSON-Datei darf höchstens 20 MB groß sein.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"groups/{group:D}/discord-runs/import")
+        {
+            Content = new StreamContent(input),
+        };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return await this.SendAsync<DiscordRunImportResult>(request);
+    }
+
     public Task<HostPlayer[]> PlayersAsync(Guid group, Guid run) =>
         this.SendAsync<HostPlayer[]>(HttpMethod.Get, $"groups/{group:D}/runs/{run:D}/players");
 
@@ -60,6 +73,11 @@ public sealed class HostAdminClient : IDisposable
     {
         using var request = new HttpRequestMessage(method, path);
         if (data is not null) request.Content = JsonContent.Create(data, options: Protocol.Json);
+        return await this.SendAsync<T>(request);
+    }
+
+    private async Task<T> SendAsync<T>(HttpRequestMessage request) where T : class
+    {
         using var response = await this.http.SendAsync(request);
         if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("Der Server hat den Admin-Schlüssel nicht akzeptiert.");
         if (!response.IsSuccessStatusCode)

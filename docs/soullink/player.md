@@ -1,12 +1,12 @@
 # Für Mitspieler: SoulLink starten
 
-Du bekommst **einmal die SoulLink.exe**. Öffne **SoulLink → Run beitreten / wechseln**, füge die Einladung ein und klicke **Beitreten**. Danach bestätigst du deinen Spielernamen und dein Karten-Icon und wählst deine lokale `.gba`-Datei. Ein Doppelklick auf die EXE öffnet später den zuletzt gewählten Run.
+Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** öffnet den zuletzt gestarteten Run. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
 
 SoulLink merkt sich pro Run die Anmeldung und die ROM-Auswahl. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
 Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Das Menü **SoulLink** oben links enthält **Spiel starten**, **mGBA lösen** und **Einrichtung**. Unten zeigen die farbigen Punkte den Status von Run-Server und Spieldaten an. Beim Darüberfahren erscheint ein kurzer Hinweis.
 
-Speichere wie gewohnt im Spiel. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
+Im **SoulLink**-Menü legst du mit **Speichern (Slot 1)** einen mGBA-Spielstand ab. **Schnellladen (Slot 1)** stellt ihn wieder her und ist auch am Titelbildschirm verfügbar. Das Kreuz im SoulLink-Fenster beendet auch das von SoulLink gestartete mGBA, einschließlich eines ausgelösten Fensters. Danach beendet SoulLink die lokale Lesebrücke und meldet den Spieler am gemeinsamen Run ab.
 
 Links stehen Fänge, vollständige Links und Todesfälle im scrollbaren Newsfeed. Unter dem Spiel ordnet das Team-Grid die Spieler in Spalten und die verbundenen Pokémon in gemeinsamen Zeilen an. Oben öffnen **Box**, **Tot** und **Shinies** eigene Grids. **Fangorte** zeigt die bisher erfassten Fanggebiete als Tags. Der **Catch-Check** akzeptiert deutsche und englische Namen und prüft die Evolutionsfamilie gegen die erfassten Pokémon des Runs.
 
@@ -51,6 +51,8 @@ Für einen neuen Run bekommst du eine Einladung als Text. Derselbe Dialog öffne
 ## Für Gastgeber
 
 Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden / aktualisieren**. Lege eine Gruppe und darin einen Run an. Über **Einladung kopieren** erhältst du den Text zum Weitergeben. Der Run wird dabei auch für dich gemerkt. Sobald alle Mitspieler gültige Spieldaten übertragen haben, aktualisierst du die Ansicht und klickst auf **Starten**. Pause, Fortsetzen, Abschließen und der neue Abgleich eines Spielstands stehen ebenfalls in der Gastgeber-Ansicht.
+
+Für alte Discord-Runs wählst du in der Gastgeberverwaltung die Zielgruppe und klickst auf **Discord-Runs importieren**. Wähle die `runs.json` oder ihre `.json.bak` bis 20 MB. Der aktualisierte Server archiviert alle Runs aus der Datei mit ihren Originaldaten in SQLite für eine spätere Gruppenstatistik. Ein erneuter Import in dieselbe Gruppe überspringt vorhandene Runs. Enthält die Datei einen bereits einer anderen Gruppe zugeordneten Run, wird der gesamte Import abgelehnt.
 
 Beginnt ihr gemeinsam ein neues Spiel, kannst du den Run starten, sobald alle im Spielfeld angekommen sind. SoulLink erfasst die frisch gewählten Starter automatisch. Mit **Links bearbeiten** kannst du Starter und Fänge im aktiven oder pausierten Run nachträglich zuordnen. Ziehe jedes Pokémon in seiner Spielerspalte zur gewünschten Zeile oder zu **Unverlinkt**. **Links speichern** übernimmt die Zuordnung für alle. Der Starter-Link lässt Route 101 für einen regulären Fang frei. Im Grid steht **Starter** auf den zugeordneten Pokémon. Beim Darüberfahren siehst du den ursprünglichen Fangort.
 

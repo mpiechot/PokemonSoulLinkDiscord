@@ -16,6 +16,12 @@ internal sealed class CompanionForm : Form
     private readonly PlayerProfileLibrary? profiles;
     private readonly Label status = new();
     private readonly Label gameStatus = new();
+    private readonly TableLayoutPanel launcher = new() { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3 };
+    private readonly Button resumeRun;
+    private readonly Button loadRun;
+    private readonly Button joinFromLauncher;
+    private readonly Control news;
+    private readonly Control sidebar;
     private readonly EmulatorSurface surface = new();
     private readonly EmulatorDock dock;
     private readonly RunDashboard dashboard;
@@ -35,6 +41,7 @@ internal sealed class CompanionForm : Form
     private readonly Button pendingDeathButton;
     private readonly Button pendingEndButton;
     private readonly ToolStripMenuItem saveGame;
+    private readonly ToolStripMenuItem loadGame;
     private readonly ToolStripMenuItem startGame;
     private readonly ToolStripMenuItem toggleDock;
     private readonly ToolStripMenuItem joinRun;
@@ -70,14 +77,14 @@ internal sealed class CompanionForm : Form
     private TypeChartForm? typeChart;
     private RunEndForm? runEnd;
     private Guid? shownRunEnd;
-    private string? saveFeedback;
-    private DateTimeOffset saveFeedbackUntil;
+    private string? stateFeedback;
+    private DateTimeOffset stateFeedbackUntil;
     private bool actionRunning;
     private Guid? displayedRunId;
 
     public CompanionForm(ClientRuntime runtime, PortableMgba emulator, RomSelection rom, string bridgeDirectory,
         string? requestedRom, PlayerProfile? profile, string sprites, string? artworkCache = null, PlayerProfileLibrary? profiles = null,
-        int? testSlot = null, HostingSession? hostingSession = null, bool restoreHosting = false)
+        int? testSlot = null, HostingSession? hostingSession = null, bool restoreHosting = false, bool launchOnOpen = false)
     {
         this.runtime = runtime;
         this.emulator = emulator;
@@ -126,11 +133,13 @@ internal sealed class CompanionForm : Form
         this.programMenu.BackColor = DashboardTheme.Panel;
         this.programMenu.ForeColor = DashboardTheme.Text;
         this.programMenu.Renderer = new ToolStripProfessionalRenderer(new ProgramMenuColors());
-        this.startGame = new ToolStripMenuItem("Spiel starten", null, async (_, _) => await this.StartGameAsync());
+        this.startGame = new ToolStripMenuItem(profile is null ? "Lokalen Spieltest starten" : "Spiel starten", null, async (_, _) => await this.StartGameAsync());
         this.toggleDock = new ToolStripMenuItem("mGBA lösen", null, (_, _) => this.ChangeDock());
         this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
-        this.saveGame = new ToolStripMenuItem("Speichern (Slot 1)", null, async (_, _) => await this.SaveGameAsync());
-        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.saveGame = new ToolStripMenuItem("Speichern (Slot 1)", null, async (_, _) => await this.ChangeGameStateAsync(load: false));
+        this.loadGame = new ToolStripMenuItem("Schnellladen (Slot 1)", null, async (_, _) => await this.ChangeGameStateAsync(load: true));
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame,
+            new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
             this.RunPlayerTestInstance()));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
@@ -200,6 +209,35 @@ internal sealed class CompanionForm : Form
         this.gameStatus.ForeColor = DashboardTheme.Muted;
         this.gameStatus.Padding = new Padding(24);
         this.surface.Controls.Add(this.gameStatus);
+        this.resumeRun = Button("Run fortsetzen", async (_, _) =>
+        {
+            if (this.profiles?.Current() is { } last) await this.SwitchProfileAsync(last.Id);
+            else await this.StartGameAsync();
+        });
+        this.resumeRun.ForeColor = DashboardTheme.Accent;
+        this.loadRun = Button("Run laden", async (_, _) => await this.JoinOrSwitchAsync(ProfilePickerMode.Load));
+        this.joinFromLauncher = Button("Run beitreten", async (_, _) => await this.JoinOrSwitchAsync(ProfilePickerMode.Join));
+        var launchActions = new FlowLayoutPanel
+        {
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.TopDown, WrapContents = false,
+            Anchor = AnchorStyles.None, Margin = new Padding(0),
+        };
+        foreach (var button in new[] { this.resumeRun, this.loadRun, this.joinFromLauncher })
+        {
+            button.AutoSize = false;
+            button.Size = new Size(190, 42);
+            button.Margin = new Padding(0, 4, 0, 4);
+            launchActions.Controls.Add(button);
+        }
+        this.launcher.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        this.launcher.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        this.launcher.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        this.launcher.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        this.launcher.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        this.launcher.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        this.launcher.Controls.Add(launchActions, 1, 1);
+        this.surface.Controls.Add(this.launcher);
+        this.launcher.BringToFront();
         this.surface.SizeChanged += (_, _) => this.dock.Resize();
         this.surface.GameClicked += () => this.dock.FocusGame();
         this.dashboard = new RunDashboard(this.discordIcons);
@@ -213,11 +251,11 @@ internal sealed class CompanionForm : Form
         var places = Button("Fangorte", (_, _) => this.ShowPlaces());
         places.Font = new Font("Segoe UI", 8.5f);
         places.Margin = new Padding(0);
-        var news = Section("Newsfeed", this.feed, places);
+        this.news = Section("Newsfeed", this.feed, places);
         var teamPanel = Section("Aktuelles Team", this.team,
-            this.RosterButton("storage-box", "Box", RosterView.Box),
-            this.RosterButton("death", "Tot", RosterView.Dead),
-            this.RosterButton("shiny", "Shinies", RosterView.Shiny));
+            this.RosterButton(DashboardIcon.Box, "Box", RosterView.Box, DashboardTheme.Accent),
+            this.RosterButton(DashboardIcon.Skull, "Tot", RosterView.Dead, DashboardTheme.Text),
+            this.RosterButton(DashboardIcon.Sparkle, "Shinies", RosterView.Shiny, DashboardTheme.Gold));
         var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
         sidebar.RowStyles.Add(this.catchRow);
@@ -227,12 +265,13 @@ internal sealed class CompanionForm : Form
         sidebar.Controls.Add(this.encounterCheck, 0, 1);
         sidebar.Controls.Add(Section("Live-Kämpfe", this.battles), 0, 2);
         sidebar.Controls.Add(teamPanel, 0, 3);
+        this.sidebar = sidebar;
 
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(7, 4, 0, 0) };
         footer.Controls.AddRange([this.runConnection, this.gameConnection]);
         layout.Controls.Add(bar, 0, 0);
         layout.SetColumnSpan(bar, 3);
-        layout.Controls.Add(news, 0, 1);
+        layout.Controls.Add(this.news, 0, 1);
         layout.Controls.Add(this.surface, 1, 1);
         layout.Controls.Add(sidebar, 2, 1);
         layout.Controls.Add(footer, 0, 2);
@@ -241,9 +280,13 @@ internal sealed class CompanionForm : Form
 
 
         this.refresh.Tick += (_, _) => this.RefreshGame();
+        this.Activated += (_, _) =>
+        {
+            if (!this.closing && !this.launching && this.game is not { HasExited: false }) this.Render();
+        };
         this.Shown += async (_, _) =>
         {
-            await this.StartAsync();
+            if (launchOnOpen || this.requestedRom is not null) await this.StartGameAsync(path: this.requestedRom);
             if (restoreHosting) await this.OpenHostingAsync();
             await this.CheckUpdatesAsync(interactive: false);
         };
@@ -323,7 +366,7 @@ internal sealed class CompanionForm : Form
         }
     }
 
-    private async Task JoinOrSwitchAsync()
+    private async Task JoinOrSwitchAsync(ProfilePickerMode mode = ProfilePickerMode.Both)
     {
         if (this.closing) return;
         if (this.profiles is null)
@@ -332,7 +375,8 @@ internal sealed class CompanionForm : Form
             return;
         }
         Guid current = this.profile?.Id ?? Guid.Empty;
-        using var dialog = new ProfilePicker(this.profiles, current, this.runtime.Status());
+        var view = this.runtime.Status();
+        using var dialog = new ProfilePicker(this.profiles, current, this.profile is { } profile ? view with { Server = profile.Server } : view, mode);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
         await this.SwitchProfileAsync(dialog.SelectedProfile);
     }
@@ -341,7 +385,7 @@ internal sealed class CompanionForm : Form
     {
         if (this.closing || this.profiles is null) return;
         bool firstOpen = this.hosting is null;
-        this.hosting ??= new HostingForm(this.profiles, this.runtime.Status().Server, this.hostingSession, this.SwitchProfileAsync);
+        this.hosting ??= new HostingForm(this.profiles, this.profile?.Server ?? this.runtime.Status().Server, this.hostingSession, this.SwitchProfileAsync);
         this.ShowTool(this.hosting);
         if (firstOpen && this.hostingSession is not null) await this.hosting.ConnectAsync();
     }
@@ -352,7 +396,7 @@ internal sealed class CompanionForm : Form
         Guid current = this.profile?.Id ?? Guid.Empty;
         if (selection == current)
         {
-            if (current == Guid.Empty) await this.StartGameAsync();
+            if (this.game is not { HasExited: false }) await this.StartGameAsync();
             else await this.OpenIdentityAsync();
             return;
         }
@@ -438,9 +482,9 @@ internal sealed class CompanionForm : Form
         return button;
     }
 
-    private Button RosterButton(string icon, string title, RosterView filter)
+    private Button RosterButton(DashboardIcon icon, string title, RosterView filter, Color foreground)
     {
-        var button = DashboardTheme.ImageButton(title, this.discordIcons.Get(icon));
+        var button = DashboardTheme.IconButton(icon, title, DashboardTheme.Panel, DashboardTheme.Border, foreground);
         button.Size = new Size(30, 24);
         button.Margin = new Padding(2, 0, 0, 0);
         button.Click += (_, _) => this.ShowRoster(title, filter);
@@ -472,21 +516,22 @@ internal sealed class CompanionForm : Form
         tool.Activate();
     }
 
-    private async Task SaveGameAsync()
+    private async Task ChangeGameStateAsync(bool load)
     {
         if (this.closing) return;
         try
         {
             this.dock.FocusGame();
-            await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
-            this.saveFeedback = "Spielstand in mGBA auf Slot 1 gespeichert.";
+            if (load) await this.runtime.LoadSlotOneAsync(this.updateLifetime.Token);
+            else await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
+            this.stateFeedback = load ? "Spielstand aus Slot 1 geladen." : "Spielstand in mGBA auf Slot 1 gespeichert.";
         }
         catch (Exception error) when (RunDialogs.IsActionError(error))
         {
-            this.saveFeedback = error.Message;
+            this.stateFeedback = error.Message;
         }
         if (this.closing) return;
-        this.saveFeedbackUntil = DateTimeOffset.UtcNow.AddSeconds(5);
+        this.stateFeedbackUntil = DateTimeOffset.UtcNow.AddSeconds(5);
         this.dock.FocusGame();
         this.Render();
     }
@@ -629,29 +674,9 @@ internal sealed class CompanionForm : Form
         }
     }
 
-    private async Task StartAsync()
-    {
-        try
-        {
-            await this.runtime.StartAsync(CancellationToken.None);
-            if (this.closing || this.IsDisposed) return;
-            this.started = true;
-            this.refresh.Start();
-            var view = this.runtime.Status();
-            if (this.profile is not null && !view.Registered && view.Player.Length == 0) await this.OpenIdentityAsync();
-            if (this.profile is not null || this.profiles is null || this.requestedRom is not null || this.rom.Read() is not null)
-                await this.StartGameAsync(path: this.requestedRom);
-        }
-        catch (Exception exception)
-        {
-            this.gameError = exception.Message;
-            if (!this.closing && !this.IsDisposed) this.Render();
-        }
-    }
-
     private Task StartGameAsync(bool chooseRom = false, string? path = null)
     {
-        if (this.closing || !this.started || this.game is { HasExited: false }) return Task.CompletedTask;
+        if (this.closing || this.game is { HasExited: false }) return Task.CompletedTask;
         if (this.launching) return this.gameLaunch ?? Task.CompletedTask;
         return this.gameLaunch = this.LaunchGameAsync(chooseRom, path);
     }
@@ -688,6 +713,18 @@ internal sealed class CompanionForm : Form
             this.rom.Save(path);
             await this.runtime.SelectLocalGameAsync(path);
             if (this.closing) return;
+            var view = this.runtime.Status();
+            if (this.profile is not null && !view.Registered && view.Player.Length == 0)
+            {
+                await this.OpenIdentityAsync();
+                if (this.runtime.Status().Player.Length == 0 || this.closing) return;
+            }
+            if (!this.started)
+            {
+                await this.runtime.StartAsync(this.updateLifetime.Token);
+                this.started = true;
+                if (this.closing) return;
+            }
             string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort, this.runtime.BeginLocalItemSession());
             this.game = await Task.Run(() => this.emulator.Start(path, bridge));
             if (this.closing) return;
@@ -695,7 +732,9 @@ internal sealed class CompanionForm : Form
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
             this.dockUntil = DateTimeOffset.UtcNow.AddSeconds(12);
+            this.refresh.Start();
             this.RefreshGame();
+            this.profiles?.Choose(this.profile?.Id ?? Guid.Empty);
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
@@ -721,6 +760,11 @@ internal sealed class CompanionForm : Form
             this.startupScriptingClosed = EmulatorDock.CloseStartupScriptingWindow(game);
         }
         this.Render();
+        if (this.game is not { HasExited: false })
+        {
+            this.refresh.Stop();
+            return;
+        }
         var view = this.runtime.Status();
         var pending = OwnDeaths(view);
         if (this.activeDeath is { } popup && pending.FirstOrDefault(d => d.IncidentId == popup.IncidentId) is { } update)
@@ -751,8 +795,18 @@ internal sealed class CompanionForm : Form
     private void Render()
     {
         var view = this.runtime.Status();
-        this.displayedRunId = view.Run?.Id;
         bool running = this.game is { HasExited: false };
+        this.displayedRunId = running ? view.Run?.Id : null;
+        this.news.Visible = this.sidebar.Visible = running;
+        bool idle = !running && !this.launching;
+        this.launcher.Visible = idle;
+        if (idle)
+        {
+            this.resumeRun.Visible = this.profiles?.Current() is not null ||
+                ((this.profiles is null || this.profile is null) && this.rom.Read() is not null);
+            this.loadRun.Visible = this.profiles?.List().Length > 0;
+            this.joinFromLauncher.Visible = this.profiles is not null || this.profile is not null;
+        }
         this.cheats.Enabled = running && this.runtime.CanAddPcItems;
         string registration = view.IsLocalRun ? "Lokaler Spieltest"
             : view.Run is { } run ? run.Name + ": " + view.Player + " (" + (run.Phase switch
@@ -763,11 +817,12 @@ internal sealed class CompanionForm : Form
                 _ => "Abgeschlossen",
             }) + ")"
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
-        this.status.Text = this.shutdownError ?? this.joinError ??
-            (DateTimeOffset.UtcNow < this.saveFeedbackUntil ? this.saveFeedback : null) ?? this.updateStatus ??
+        if (!running) registration = this.profile is { } profile ? profile.Label ?? "SoulLink" : "SoulLink";
+        this.status.Text = this.shutdownError ?? this.joinError ?? (!running ? this.gameError : null) ??
+            (DateTimeOffset.UtcNow < this.stateFeedbackUntil ? this.stateFeedback : null) ?? this.updateStatus ??
             (this.instanceLabel is { } label ? $"{label} | {registration}" : registration);
-        this.SetConnection(this.runConnection, view.Run is not null && !view.IsLocalRun,
-            view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
+        this.SetConnection(this.runConnection, running && view.Run is not null && !view.IsLocalRun,
+            !running ? "Kein Run geöffnet." : view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
         var sharedPlayer = view.IsLocalRun ? null : view.Run?.Players.FirstOrDefault(player => player.Id == view.LocalPlayerId);
         bool synchronized = view.Snapshot is not null && (sharedPlayer is null || sharedPlayer.Connection == "Ready");
         string gameHint = sharedPlayer?.Connection switch
@@ -777,22 +832,24 @@ internal sealed class CompanionForm : Form
             "Stale" => "Keine aktuellen Daten aus mGBA.",
             _ => this.runtime.OwnedBridgeReady ? "mGBA verbunden. Neues Spiel beginnen oder Spielstand laden." : "Spiel in mGBA öffnen.",
         };
-        this.SetConnection(this.gameConnection, synchronized, gameHint);
-        this.gameStatus.Visible = !this.dock.Attached;
+        this.SetConnection(this.gameConnection, running && synchronized, gameHint);
+        this.gameStatus.Visible = !idle && !this.dock.Attached;
         this.gameStatus.Text = this.gameError ?? (this.launching ? "mGBA startet …"
             : running ? "mGBA läuft separat. Im SoulLink-Menü einbetten."
             : this.profiles is not null && this.profile is null ? "Füge deine Einladung unter „SoulLink → Run beitreten / wechseln“ ein."
             : "Wähle beim ersten Start die ROM für diesen Run.");
-        this.startGame.Enabled = this.started && !running && !this.launching;
+        this.startGame.Enabled = !running && !this.launching;
         this.toggleDock.Enabled = running;
         this.saveGame.Enabled = running && this.runtime.CanSaveState;
+        this.loadGame.Enabled = running && this.runtime.CanLoadState;
         this.toggleDock.Text = this.dock.Attached ? "mGBA lösen" : "mGBA einbetten";
         this.joinRun.Available = this.profiles is not null || (this.profile is not null && !view.Registered);
-        this.checkCatch.Enabled = view.Run is not null;
-        this.pendingDeathButton.Visible = OwnDeaths(view).Length > 0;
-        var pendingEnd = OwnRunEnd(view);
+        this.checkCatch.Enabled = this.displayedRunId is not null;
+        this.pendingDeathButton.Visible = running && OwnDeaths(view).Length > 0;
+        var pendingEnd = running ? OwnRunEnd(view) : null;
         this.pendingEndButton.Visible = pendingEnd is not null;
         if (this.runEnd is { IsDisposed: false } end && end.IncidentId != pendingEnd?.Id) end.Close();
+        if (!running) return;
         this.dashboard.Render(view);
         this.RenderEncounterCheck(view);
         int battleHeight = this.battles.Render(view);

@@ -294,7 +294,13 @@ internal static class DockSmokeTest
                     VerifyFeed(home);
                     if (testItems)
                     {
-                        while (!runtime.CanSaveState) await Task.Delay(25, timeout.Token);
+                        while (!runtime.CanLoadState || !runtime.CanSaveState) await Task.Delay(25, timeout.Token);
+                        try
+                        {
+                            await runtime.LoadSlotOneAsync(timeout.Token);
+                            throw new InvalidDataException("mGBA loaded an empty slot.");
+                        }
+                        catch (IOException error) when (error.Message.StartsWith("Slot 1 ist leer", StringComparison.Ordinal)) { }
                         await runtime.SaveSlotOneAsync(timeout.Token);
                         if (new FileInfo(Path.ChangeExtension(path, ".ss1")) is not { Exists: true, Length: > 0 })
                             throw new InvalidDataException("mGBA did not write the quick save to slot 1.");
@@ -317,6 +323,15 @@ internal static class DockSmokeTest
                                 if (await runtime.AddPcItemsAsync(ball, timeout.Token) != 99)
                                     throw new InvalidOperationException($"The fixture did not receive 99 {ball}.");
                             await VerifyWildBattlesAsync(runtime, timeout.Token);
+                        }
+                        await runtime.LoadSlotOneAsync(timeout.Token);
+                        while (!runtime.CanLoadState || runtime.Status().Snapshot is not { } loaded || loaded.Epoch == after.Epoch)
+                            await Task.Delay(25, timeout.Token);
+                        if (!after.InBattle)
+                        {
+                            while (!runtime.CanAddPcItems) await Task.Delay(25, timeout.Token);
+                            if (await runtime.AddPcItemsAsync(PcItem.RareCandy, timeout.Token) != 1049)
+                                throw new InvalidDataException("Quick load did not restore the PC inventory saved in slot 1.");
                         }
                     }
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
@@ -516,6 +531,40 @@ internal static class DockSmokeTest
             if (!authorized) throw new InvalidOperationException("The host dialog did not send the verified admin key.");
             await stream.WriteAsync("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]"u8.ToArray(), timeout.Token)
                 .ConfigureAwait(false);
+        }
+    }
+
+    internal static void VerifyIdleStartup(ClientRuntime runtime, PortableMgba emulator, string home)
+    {
+        var profiles = new PlayerProfileLibrary(Path.Combine(home, "Launcher"));
+        var rom = new RomSelection(Path.Combine(home, "unused-rom.txt"));
+        VerifyChoices(null, ["Run beitreten"]);
+        var saved = profiles.AddInvitation("https://example.invalid", "STARTUP", "Rubin-Runde");
+        profiles.Choose(saved.Id);
+        VerifyChoices(saved, ["Run fortsetzen", "Run laden", "Run beitreten"]);
+
+        void VerifyChoices(PlayerProfile? profile, string[] expected)
+        {
+            using var form = new CompanionForm(runtime, emulator, rom, Path.Combine(home, "Bridge"), null, profile, home, profiles: profiles, testSlot: 2);
+            form.Show();
+            Application.DoEvents();
+            var surface = Descendants(form).OfType<EmulatorSurface>().Single();
+            var buttons = Descendants(surface).OfType<Button>().Where(button => button.Visible).ToArray();
+            if (runtime.ExecuteTask is not null || form.IsGameDocked || Descendants(form).OfType<RunFeed>().Single().Visible ||
+                !buttons.Select(button => button.Text).SequenceEqual(expected))
+            {
+                throw new InvalidOperationException("The player should wait for a run choice without opening mGBA, run activity or the bridge.");
+            }
+            var first = buttons[0].RectangleToScreen(buttons[0].ClientRectangle);
+            var last = buttons[^1].RectangleToScreen(buttons[^1].ClientRectangle);
+            var bounds = surface.RectangleToScreen(surface.ClientRectangle);
+            if (Math.Abs(first.Left + first.Right - bounds.Left - bounds.Right) > 4 ||
+                Math.Abs(first.Top + last.Bottom - bounds.Top - bounds.Bottom) > 4)
+            {
+                throw new InvalidOperationException("Run choices should be centered in the emulator area.");
+            }
+            form.Close();
+            Application.DoEvents();
         }
     }
 

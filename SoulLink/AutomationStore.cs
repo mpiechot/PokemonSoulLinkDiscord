@@ -2,10 +2,12 @@ using Microsoft.Data.Sqlite;
 
 namespace SoulLink;
 
+public sealed record ArchivedDiscordRun(Guid Id, string Document);
+
 /// <summary>Transactions persist a single run, its credentials, receipts and notification outbox together.</summary>
 public sealed class AutomationStore
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
     private readonly string connectionString;
     private readonly object gate = new();
 
@@ -51,6 +53,19 @@ public sealed class AutomationStore
             command.CommandText = """
                 CREATE TABLE run_groups (id TEXT PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE);
                 PRAGMA user_version=2;
+                """;
+            command.ExecuteNonQuery();
+        }
+        if (version < 3)
+        {
+            command.CommandText = """
+                CREATE TABLE discord_run_archive (
+                    id TEXT PRIMARY KEY,
+                    group_id TEXT NOT NULL REFERENCES run_groups(id),
+                    document TEXT NOT NULL
+                );
+                CREATE INDEX discord_runs_by_group ON discord_run_archive(group_id);
+                PRAGMA user_version=3;
                 """;
             command.ExecuteNonQuery();
         }
@@ -145,6 +160,37 @@ public sealed class AutomationStore
         {
             using var command = this.Command("INSERT INTO run_groups VALUES($id,$name)", ("$id", group.Id.ToString()), ("$name", group.Name));
             command.ExecuteNonQuery();
+        }
+
+        public DiscordRunImportResult ImportDiscordRuns(Guid groupId, IReadOnlyList<ArchivedDiscordRun> runs)
+        {
+            _ = this.Group(groupId);
+            var id = groupId.ToString();
+            int imported = 0;
+            foreach (var run in runs)
+            {
+                using var lookup = this.Command("SELECT group_id FROM discord_run_archive WHERE id=$id", ("$id", run.Id.ToString()));
+                if (lookup.ExecuteScalar() is string previousGroup)
+                {
+                    if (previousGroup != id)
+                        throw new InvalidOperationException($"Der Discord-Run {run.Id} ist bereits einer anderen Gruppe zugeordnet.");
+                    continue;
+                }
+                using var insert = this.Command("INSERT INTO discord_run_archive(id,group_id,document) VALUES($id,$group,$document)",
+                    ("$id", run.Id.ToString()), ("$group", id), ("$document", run.Document));
+                imported += insert.ExecuteNonQuery();
+            }
+            return new DiscordRunImportResult(imported, runs.Count - imported);
+        }
+
+        public ArchivedDiscordRun[] ArchivedDiscordRuns(Guid groupId)
+        {
+            _ = this.Group(groupId);
+            using var command = this.Command("SELECT id,document FROM discord_run_archive WHERE group_id=$group", ("$group", groupId.ToString()));
+            using var reader = command.ExecuteReader();
+            var runs = new List<ArchivedDiscordRun>();
+            while (reader.Read()) runs.Add(new ArchivedDiscordRun(Guid.Parse(reader.GetString(0)), reader.GetString(1)));
+            return runs.ToArray();
         }
 
         public List<AutomationRun> Runs(string? guild = null)
