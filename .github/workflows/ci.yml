@@ -23,10 +23,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup .NET 9
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: |
+            9.0.x
+            10.0.x
 
       - name: Restore
         run: dotnet restore PokeSoulLinkBot.Tests/PokeSoulLinkBot.Tests.csproj --verbosity minimal
@@ -49,3 +51,42 @@ jobs:
           -p:UseAppHost=false
           -p:UseSharedCompilation=false
           -p:OutputPath=../artifacts/test/PokeSoulLinkBot.Tests/
+
+      - name: Build client and integrated demo
+        run: dotnet build SoulLink.Demo/SoulLink.Demo.csproj --verbosity minimal -m:1 -p:UseSharedCompilation=false
+
+      - name: Verify read-only pipeline
+        run: dotnet SoulLink.Demo/bin/Debug/net10.0/SoulLink.Demo.dll --verify
+
+      - name: Verify disconnected diagnostic UI
+        run: node --test SoulLink.Client.Tests/offline-ui.test.cjs
+
+      - name: Build self-contained Linux server
+        shell: pwsh
+        run: ./scripts/Publish-SoulLinkServer.ps1
+
+      - name: Verify Linux startup and database-preserving update
+        run: bash scripts/Test-SoulLinkServerUpdate.sh artifacts/server/soullink-linux-x64.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoulLink-Linux-Server
+          path: artifacts/server/soullink-linux-x64.tar.gz
+
+  windows-player:
+    name: Package Windows player
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Build single-file player
+        run: ./scripts/Publish-SoulLinkPlayer.ps1
+      - name: Verify packaged startup and embedded invitation
+        # The live mGBA checks require an interactive Windows desktop.
+        run: ./scripts/Test-SoulLinkPlayer.ps1 -PackageOnly
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SoulLink-Windows
+          path: artifacts/player/SoulLink.exe
