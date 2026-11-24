@@ -61,10 +61,14 @@ public sealed class GroupStatisticsTests : IDisposable
             run.Players[0].Pokemon.Add(new TrackedPokemon { Dead = true, Imported = true });
             run.Players[1].Pokemon.Add(new TrackedPokemon { Dead = true });
             run.Players[1].Pokemon.Add(new TrackedPokemon { Dead = true, State = new PokemonState { IsEgg = true } });
+            var catchEvent = new AutomationEvent(Guid.NewGuid(), continued, "caught", "Erster Fang");
+            run.History.Add(catchEvent);
+            run.History.Add(new AutomationEvent(Guid.NewGuid(), continued.AddMinutes(1), "arena-completed", "Arena im Verlauf"));
             tx.Save(run);
-            tx.RecordReplayEvent(run.Id, new AutomationEvent(Guid.NewGuid(), continued, "caught", "Erster Fang"));
+            tx.RecordReplayEvent(run.Id, catchEvent);
             tx.RecordReplayEvent(run.Id, new AutomationEvent(Guid.NewGuid(), continued, "caught", "Zweiter Fang"));
             tx.RecordReplayEvent(run.Id, new AutomationEvent(Guid.NewGuid(), continued, "extra-catch", "Zusatzfang"));
+            tx.RecordTimelineEvent(run.Id, new AutomationEvent(Guid.NewGuid(), continued.AddMinutes(2), "linked", "Dauerhaft gespeicherter Link"));
             return true;
         });
 
@@ -77,7 +81,7 @@ public sealed class GroupStatisticsTests : IDisposable
             {"Id":"{{{legacyId}}}","GuildId":"123","Name":"Discord-Versuch","StartedAtUtc":"{{{started:O}}}","EndedAtUtc":"{{{ended:O}}}",
              "EndReason":"Wipe","LinkGroups":[
                 {"Route":"Starter","Entries":[{"IsAlive":false}]},
-                {"Route":"Route 101","Entries":[{"IsAlive":true},{"IsAlive":false}]}
+                {"Route":"Route 101","Entries":[{"IsAlive":true,"PlayerName":"Anne","PokemonName":"Zigzachs","CaughtAtUtc":"2025-02-02T17:00:00Z"},{"IsAlive":false}]}
              ],"activeLinks":[{"Route":"Route 101","Entries":[{"IsAlive":false}]}],
              "CompletedArenas":[{"ArenaNumber":1},{"ArenaNumber":1},{"ArenaNumber":2}]}
             """;
@@ -126,6 +130,27 @@ public sealed class GroupStatisticsTests : IDisposable
         Assert.Equal(otherRun.Id, Assert.Single(response.Runs).Id);
         using var hostOnly = await http.GetAsync($"/api/soullink/admin/groups/{group.Id:D}/statistics", timeout.Token);
         Assert.Equal(HttpStatusCode.Unauthorized, hostOnly.StatusCode);
+
+        var timeline = await partner.GroupTimelineAsync(timeout.Token);
+        Assert.Equal(group.Name, timeline.Group);
+        Assert.Equal(new[] { "Alter Export", "Discord-Versuch", "Neuer Versuch", "Erster Versuch" }, timeline.Runs.Select(run => run.Name));
+        var automated = timeline.Runs.Single(run => run.Name == currentRun.Name);
+        Assert.Single(automated.Events, item => item.Text == "Erster Fang");
+        Assert.Contains(automated.Events, item => item.Text == "Zweiter Fang" && item.Kind == TimelineEventKind.Catch);
+        Assert.Contains(automated.Events, item => item.Text == "Arena im Verlauf" && item.Kind == TimelineEventKind.Arena);
+        Assert.Contains(automated.Events, item => item.Text == "Dauerhaft gespeicherter Link" && item.Kind == TimelineEventKind.Link);
+        Assert.Contains(timeline.Runs.Single(run => run.Name == previousRun.Name).Events,
+            item => item.Kind == TimelineEventKind.End && item.At.HasValue);
+        var archivedTimeline = timeline.Runs.Single(run => run.Name == "Discord-Versuch");
+        Assert.True(archivedTimeline.DiscordArchive);
+        Assert.Contains(archivedTimeline.Events, item => item.At == started.AddHours(1) &&
+            item.Kind == TimelineEventKind.Catch && item.Text.Contains("Zigzachs", StringComparison.Ordinal));
+        Assert.Contains(archivedTimeline.Events, item => item.Kind == TimelineEventKind.Death && item.At is null);
+        Assert.Equal(new RunTimelineEvent(TimelineEventKind.End, ended, "Run abgeschlossen. Wipe"), archivedTimeline.Events.Last());
+        Assert.Equal(otherRun.Name, Assert.Single((await visitor.GroupTimelineAsync(timeout.Token)).Runs).Name);
+        Assert.True(Assert.Single((await host.GroupTimelineAsync(archiveGroup.Id, timeout.Token)).Runs).DiscordArchive);
+        using var guestTimeline = await http.GetAsync($"/api/soullink/admin/groups/{group.Id:D}/timeline", timeout.Token);
+        Assert.Equal(HttpStatusCode.Unauthorized, guestTimeline.StatusCode);
 
         (Registration Registration, string Token) Register(HostRun run, string name) => RegisterInvite(run.Invitation, name);
 

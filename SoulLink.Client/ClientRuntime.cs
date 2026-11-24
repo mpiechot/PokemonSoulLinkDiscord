@@ -26,7 +26,7 @@ public sealed record ClientSettings
 /// <summary>One local bridge, one authenticated server session, and no offline event queue.</summary>
 public sealed class ClientRuntime : BackgroundService
 {
-    private static readonly HttpClient StatisticsHttp = new(new HttpClientHandler { AllowAutoRedirect = false })
+    private static readonly HttpClient GroupReadHttp = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromSeconds(10),
     };
@@ -182,20 +182,26 @@ public sealed class ClientRuntime : BackgroundService
         finally { this.connectionGate.Release(); }
     }
 
-    public async Task<GroupStatistics> GroupStatisticsAsync(CancellationToken cancellationToken = default)
+    public Task<GroupStatistics> GroupStatisticsAsync(CancellationToken cancellationToken = default) =>
+        this.ReadGroupAsync<GroupStatistics>("statistics", cancellationToken);
+
+    public Task<GroupTimeline> GroupTimelineAsync(CancellationToken cancellationToken = default) =>
+        this.ReadGroupAsync<GroupTimeline>("timeline", cancellationToken);
+
+    private async Task<T> ReadGroupAsync<T>(string resource, CancellationToken cancellationToken) where T : class
     {
         ClientSettings current;
         lock (this.stateGate) current = this.settings;
-        if (current.Registration is null) throw new InvalidOperationException("Tritt einem Gruppen-Run bei, um die Statistik zu öffnen.");
+        if (current.Registration is null) throw new InvalidOperationException("Tritt einem Gruppen-Run bei, um die Übersicht zu öffnen.");
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, current.Server.TrimEnd('/') + "/api/soullink/statistics");
+        using var request = new HttpRequestMessage(HttpMethod.Get, current.Server.TrimEnd('/') + "/api/soullink/" + resource);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", current.Token);
-        using var response = await StatisticsHttp.SendAsync(request, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("Der Run-Server unterstützt die Gruppenstatistik noch nicht.");
+        using var response = await GroupReadHttp.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("Der Run-Server unterstützt diese Übersicht noch nicht.");
         if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("Der Run-Server hat die Spieleranmeldung nicht erkannt.");
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<GroupStatistics>(Protocol.Json, cancellationToken)
-            ?? throw new InvalidDataException("Der Run-Server hat keine Statistik zurückgegeben.");
+        return await response.Content.ReadFromJsonAsync<T>(Protocol.Json, cancellationToken)
+            ?? throw new InvalidDataException("Der Run-Server hat keine Daten für diese Übersicht zurückgegeben.");
     }
 
     public async Task<PokemonRomDetails?> PartnerPokemonDetailsAsync(Guid runId, Guid player, int species, CancellationToken cancellationToken)

@@ -33,6 +33,8 @@ public sealed class HostAdminClient : IDisposable
     public Task<HostRun[]> RunsAsync(Guid group) => this.SendAsync<HostRun[]>(HttpMethod.Get, $"groups/{group:D}/runs?includeArchived=true");
     public Task<GroupStatistics> GroupStatisticsAsync(Guid group, CancellationToken cancellationToken = default) =>
         this.SendAsync<GroupStatistics>(HttpMethod.Get, $"groups/{group:D}/statistics", cancellationToken: cancellationToken);
+    public Task<GroupTimeline> GroupTimelineAsync(Guid group, CancellationToken cancellationToken = default) =>
+        this.SendAsync<GroupTimeline>(HttpMethod.Get, $"groups/{group:D}/timeline", cancellationToken: cancellationToken);
 
     public Task<HostRun> CreateRunAsync(Guid group, string name) =>
         this.SendAsync<HostRun>(HttpMethod.Post, $"groups/{group:D}/runs", new GroupRunRequest(name));

@@ -184,7 +184,7 @@ internal sealed class CompanionForm : PlayerWindow
             {
                 if (this.closing) return;
                 if (this.statistics is null || this.statistics.IsDisposed)
-                    this.statistics = new GroupStatisticsForm(this.runtime.GroupStatisticsAsync);
+                    this.statistics = new GroupStatisticsForm(this.runtime.GroupStatisticsAsync, this.runtime.GroupTimelineAsync);
                 this.ShowTool(this.statistics);
             }),
             Button("Regeln", (_, _) =>

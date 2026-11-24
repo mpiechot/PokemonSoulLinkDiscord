@@ -436,11 +436,17 @@ internal sealed class HostingForm : ToolWindow
     {
         if (this.Group is not { } group || this.session is not { } session) return;
         this.statistics?.Close();
-        this.statistics = new GroupStatisticsForm(async cancellationToken =>
-        {
-            using var client = new HostAdminClient(session.Server, session.Key);
-            return await client.GroupStatisticsAsync(group.Id, cancellationToken);
-        });
+        this.statistics = new GroupStatisticsForm(
+            async cancellationToken =>
+            {
+                using var client = new HostAdminClient(session.Server, session.Key);
+                return await client.GroupStatisticsAsync(group.Id, cancellationToken);
+            },
+            async cancellationToken =>
+            {
+                using var client = new HostAdminClient(session.Server, session.Key);
+                return await client.GroupTimelineAsync(group.Id, cancellationToken);
+            });
         this.statistics.Show(this);
     }
 

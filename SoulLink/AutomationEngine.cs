@@ -234,6 +234,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                         throw new InvalidOperationException("Every player must send a valid baseline before starting.");
                     run.Phase = RunPhase.Active;
                     run.Invitation = "";
+                    tx.RecordTimelineEvent(run.Id, new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), "run-started", "Run gestartet."));
                     foreach (var participant in run.Players)
                     {
                         participant.RunStartEpoch = participant.LastSnapshot?.Epoch;
@@ -261,6 +262,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 case "end":
                     if (run.Phase == RunPhase.Finished) return run;
                     Finish(run, reason ?? "Ended by administrator.");
+                    tx.RecordTimelineEvent(run.Id, new AutomationEvent(Guid.NewGuid(), this.clock.GetUtcNow(), "run-ended", $"Run abgeschlossen. {run.EndReason}"));
                     break;
                 default: throw new InvalidDataException("Unknown run action.");
             }
@@ -919,6 +921,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             where?.MapGroup, where?.MapNumber, where?.Position, details);
         run.History.Add(item);
         if (kind is "caught" or "extra-catch" or "death") tx.RecordReplayEvent(run.Id, item);
+        else if (RunTimelineEvent.Classify(kind).HasValue) tx.RecordTimelineEvent(run.Id, item);
         if (run.History.Count > 200) run.History.RemoveAt(0);
         if (notify && run.ChannelId != 0) tx.Notify(run, item);
     }

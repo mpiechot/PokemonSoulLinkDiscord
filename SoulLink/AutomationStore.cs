@@ -7,7 +7,7 @@ public sealed record ArchivedDiscordRun(Guid Id, string Document);
 /// <summary>Transactions persist a single run, its credentials, receipts and notification outbox together.</summary>
 public sealed class AutomationStore
 {
-    private const int SchemaVersion = 3;
+    private const int SchemaVersion = 4;
     private readonly string connectionString;
     private readonly object gate = new();
 
@@ -66,6 +66,19 @@ public sealed class AutomationStore
                 );
                 CREATE INDEX discord_runs_by_group ON discord_run_archive(group_id);
                 PRAGMA user_version=3;
+                """;
+            command.ExecuteNonQuery();
+        }
+        if (version < 4)
+        {
+            command.CommandText = """
+                CREATE TABLE timeline_events (
+                    run TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                    id TEXT NOT NULL,
+                    document TEXT NOT NULL,
+                    PRIMARY KEY(run,id)
+                );
+                PRAGMA user_version=4;
                 """;
             command.ExecuteNonQuery();
         }
@@ -242,6 +255,13 @@ public sealed class AutomationStore
             command.ExecuteNonQuery();
         }
 
+        public void RecordTimelineEvent(Guid run, AutomationEvent item)
+        {
+            using var command = this.Command("INSERT INTO timeline_events VALUES($run,$id,$document)",
+                ("$run", run.ToString()), ("$id", item.Id.ToString()), ("$document", Protocol.Serialize(item)));
+            command.ExecuteNonQuery();
+        }
+
         public Dictionary<Guid, int> CatchCounts(string scope)
         {
             using var command = this.Command("""
@@ -254,6 +274,34 @@ public sealed class AutomationStore
             var counts = new Dictionary<Guid, int>();
             while (reader.Read()) counts.Add(Guid.Parse(reader.GetString(0)), reader.GetInt32(1));
             return counts;
+        }
+
+        public Dictionary<Guid, List<AutomationEvent>> TimelineEvents(string scope)
+        {
+            using var command = this.Command("""
+                SELECT event.run, event.document FROM runs
+                JOIN replay_events AS event ON event.run = runs.id
+                WHERE runs.guild = $scope
+                UNION ALL
+                SELECT event.run, event.document FROM runs
+                JOIN timeline_events AS event ON event.run = runs.id
+                WHERE runs.guild = $scope
+                """, ("$scope", scope));
+            using var reader = command.ExecuteReader();
+            var history = new Dictionary<Guid, List<AutomationEvent>>();
+            while (reader.Read())
+            {
+                Guid run = Guid.Parse(reader.GetString(0));
+                if (!history.TryGetValue(run, out var events))
+                {
+                    events = [];
+                    history.Add(run, events);
+                }
+
+                events.Add(Protocol.Deserialize<AutomationEvent>(reader.GetString(1)));
+            }
+
+            return history;
         }
 
         public Registration? Registration(string hash)

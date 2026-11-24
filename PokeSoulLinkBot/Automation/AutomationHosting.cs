@@ -74,17 +74,9 @@ public static class AutomationHosting
         app.MapPost("/api/soullink/join", (JoinRequest request, AutomationEngine engine) => engine.Join(request))
             .RequireRateLimiting("automation");
         app.MapGet("/api/soullink/statistics", (HttpContext context, AutomationEngine engine, GroupStatisticsService statistics) =>
-        {
-            context.Response.Headers.CacheControl = "no-store";
-            if (!AuthenticationHeaderValue.TryParse(context.Request.Headers.Authorization, out var authorization) ||
-                !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
-                authorization.Parameter is not { Length: 64 } token)
-            {
-                return Results.Unauthorized();
-            }
-
-            return Results.Ok(statistics.ForPlayer(engine.Authenticate(token)));
-        }).RequireRateLimiting("automation");
+            ReadForPlayer(context, engine, statistics.ForPlayer)).RequireRateLimiting("automation");
+        app.MapGet("/api/soullink/timeline", (HttpContext context, AutomationEngine engine, GroupStatisticsService statistics) =>
+            ReadForPlayer(context, engine, statistics.TimelineForPlayer)).RequireRateLimiting("automation");
         string databasePath = app.Configuration["SoulLink:DatabasePath"] ?? Path.Combine(AppContext.BaseDirectory, "Data", "soullink.sqlite");
         string databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath)) ?? AppContext.BaseDirectory;
         string updateDirectory = Path.GetFullPath(app.Configuration["SoulLink:PlayerUpdatesDirectory"] ?? Path.Combine(databaseDirectory, "player-updates"));
@@ -134,6 +126,11 @@ public static class AutomationHosting
             context.Response.Headers.CacheControl = "no-store";
             return statistics.ForGroup(id);
         });
+        admin.MapGet("/groups/{id:guid}/timeline", (Guid id, HttpContext context, GroupStatisticsService statistics) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return statistics.TimelineForGroup(id);
+        });
         admin.MapGet("/groups/{id:guid}/runs", (Guid id, bool? includeArchived, AutomationEngine engine, DiscordRunArchive archive) =>
         {
             var runs = engine.GroupRuns(id);
@@ -171,5 +168,18 @@ public static class AutomationHosting
             engine.Rebaseline(request.Guild, id, player);
             return Results.Ok();
         });
+    }
+
+    private static IResult ReadForPlayer<T>(HttpContext context, AutomationEngine engine, Func<Registration, T> read)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!AuthenticationHeaderValue.TryParse(context.Request.Headers.Authorization, out var authorization) ||
+            !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+            authorization.Parameter is not { Length: 64 } token)
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(read(engine.Authenticate(token)));
     }
 }

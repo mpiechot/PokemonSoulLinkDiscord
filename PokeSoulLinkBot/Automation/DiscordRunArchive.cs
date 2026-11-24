@@ -49,6 +49,56 @@ internal sealed class DiscordRunArchive(AutomationStore store)
             arenas);
     }
 
+    public static RunTimeline Timeline(ArchivedDiscordRun entry)
+    {
+        var run = JsonSerializer.Deserialize<LegacyStatistics>(entry.Document, LegacyJson) ??
+            throw new InvalidDataException("Ein archivierter Discord-Run ist leer.");
+        var activity = new List<RunTimelineEvent>();
+        foreach (var link in run.LinkGroups?.OfType<LegacyLink>() ?? Enumerable.Empty<LegacyLink>())
+        {
+            bool starter = string.Equals(link.Route?.Trim(), "Starter", StringComparison.OrdinalIgnoreCase);
+            foreach (var pokemon in link.Entries?.OfType<LegacyPokemon>() ?? Enumerable.Empty<LegacyPokemon>())
+            {
+                string name = string.IsNullOrWhiteSpace(pokemon.PokemonName) ? "Pokémon" : pokemon.PokemonName;
+                string player = string.IsNullOrWhiteSpace(pokemon.PlayerName) ? string.Empty : $"{pokemon.PlayerName}: ";
+                string route = string.IsNullOrWhiteSpace(link.Route) ? string.Empty : $" · {link.Route}";
+                activity.Add(new RunTimelineEvent(
+                    TimelineEventKind.Catch,
+                    RecordedDate(pokemon.CaughtAtUtc),
+                    starter ? $"{player}{name} als Starter erhalten." : $"{player}{name} gefangen{route}."));
+                if (pokemon.IsAlive == false || RecordedDate(pokemon.DiedAtUtc).HasValue)
+                {
+                    activity.Add(new RunTimelineEvent(
+                        TimelineEventKind.Death,
+                        RecordedDate(pokemon.DiedAtUtc),
+                        $"{player}{name} gestorben{route}."));
+                }
+            }
+        }
+
+        foreach (var arena in run.CompletedArenas?.OfType<LegacyArena>() ?? Enumerable.Empty<LegacyArena>())
+        {
+            if (arena.ArenaNumber > 0)
+            {
+                string leader = string.IsNullOrWhiteSpace(arena.LeaderName) ? string.Empty : $" · {arena.LeaderName}";
+                activity.Add(new RunTimelineEvent(
+                    TimelineEventKind.Arena,
+                    RecordedDate(arena.CompletedAtUtc),
+                    $"Arena {arena.ArenaNumber} abgeschlossen{leader}."));
+            }
+        }
+
+        var events = new List<RunTimelineEvent> { new RunTimelineEvent(TimelineEventKind.Start, run.StartedAtUtc, "Discord-Run gestartet.") };
+        events.AddRange(activity.OrderBy(item => !item.At.HasValue).ThenBy(item => item.At));
+        if (RecordedDate(run.EndedAtUtc).HasValue || !string.IsNullOrWhiteSpace(run.EndReason))
+        {
+            string text = string.IsNullOrWhiteSpace(run.EndReason) ? "Run abgeschlossen." : $"Run abgeschlossen. {run.EndReason}";
+            events.Add(new RunTimelineEvent(TimelineEventKind.End, RecordedDate(run.EndedAtUtc), text));
+        }
+
+        return new RunTimeline(run.Name, true, run.StartedAtUtc, events.ToArray());
+    }
+
     public HostRun[] GroupRuns(Guid groupId)
     {
         var archived = store.Execute(tx => tx.ArchivedDiscordRuns(groupId));
@@ -62,6 +112,8 @@ internal sealed class DiscordRunArchive(AutomationStore store)
             })
             .ToArray();
     }
+
+    private static DateTimeOffset? RecordedDate(DateTimeOffset? date) => date is { Ticks: > 0 } ? date : null;
 
     private DiscordRunImportResult Import(Guid groupId, string json)
     {
@@ -124,6 +176,12 @@ internal sealed class DiscordRunArchive(AutomationStore store)
 
     private sealed class LegacyPokemon
     {
+        public string? PokemonName { get; init; }
+
+        public string? PlayerName { get; init; }
+
+        public DateTimeOffset? CaughtAtUtc { get; init; }
+
         public bool? IsAlive { get; init; }
 
         public DateTimeOffset? DiedAtUtc { get; init; }
@@ -132,5 +190,9 @@ internal sealed class DiscordRunArchive(AutomationStore store)
     private sealed class LegacyArena
     {
         public int ArenaNumber { get; init; }
+
+        public string? LeaderName { get; init; }
+
+        public DateTimeOffset? CompletedAtUtc { get; init; }
     }
 }

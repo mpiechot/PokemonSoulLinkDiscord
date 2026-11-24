@@ -18,11 +18,13 @@ internal sealed class GroupStatisticsForm : ToolWindow
     ];
 
     private readonly Button refresh = Action("Aktualisieren");
+    private readonly Button timeline = Action("Timeline", DashboardTheme.Accent);
+    private GroupTimelineForm? openTimeline;
     private readonly DataGridView runs = new();
     private readonly Label details = new() { Dock = DockStyle.Bottom, Height = 36, AutoEllipsis = true };
     private readonly Label feedback = new() { Dock = DockStyle.Bottom, Height = 28, ForeColor = DashboardTheme.Muted };
 
-    public GroupStatisticsForm(Func<CancellationToken, Task<GroupStatistics>> load)
+    public GroupStatisticsForm(Func<CancellationToken, Task<GroupStatistics>> load, Func<CancellationToken, Task<GroupTimeline>> loadTimeline)
         : base("Gruppenstatistik", new Size(1032, 758))
     {
         this.load = load;
@@ -31,7 +33,17 @@ internal sealed class GroupStatisticsForm : ToolWindow
         this.groupName.Dock = DockStyle.Fill;
         this.groupName.TextAlign = ContentAlignment.MiddleLeft;
         this.refresh.Dock = DockStyle.Right;
-        header.Controls.AddRange([this.groupName, this.refresh]);
+        this.timeline.Dock = DockStyle.Right;
+        this.timeline.Click += (_, _) =>
+        {
+            if (this.openTimeline is null || this.openTimeline.IsDisposed)
+            {
+                this.openTimeline = new GroupTimelineForm(loadTimeline);
+                this.openTimeline.Show(this);
+            }
+            else this.openTimeline.Activate();
+        };
+        header.Controls.AddRange([this.groupName, this.timeline, this.refresh]);
 
         var summary = new TableLayoutPanel { Dock = DockStyle.Top, Height = 98, ColumnCount = 4, RowCount = 1 };
         string[] labels = ["Runs · davon abgeschlossen", "Erfasste Fänge", "Tote Pokémon", "Meiste Arenen in einem Run"];
@@ -88,16 +100,6 @@ internal sealed class GroupStatisticsForm : ToolWindow
         }
 
         return table;
-    }
-
-    private void FitWorkingArea()
-    {
-        var area = Screen.FromControl(this).WorkingArea;
-        int margin = this.LogicalToDeviceUnits(12);
-        this.Size = new Size(Math.Min(this.Width, Math.Max(1, area.Width - (margin * 2))),
-            Math.Min(this.Height, Math.Max(1, area.Height - (margin * 2))));
-        this.Location = new Point(Math.Clamp(this.Left, area.Left + margin, Math.Max(area.Left + margin, area.Right - this.Width - margin)),
-            Math.Clamp(this.Top, area.Top + margin, Math.Max(area.Top + margin, area.Bottom - this.Height - margin)));
     }
 
     private static Label SectionHeading(string text, int height)

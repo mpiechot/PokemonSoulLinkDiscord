@@ -694,7 +694,16 @@ internal static class DockSmokeTest
         var live = new RunStatistics(Guid.NewGuid(), "Aktiver Run", false, RunPhase.Active, date, null, null, 12, 3, 4);
         var archived = new RunStatistics(Guid.NewGuid(), "Alter Run", true, RunPhase.Finished, date.AddDays(-10), date.AddDays(-2), "Wipe", null, 5, 3);
         var oldest = archived with { Id = Guid.NewGuid(), Name = "Erster Run", Date = date.AddDays(-30), Catches = 0, Deaths = null, Arenas = null };
-        using var statistics = new GroupStatisticsForm(_ => Task.FromResult(new GroupStatistics("Rubin-Runde", [live, archived, oldest])));
+        var timeline = new GroupTimeline("Rubin-Runde",
+        [
+            new RunTimeline("Alter Run", true, date.AddDays(-10),
+                [new(TimelineEventKind.Start, date.AddDays(-10), "Archiv gestartet"), new(TimelineEventKind.Death, null, "Archiv-Tod")]),
+            new RunTimeline("Aktiver Run", false, date,
+                [new(TimelineEventKind.Start, date, "Run gestartet"), new(TimelineEventKind.Catch, date.AddMinutes(10), "Run-Fang"),
+                    new(TimelineEventKind.Arena, date.AddHours(1), "Arena erledigt")]),
+        ]);
+        using var statistics = new GroupStatisticsForm(
+            _ => Task.FromResult(new GroupStatistics("Rubin-Runde", [live, archived, oldest])), _ => Task.FromResult(timeline));
         statistics.Show();
         Application.DoEvents();
         var grid = Descendants(statistics).OfType<DataGridView>().Single();
@@ -721,6 +730,32 @@ internal static class DockSmokeTest
         var catches = charts.Single(chart => chart.AccessibleName == "Fänge je Run");
         VerifyChartHover(catches, live);
         SaveToolPreview(statistics, home, "statistics");
+
+        Descendants(statistics).OfType<Button>().Single(button => button.Text == "Timeline").PerformClick();
+        Application.DoEvents();
+        var replay = statistics.OwnedForms.OfType<GroupTimelineForm>().Single();
+        var lanes = Descendants(replay).OfType<TimelineLanes>().Single();
+        var progress = Descendants(replay).OfType<TrackBar>().Single();
+        if (progress.Maximum != 3 || lanes.StepCount != 3)
+            throw new InvalidOperationException("Timeline playback must use the longest lane, not concatenate the runs.");
+        Descendants(replay).OfType<Button>().Single(button => button.Text == "Abspielen").PerformClick();
+        var wait = System.Diagnostics.Stopwatch.StartNew();
+        while (progress.Value == 0 && wait.ElapsedMilliseconds < 1500)
+        {
+            Application.DoEvents();
+            Thread.Sleep(10);
+        }
+
+        var pause = Descendants(replay).OfType<Button>().SingleOrDefault(button => button.Text == "Pause");
+        if (progress.Value != 1 || pause is null || lanes.AccessibleDescription is not { } started ||
+            !started.Contains("Archiv gestartet", StringComparison.Ordinal) || !started.Contains("Run gestartet", StringComparison.Ordinal))
+            throw new InvalidOperationException("One playback tick must advance every run at the same time.");
+        pause.PerformClick();
+        Descendants(replay).OfType<Button>().Single(button => button.Text == "Weiter").PerformClick();
+        if (lanes.AccessibleDescription is not { } second || !second.Contains("Zeitpunkt unbekannt · Archiv-Tod", StringComparison.Ordinal) ||
+            !second.Contains("Run-Fang", StringComparison.Ordinal))
+            throw new InvalidOperationException("Step controls must preserve concurrent run events and unknown dates.");
+        SaveToolPreview(replay, home, "timeline");
     }
 
     private static void VerifyChartHover(RunMetricChart chart, RunStatistics latest)

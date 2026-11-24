@@ -41,6 +41,16 @@ internal class ToolWindow : PlayerWindow
 
     protected Panel Body { get; } = new() { Dock = DockStyle.Fill };
 
+    protected void FitWorkingArea()
+    {
+        var area = Screen.FromControl(this).WorkingArea;
+        int margin = this.LogicalToDeviceUnits(12);
+        this.Size = new Size(Math.Min(this.Width, Math.Max(1, area.Width - (margin * 2))),
+            Math.Min(this.Height, Math.Max(1, area.Height - (margin * 2))));
+        this.Location = new Point(Math.Clamp(this.Left, area.Left + margin, Math.Max(area.Left + margin, area.Right - this.Width - margin)),
+            Math.Clamp(this.Top, area.Top + margin, Math.Max(area.Top + margin, area.Bottom - this.Height - margin)));
+    }
+
     internal static Label Heading(string text) => new() { Text = text, Font = HeadingFont, ForeColor = DashboardTheme.Text };
 
     internal static Button Action(string text, Color? accent = null)

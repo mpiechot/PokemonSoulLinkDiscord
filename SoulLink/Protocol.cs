@@ -228,6 +228,24 @@ public sealed record RunGroup(Guid Id, string Name)
 public sealed record GroupStatistics(string Group, RunStatistics[] Runs);
 public sealed record RunStatistics(Guid Id, string Name, bool DiscordArchive, RunPhase? Phase,
     DateTimeOffset Date, DateTimeOffset? EndedAt, string? EndReason, int? Catches, int? Deaths, int? Arenas);
+
+public sealed record GroupTimeline(string Group, RunTimeline[] Runs);
+public sealed record RunTimeline(string Name, bool DiscordArchive, DateTimeOffset Date, RunTimelineEvent[] Events);
+public enum TimelineEventKind { Start, Catch, Death, Arena, Link, Other, End }
+public sealed record RunTimelineEvent(TimelineEventKind Kind, DateTimeOffset? At, string Text)
+{
+    public static TimelineEventKind? Classify(string kind) => kind switch
+    {
+        "run-started" => TimelineEventKind.Start,
+        "caught" or "extra-catch" => TimelineEventKind.Catch,
+        "death" or "death-undone" => TimelineEventKind.Death,
+        "arena-completed" or "arena-reverted" => TimelineEventKind.Arena,
+        "linked" or "links-corrected" => TimelineEventKind.Link,
+        "evolved" or "encounter-failed" => TimelineEventKind.Other,
+        "run-ended" => TimelineEventKind.End,
+        _ => null,
+    };
+}
 public sealed record CreateGroupRequest(string Name);
 public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint);
 public sealed record DiscordRunImportResult(int Imported, int AlreadyImported)
