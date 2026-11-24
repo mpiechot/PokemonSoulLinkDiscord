@@ -39,7 +39,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     public HostRun[] GroupRuns(Guid groupId) => store.Execute(tx =>
     {
         _ = tx.Group(groupId);
-        return tx.Runs(GroupScope(groupId)).Select(ToHostRun).ToArray();
+        return tx.Runs(RunGroup.ScopeFor(groupId)).Select(ToHostRun).ToArray();
     });
 
     public HostRun CreateGroupRun(Guid groupId, GroupRunRequest request)
@@ -50,12 +50,12 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         return store.Execute(tx =>
         {
             _ = tx.Group(groupId);
-            return ToHostRun(CreateRunInScope(tx, GroupScope(groupId), 0, name, request.DeathRule));
+            return ToHostRun(CreateRunInScope(tx, RunGroup.ScopeFor(groupId), 0, name, request.DeathRule));
         });
     }
 
     public HostRun ChangeGroupRun(Guid groupId, Guid runId, string action) =>
-        ToHostRun(this.ChangeRun(GroupScope(groupId), runId, action));
+        ToHostRun(this.ChangeRun(RunGroup.ScopeFor(groupId), runId, action));
 
     public HostPlayer[] GroupRunPlayers(Guid groupId, Guid runId) => store.Execute(tx =>
     {
@@ -63,7 +63,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         return run.Players.Select(p => new HostPlayer(p.Id, p.Name, this.Connection(p), p.Diagnostic)).ToArray();
     });
 
-    public void RebaselineGroupRun(Guid groupId, Guid runId, Guid playerId) => this.Rebaseline(GroupScope(groupId), runId, playerId);
+    public void RebaselineGroupRun(Guid groupId, Guid runId, Guid playerId) => this.Rebaseline(RunGroup.ScopeFor(groupId), runId, playerId);
 
     public HostLinkEditor GroupLinkEditor(Guid groupId, Guid runId) => store.Execute(tx =>
         BuildLinkEditor(RequireGroupRun(tx, groupId, runId)));
@@ -167,7 +167,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     private static AutomationRun RequireGroupRun(AutomationStore.StoreTransaction tx, Guid groupId, Guid runId)
     {
         var run = tx.Run(runId);
-        if (run.GuildId != GroupScope(groupId)) throw new UnauthorizedAccessException("Der Run gehört zu einer anderen Gruppe.");
+        if (run.GuildId != RunGroup.ScopeFor(groupId)) throw new UnauthorizedAccessException("Der Run gehört zu einer anderen Gruppe.");
         return run;
     }
 
@@ -187,8 +187,6 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 (starter is null || !starter.Members.TryGetValue(p.Id, out Guid identified) || m.Id == identified))
             .Select(m => new HostStarterPokemon(m.Id, m.State.Species, m.State.Nickname, m.State.Level)).ToArray())).ToArray();
     }
-
-    private static string GroupScope(Guid groupId) => $"group:{groupId:N}";
 
     private static HostRun ToHostRun(AutomationRun run) => new(run.Id, run.Name, run.Phase, run.Selected, run.Invitation,
         run.Players.Count, run.Players.Count(p => p.LastSnapshot is not null && p.Connection != "OutOfSync"));

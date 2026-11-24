@@ -31,6 +31,8 @@ public sealed class HostAdminClient : IDisposable
     public Task<RunGroup> CreateGroupAsync(string name) => this.SendAsync<RunGroup>(HttpMethod.Post, "groups", new CreateGroupRequest(name));
 
     public Task<HostRun[]> RunsAsync(Guid group) => this.SendAsync<HostRun[]>(HttpMethod.Get, $"groups/{group:D}/runs?includeArchived=true");
+    public Task<GroupStatistics> GroupStatisticsAsync(Guid group, CancellationToken cancellationToken = default) =>
+        this.SendAsync<GroupStatistics>(HttpMethod.Get, $"groups/{group:D}/statistics", cancellationToken: cancellationToken);
 
     public Task<HostRun> CreateRunAsync(Guid group, string name) =>
         this.SendAsync<HostRun>(HttpMethod.Post, $"groups/{group:D}/runs", new GroupRunRequest(name));
@@ -69,27 +71,27 @@ public sealed class HostAdminClient : IDisposable
         return this.SendAsync<HostRun>(HttpMethod.Post, $"groups/{group:D}/runs/{run:D}/{action}");
     }
 
-    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? data = null) where T : class
+    private async Task<T> SendAsync<T>(HttpMethod method, string path, object? data = null, CancellationToken cancellationToken = default) where T : class
     {
         using var request = new HttpRequestMessage(method, path);
         if (data is not null) request.Content = JsonContent.Create(data, options: Protocol.Json);
-        return await this.SendAsync<T>(request);
+        return await this.SendAsync<T>(request, cancellationToken);
     }
 
-    private async Task<T> SendAsync<T>(HttpRequestMessage request) where T : class
+    private async Task<T> SendAsync<T>(HttpRequestMessage request, CancellationToken cancellationToken = default) where T : class
     {
-        using var response = await this.http.SendAsync(request);
+        using var response = await this.http.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("Der Server hat den Admin-Schlüssel nicht akzeptiert.");
         if (!response.IsSuccessStatusCode)
         {
             string? message = null;
-            try { message = (await response.Content.ReadFromJsonAsync<HostError>(Protocol.Json))?.Error; }
+            try { message = (await response.Content.ReadFromJsonAsync<HostError>(Protocol.Json, cancellationToken))?.Error; }
             catch (Exception error) when (error is JsonException or NotSupportedException) { }
             throw new InvalidOperationException(message ?? (response.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotFound
                 ? "Diese Funktion fehlt auf dem Run-Server. Bitte den Server aktualisieren."
                 : $"Der Server antwortet mit HTTP {(int)response.StatusCode}."));
         }
-        return await response.Content.ReadFromJsonAsync<T>(Protocol.Json) ?? throw new InvalidDataException("Die Serverantwort ist leer.");
+        return await response.Content.ReadFromJsonAsync<T>(Protocol.Json, cancellationToken) ?? throw new InvalidDataException("Die Serverantwort ist leer.");
     }
 
     public void Dispose() => this.http.Dispose();

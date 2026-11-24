@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.RateLimiting;
@@ -23,6 +24,7 @@ public static class AutomationHosting
             Path.Combine(AppContext.BaseDirectory, "Data", "soullink.sqlite")));
         services.AddSingleton<AutomationEngine>();
         services.AddSingleton<DiscordRunArchive>();
+        services.AddSingleton<GroupStatisticsService>();
         services.AddTransient<AutomationHub>();
         services.AddSignalR(options => options.MaximumReceiveMessageSize = Protocol.MaxMessageBytes)
             .AddJsonProtocol(options => options.PayloadSerializerOptions = Protocol.Json);
@@ -71,6 +73,18 @@ public static class AutomationHosting
         });
         app.MapPost("/api/soullink/join", (JoinRequest request, AutomationEngine engine) => engine.Join(request))
             .RequireRateLimiting("automation");
+        app.MapGet("/api/soullink/statistics", (HttpContext context, AutomationEngine engine, GroupStatisticsService statistics) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            if (!AuthenticationHeaderValue.TryParse(context.Request.Headers.Authorization, out var authorization) ||
+                !string.Equals(authorization.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+                authorization.Parameter is not { Length: 64 } token)
+            {
+                return Results.Unauthorized();
+            }
+
+            return Results.Ok(statistics.ForPlayer(engine.Authenticate(token)));
+        }).RequireRateLimiting("automation");
         string databasePath = app.Configuration["SoulLink:DatabasePath"] ?? Path.Combine(AppContext.BaseDirectory, "Data", "soullink.sqlite");
         string databaseDirectory = Path.GetDirectoryName(Path.GetFullPath(databasePath)) ?? AppContext.BaseDirectory;
         string updateDirectory = Path.GetFullPath(app.Configuration["SoulLink:PlayerUpdatesDirectory"] ?? Path.Combine(databaseDirectory, "player-updates"));
@@ -115,6 +129,11 @@ public static class AutomationHosting
         admin.MapGet("/runs/{guild}", (string guild, AutomationEngine engine) => engine.Runs(guild));
         admin.MapGet("/groups", (AutomationEngine engine) => engine.Groups());
         admin.MapPost("/groups", (CreateGroupRequest request, AutomationEngine engine) => engine.CreateGroup(request.Name));
+        admin.MapGet("/groups/{id:guid}/statistics", (Guid id, HttpContext context, GroupStatisticsService statistics) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            return statistics.ForGroup(id);
+        });
         admin.MapGet("/groups/{id:guid}/runs", (Guid id, bool? includeArchived, AutomationEngine engine, DiscordRunArchive archive) =>
         {
             var runs = engine.GroupRuns(id);

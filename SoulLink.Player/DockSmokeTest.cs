@@ -579,6 +579,7 @@ internal static class DockSmokeTest
             string[] visibleActions = Descendants(nextRun).OfType<Button>().Where(button => button.Visible).Select(button => button.Text).ToArray();
             if (!visibleActions.Contains("Pausieren") || !visibleActions.Contains("Links bearbeiten") ||
                 !visibleActions.Contains("Discord-Runs importieren") || !visibleActions.Contains("Selbst beitreten") ||
+                !visibleActions.Contains("Statistik") ||
                 visibleActions.Contains("Starten") || visibleActions.Contains("Fortsetzen") || visibleActions.Contains("Für mich merken"))
                 throw new InvalidOperationException("The selected active run did not expose exactly its applicable actions.");
             SaveToolPreview(nextRun, home, "host");
@@ -684,6 +685,33 @@ internal static class DockSmokeTest
         edit.PerformClick();
         if (!edited) throw new InvalidOperationException("The rule edit control was not actionable.");
         TraceToolPreviews(home, "Rule action invoked");
+        VerifyGroupStatistics(home);
+    }
+
+    private static void VerifyGroupStatistics(string home)
+    {
+        var date = new DateTimeOffset(2025, 2, 2, 16, 0, 0, TimeSpan.Zero);
+        var live = new RunStatistics(Guid.NewGuid(), "Aktiver Run", false, RunPhase.Active, date, null, null, 12, 3, 4);
+        var archived = new RunStatistics(Guid.NewGuid(), "Alter Run", true, RunPhase.Finished, date.AddDays(-10), date.AddDays(-2), "Wipe", null, 5, 3);
+        using var statistics = new GroupStatisticsForm(_ => Task.FromResult(new GroupStatistics("Rubin-Runde", [live, archived])));
+        statistics.Show();
+        Application.DoEvents();
+        var grid = Descendants(statistics).OfType<DataGridView>().Single();
+        var labels = Descendants(statistics).OfType<Label>().Select(label => label.Text).ToArray();
+        if (grid.Rows.Count != 2 || !labels.Contains("Rubin-Runde") || !labels.Contains("2 / 1") ||
+            !labels.Contains("12") || !labels.Contains("8") || !labels.Contains("4") ||
+            !Equals(grid.Rows[1].Cells[1].Value, "Discord") || !Equals(grid.Rows[1].Cells[4].FormattedValue, "–"))
+        {
+            throw new InvalidOperationException("Group statistics must show live and archived runs, known totals and unknown values.");
+        }
+
+        grid.CurrentCell = grid.Rows[1].Cells[0];
+        if (!Descendants(statistics).OfType<Label>().Any(label => label.Text.Contains("Wipe", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Selecting an archived run must show its end reason.");
+        }
+
+        SaveToolPreview(statistics, home, "statistics");
     }
 
     private static void SaveToolPreview(Form form, string home, string name)

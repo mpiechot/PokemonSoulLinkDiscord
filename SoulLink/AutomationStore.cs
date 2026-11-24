@@ -242,6 +242,20 @@ public sealed class AutomationStore
             command.ExecuteNonQuery();
         }
 
+        public Dictionary<Guid, int> CatchCounts(string scope)
+        {
+            using var command = this.Command("""
+                SELECT event.run, COUNT(*) FROM runs
+                JOIN replay_events AS event ON event.run = runs.id
+                WHERE runs.guild = $scope AND json_extract(event.document, '$.kind') = 'caught'
+                GROUP BY event.run
+                """, ("$scope", scope));
+            using var reader = command.ExecuteReader();
+            var counts = new Dictionary<Guid, int>();
+            while (reader.Read()) counts.Add(Guid.Parse(reader.GetString(0)), reader.GetInt32(1));
+            return counts;
+        }
+
         public Registration? Registration(string hash)
         {
             using var command = this.Command("SELECT run,player,client FROM registrations WHERE hash=$hash", ("$hash", hash));

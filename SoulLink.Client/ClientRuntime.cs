@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -25,6 +26,11 @@ public sealed record ClientSettings
 /// <summary>One local bridge, one authenticated server session, and no offline event queue.</summary>
 public sealed class ClientRuntime : BackgroundService
 {
+    private static readonly HttpClient StatisticsHttp = new(new HttpClientHandler { AllowAutoRedirect = false })
+    {
+        Timeout = TimeSpan.FromSeconds(10),
+    };
+
     private readonly string settingsPath;
     private readonly int bridgePort;
     private readonly SemaphoreSlim connectionGate = new(1);
@@ -174,6 +180,22 @@ public sealed class ClientRuntime : BackgroundService
         await this.connectionGate.WaitAsync();
         try { return await this.RequireConnection(runId).InvokeAsync<CatchCheck>("CheckCatch", name); }
         finally { this.connectionGate.Release(); }
+    }
+
+    public async Task<GroupStatistics> GroupStatisticsAsync(CancellationToken cancellationToken = default)
+    {
+        ClientSettings current;
+        lock (this.stateGate) current = this.settings;
+        if (current.Registration is null) throw new InvalidOperationException("Tritt einem Gruppen-Run bei, um die Statistik zu öffnen.");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, current.Server.TrimEnd('/') + "/api/soullink/statistics");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", current.Token);
+        using var response = await StatisticsHttp.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) throw new InvalidOperationException("Der Run-Server unterstützt die Gruppenstatistik noch nicht.");
+        if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("Der Run-Server hat die Spieleranmeldung nicht erkannt.");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<GroupStatistics>(Protocol.Json, cancellationToken)
+            ?? throw new InvalidDataException("Der Run-Server hat keine Statistik zurückgegeben.");
     }
 
     public async Task<PokemonRomDetails?> PartnerPokemonDetailsAsync(Guid runId, Guid player, int species, CancellationToken cancellationToken)

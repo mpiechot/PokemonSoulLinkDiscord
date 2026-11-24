@@ -215,7 +215,19 @@ public sealed record Notification(Guid Id, Guid RunId, ulong ChannelId, string M
 
 public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.ConfirmFaint);
 public sealed record RunAction(string Guild, string? Reason = null);
-public sealed record RunGroup(Guid Id, string Name);
+public sealed record RunGroup(Guid Id, string Name)
+{
+    private const string ScopePrefix = "group:";
+
+    public static string ScopeFor(Guid id) => $"{ScopePrefix}{id:N}";
+
+    public static Guid? IdForScope(string scope) => scope.StartsWith(ScopePrefix, StringComparison.Ordinal) &&
+        Guid.TryParseExact(scope.AsSpan(ScopePrefix.Length), "N", out Guid id) ? id : null;
+}
+
+public sealed record GroupStatistics(string Group, RunStatistics[] Runs);
+public sealed record RunStatistics(Guid Id, string Name, bool DiscordArchive, RunPhase? Phase,
+    DateTimeOffset Date, DateTimeOffset? EndedAt, string? EndReason, int? Catches, int? Deaths, int? Arenas);
 public sealed record CreateGroupRequest(string Name);
 public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint);
 public sealed record DiscordRunImportResult(int Imported, int AlreadyImported)

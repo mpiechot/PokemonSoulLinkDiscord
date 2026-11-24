@@ -58,6 +58,12 @@ Für alte Discord-Runs wählst du in der Gastgeberverwaltung die Zielgruppe und 
 
 Der Server bewahrt die Originaldaten in SQLite auf. Discord-Archive sind schreibgeschützt. Ein erneuter Import in dieselbe Gruppe überspringt vorhandene Runs. Enthält die Datei einen bereits einer anderen Gruppe zugeordneten Run, wird der gesamte Import abgelehnt.
 
+## Gruppenstatistik
+
+Öffne in einem angemeldeten Run-Profil oben **Statistik**. Die Ansicht lädt auch bei geschlossenem Spiel und enthält alle Runs derselben Gruppe, einschließlich abgeschlossener SoulLink-Runs und importierter Discord-Runs. Wenn eine Gruppe bisher nur Discord-Archive enthält, kannst du ihre Statistik über **Gastgeber → Gruppe wählen → Statistik** öffnen. Spieler erhalten Zugriff, sobald sie einem SoulLink-Run dieser Gruppe beigetreten sind.
+
+Die Übersicht zeigt gewertete Fänge ohne Starter, als tot markierte Pokémon einschließlich Linkpartner und den höchsten gemeinsamen Arena-Fortschritt. Wähle einen Run aus, um sein Datum und einen vorhandenen Endgrund zu sehen. Ein Gedankenstrich steht für ein fehlendes Archivfeld. Die Summen zählen die erfassten Werte.
+
 Beginnt ihr gemeinsam ein neues Spiel, kannst du den Run starten, sobald alle im Spielfeld angekommen sind. SoulLink erfasst die frisch gewählten Starter automatisch. Mit **Links bearbeiten** kannst du Starter und Fänge im aktiven oder pausierten Run nachträglich zuordnen. Ziehe jedes Pokémon in seiner Spielerspalte zur gewünschten Zeile oder zu **Unverlinkt**. **Links speichern** übernimmt die Zuordnung für alle. Der Starter-Link lässt Route 101 für einen regulären Fang frei. Im Grid steht **Starter** auf den zugeordneten Pokémon. Beim Darüberfahren siehst du den ursprünglichen Fangort.
 
 Unter **SoulLink → Run beitreten / wechseln** findest du die gemerkten Einladungen. Beim Wechsel bitte vorher im Spiel speichern. SoulLink beendet mGBA und öffnet dieselbe EXE mit dem gewählten Run-Profil.

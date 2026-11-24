@@ -49,6 +49,8 @@ After `Hello`, the client calls `Subscribe` to receive `RunChanged` signals scop
 
 `AddRule(text)` adds a rule for the caller's run. `ChangeRule(current, replacement)` matches the exact current text and replaces it, or removes it if `replacement` is null. A changed or missing rule fails the request so an older editor cannot overwrite a teammate's change. Both calls require participation in a run that has yet to finish.
 
+`GET /api/soullink/statistics` uses the player's bearer token to resolve the group from their registration, including registrations from finished runs. It returns aggregate-ready run summaries for that group, including Discord archives assigned to it. Arena counts use shared progress for automated runs and distinct reported arena numbers for archives. Unknown archive counts are null. Operators can request the same view from `GET /api/soullink/admin/groups/{id}/statistics`, even before any player has registered in the group.
+
 ## Optional administration API
 
 Disabled unless `SoulLink:AdminKey` contains at least 32 characters. Send it only in `X-SoulLink-Admin`. It permits guild-scoped run creation, lifecycle operations and explicit player rebaseline. Intended for isolated demos/operations; normal administration uses permission-checked Discord commands. Do not expose it publicly without TLS and an operator-controlled key.

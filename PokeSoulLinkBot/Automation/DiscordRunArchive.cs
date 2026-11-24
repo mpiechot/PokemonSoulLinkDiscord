@@ -23,6 +23,32 @@ internal sealed class DiscordRunArchive(AutomationStore store)
         return archive.Import(id, await reader.ReadToEndAsync(cancellationToken));
     }
 
+    public static RunStatistics Statistics(ArchivedDiscordRun entry)
+    {
+        var run = JsonSerializer.Deserialize<LegacyStatistics>(entry.Document, LegacyJson) ??
+            throw new InvalidDataException("Ein archivierter Discord-Run ist leer.");
+        var links = run.LinkGroups?.OfType<LegacyLink>().ToArray();
+        var catchAreas = links?.Where(link => !string.Equals(link.Route?.Trim(), "Starter", StringComparison.OrdinalIgnoreCase)).ToArray();
+        int? catches = catchAreas is not null && catchAreas.All(link => link.Entries is not null)
+            ? catchAreas.Sum(link => link.Entries!.OfType<LegacyPokemon>().Count()) : null;
+        var pokemon = links is not null && links.All(link => link.Entries is not null)
+            ? links.SelectMany(link => link.Entries!).OfType<LegacyPokemon>().ToArray() : null;
+        int? deaths = pokemon is not null && pokemon.All(member => member.IsAlive.HasValue || member.DiedAtUtc.HasValue)
+            ? pokemon.Count(member => member.IsAlive == false || member.DiedAtUtc.HasValue) : null;
+        int? arenas = run.CompletedArenas?.OfType<LegacyArena>().Select(arena => arena.ArenaNumber).Where(number => number > 0).Distinct().Count();
+        return new RunStatistics(
+            entry.Id,
+            run.Name,
+            true,
+            run.EndedAtUtc.HasValue ? RunPhase.Finished : null,
+            run.StartedAtUtc,
+            run.EndedAtUtc,
+            run.EndReason,
+            catches,
+            deaths,
+            arenas);
+    }
+
     public HostRun[] GroupRuns(Guid groupId)
     {
         var archived = store.Execute(tx => tx.ArchivedDiscordRuns(groupId));
@@ -72,5 +98,39 @@ internal sealed class DiscordRunArchive(AutomationStore store)
         }
 
         return store.Execute(tx => tx.ImportDiscordRuns(groupId, runs));
+    }
+
+    private sealed class LegacyStatistics
+    {
+        public string Name { get; init; } = string.Empty;
+
+        public DateTimeOffset StartedAtUtc { get; init; }
+
+        public DateTimeOffset? EndedAtUtc { get; init; }
+
+        public string? EndReason { get; init; }
+
+        public List<LegacyLink?>? LinkGroups { get; init; }
+
+        public List<LegacyArena?>? CompletedArenas { get; init; }
+    }
+
+    private sealed class LegacyLink
+    {
+        public string? Route { get; init; }
+
+        public List<LegacyPokemon?>? Entries { get; init; }
+    }
+
+    private sealed class LegacyPokemon
+    {
+        public bool? IsAlive { get; init; }
+
+        public DateTimeOffset? DiedAtUtc { get; init; }
+    }
+
+    private sealed class LegacyArena
+    {
+        public int ArenaNumber { get; init; }
     }
 }

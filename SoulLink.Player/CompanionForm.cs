@@ -74,6 +74,7 @@ internal sealed class CompanionForm : PlayerWindow
     private HostingForm? hosting;
     private readonly HostingSession? hostingSession;
     private RulesForm? rules;
+    private GroupStatisticsForm? statistics;
     private TypeChartForm? typeChart;
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
@@ -179,6 +180,13 @@ internal sealed class CompanionForm : PlayerWindow
         });
         this.hints.SetToolTip(this.cheats, "Je 99 Items ins lokale PC-Lager legen");
         navigation.Controls.AddRange([
+            Button("Statistik", (_, _) =>
+            {
+                if (this.closing) return;
+                if (this.statistics is null || this.statistics.IsDisposed)
+                    this.statistics = new GroupStatisticsForm(this.runtime.GroupStatisticsAsync);
+                this.ShowTool(this.statistics);
+            }),
             Button("Regeln", (_, _) =>
             {
                 if (this.rules is null || this.rules.IsDisposed) this.rules = new RulesForm(this.runtime);

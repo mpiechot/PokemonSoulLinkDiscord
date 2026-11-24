@@ -24,6 +24,7 @@ internal sealed class HostingForm : ToolWindow
     private readonly Button connect = Action("Verbinden", DashboardTheme.Accent);
     private readonly Button addGroup = Action("Neue Gruppe");
     private readonly Button refresh = Action("Aktualisieren");
+    private readonly Button groupStatistics = Action("Statistik");
     private readonly ToolCard signIn;
     private readonly TableLayoutPanel workspace;
     private readonly Control invitations;
@@ -37,6 +38,7 @@ internal sealed class HostingForm : ToolWindow
     private readonly Button join;
     private HostingSession? session;
     private HostingSession? restoreSession;
+    private GroupStatisticsForm? statistics;
     private readonly bool canJoin;
     private readonly Button players;
     private readonly Button editLinks;
@@ -62,6 +64,7 @@ internal sealed class HostingForm : ToolWindow
 
         this.connect.Click += async (_, _) => await this.ConnectAsync();
         this.refresh.Click += async (_, _) => await this.ConnectAsync();
+        this.groupStatistics.Click += (_, _) => this.OpenGroupStatistics();
         this.addGroup.Click += async (_, _) =>
         {
             if (Prompt(this, "Neue Gruppe", "Gruppenname", 64) is not { } name) return;
@@ -196,8 +199,9 @@ internal sealed class HostingForm : ToolWindow
         var groupTitle = Heading("Gruppe");
         groupTitle.Dock = DockStyle.Top;
         groupTitle.Height = 23;
-        var groupActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+        var groupActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1 };
         groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         groupActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         this.groups.Anchor = AnchorStyles.Left | AnchorStyles.Right;
@@ -205,6 +209,7 @@ internal sealed class HostingForm : ToolWindow
         groupActions.Controls.Add(this.groups, 0, 0);
         groupActions.Controls.Add(this.addGroup, 1, 0);
         groupActions.Controls.Add(this.importDiscordRuns, 2, 0);
+        groupActions.Controls.Add(this.groupStatistics, 3, 0);
         groupCard.Controls.Add(groupActions);
         groupCard.Controls.Add(groupTitle);
         layout.Controls.Add(groupCard, 0, 1);
@@ -351,6 +356,7 @@ internal sealed class HostingForm : ToolWindow
 
     private void ClearServerView()
     {
+        this.statistics?.Close();
         this.session = null;
         this.groups.DataSource = null;
         this.runs.Items.Clear();
@@ -385,6 +391,7 @@ internal sealed class HostingForm : ToolWindow
         this.connect.Enabled = !this.busy && !string.IsNullOrWhiteSpace(this.server.Text) && this.key.Text.Trim().Length >= 32;
         this.refresh.Enabled = this.addGroup.Enabled = !this.busy && this.session is not null;
         this.createRun.Enabled = this.importDiscordRuns.Enabled = !this.busy && this.Group is not null;
+        this.groupStatistics.Enabled = !this.busy && this.Group is not null && this.session is not null;
         this.emptyRuns.Visible = run is null;
         this.runs.TabStop = run is not null;
         this.emptyRuns.Text = this.Group is null ? "Wähle eine Gruppe." : "In dieser Gruppe gibt es noch keine Runs.";
@@ -423,6 +430,18 @@ internal sealed class HostingForm : ToolWindow
             this.feedback.ForeColor = DashboardTheme.Accent;
             this.feedback.Text = $"„{group.Name}“ · {result.Imported} importiert, {result.AlreadyImported} bereits vorhanden.";
         });
+    }
+
+    private void OpenGroupStatistics()
+    {
+        if (this.Group is not { } group || this.session is not { } session) return;
+        this.statistics?.Close();
+        this.statistics = new GroupStatisticsForm(async cancellationToken =>
+        {
+            using var client = new HostAdminClient(session.Server, session.Key);
+            return await client.GroupStatisticsAsync(group.Id, cancellationToken);
+        });
+        this.statistics.Show(this);
     }
 
     private async Task ShowLinkEditorAsync(HostAdminClient client)
