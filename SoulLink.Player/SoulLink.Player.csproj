@@ -8,10 +8,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\SoulLink.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
     <EmbeddedResource Include="$(MgbaBundlePath)" LogicalName="SoulLink.mGBA.zip" Condition="'$(MgbaBundlePath)' != ''" />
+    <EmbeddedResource Include="$(ApplicationIcon)" LogicalName="SoulLink.Player.SoulLink.ico" />
     <EmbeddedResource Include="..\PokeSoulLinkBot\Resources\*.png" LogicalName="SoulLink.Player.Icons.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Resources\*.png" LogicalName="SoulLink.Player.Icons.%(Filename)%(Extension)" />
   </ItemGroup>

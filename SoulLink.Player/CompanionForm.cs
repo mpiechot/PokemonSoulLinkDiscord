@@ -6,6 +6,7 @@ namespace SoulLink.Player;
 
 internal sealed class CompanionForm : PlayerWindow
 {
+    private static readonly Icon PlayerIcon = new(typeof(CompanionForm), "SoulLink.ico");
     private readonly ClientRuntime runtime;
     private readonly PortableMgba emulator;
     private readonly RomSelection rom;
@@ -99,6 +100,7 @@ internal sealed class CompanionForm : PlayerWindow
         this.instanceLabel = testSlot is int slot ? $"Testspieler {slot}" : null;
         this.dock = new EmulatorDock(this.surface);
         this.Text = this.instanceLabel is { } label ? $"SoulLink – {label}" : "SoulLink";
+        this.Icon = PlayerIcon;
         this.FormBorderStyle = FormBorderStyle.None;
         var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
         this.ClientSize = new Size(Math.Min(1720, workArea.Width), Math.Min(930, workArea.Height));

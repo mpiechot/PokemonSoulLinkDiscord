@@ -742,6 +742,7 @@ internal static class DockSmokeTest
             VerifyRoundedWindow(form);
             if (profile is null)
             {
+                VerifyPlayerIcon(form);
                 form.WindowState = FormWindowState.Maximized;
                 if (form.Region is not null)
                 {
@@ -769,6 +770,39 @@ internal static class DockSmokeTest
             }
             form.Close();
             Application.DoEvents();
+        }
+    }
+
+    private static void VerifyPlayerIcon(Form form)
+    {
+        const uint getIconMessage = 0x007F;
+        const int smallIcon = 0;
+        nint handle = SendMessage(form.Handle, getIconMessage, smallIcon, 0);
+        using var windowIcon = handle == 0 ? null : Icon.FromHandle(handle);
+        using var shellIcon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+        if (!HasLinkArtwork(windowIcon) || !HasLinkArtwork(shellIcon))
+        {
+            throw new InvalidOperationException("The window and packaged executable must display the SoulLink icon.");
+        }
+
+        static bool HasLinkArtwork(Icon? icon)
+        {
+            if (icon is null) return false;
+            using var bitmap = icon.ToBitmap();
+            bool blue = false;
+            bool green = false;
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                for (int x = 0; x < bitmap.Width; x++)
+                {
+                    var pixel = bitmap.GetPixel(x, y);
+                    if (pixel.A < 220 || pixel.R > 160 || pixel.G < 175) continue;
+                    blue |= pixel.B > pixel.G + 20;
+                    green |= pixel.G > pixel.B + 20;
+                }
+            }
+
+            return blue && green;
         }
     }
 
