@@ -1,7 +1,11 @@
 namespace SoulLink.Player;
 
-internal sealed class TypeChartForm : PlayerWindow
+internal sealed class TypeChartForm : ToolWindow
 {
+    private const int ChipWidth = 96;
+    private const int ChipHeight = 28;
+    private const int ChipGap = 5;
+
     // Pokémon Ruby type matchups, before the Steel changes in Generation VI.
     private static readonly TypeMatchup[] Matchups =
     [
@@ -25,49 +29,46 @@ internal sealed class TypeChartForm : PlayerWindow
     ];
 
     private readonly RubySprites sprites;
+    private readonly Panel document = new() { BackColor = DashboardTheme.Background };
+    private readonly ToolCard choices = new();
+    private readonly FlowLayoutPanel selection = new() { Dock = DockStyle.Fill, AccessibleName = "Pokémon-Typen" };
+    private readonly Label selectionHeading = SectionHeading("Typ auswählen");
+    private readonly TableLayoutPanel results = new() { ColumnCount = 2, RowCount = 4 };
+    private readonly DashboardScrollHost scroll;
     private readonly Button[] selectors;
     private readonly FlowLayoutPanel[] attack;
     private readonly FlowLayoutPanel[] defense;
 
-    public TypeChartForm(RubySprites sprites)
+    public TypeChartForm(RubySprites sprites) : base("Typen · Pokémon Rubin", new Size(780, 656))
     {
         this.sprites = sprites;
-        RunDialogs.Configure(this, "Typen · Pokémon Rubin", new Size(690, 565));
-
-        var selection = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0),
-            Padding = new Padding(4),
-            BackColor = DashboardTheme.Background,
-            AccessibleName = "Pokémon-Typen",
-        };
         this.selectors = Matchups.Select((type, index) =>
         {
-            var button = DashboardTheme.Button(type.Name);
+            var button = Action(type.Name);
             button.AutoSize = false;
-            button.Size = new Size(102, 34);
             button.Tag = index;
             button.Click += (_, _) => this.SelectType(index);
-            selection.Controls.Add(button);
+            this.selection.Controls.Add(button);
             return button;
         }).ToArray();
 
-        var (attackPanel, attackRows) = MatchupPanel("Angriff", ["2×  Sehr effektiv gegen", "½×  Wenig effektiv gegen", "0×  Wirkungslos gegen"]);
-        var (defensePanel, defenseRows) = MatchupPanel("Verteidigung", ["2×  Schwach gegen", "½×  Resistent gegen", "0×  Immun gegen"]);
-        this.attack = attackRows;
-        this.defense = defenseRows;
-
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 2 };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 126));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        layout.Controls.Add(selection, 0, 0);
-        layout.SetColumnSpan(selection, 2);
-        layout.Controls.Add(attackPanel, 0, 1);
-        layout.Controls.Add(defensePanel, 1, 1);
-        this.Controls.Add(layout);
+        this.choices.Controls.Add(this.selection);
+        this.choices.Controls.Add(this.selectionHeading);
+        this.results.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        this.results.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (int i = 0; i < this.results.RowCount; i++) this.results.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        this.attack = this.AddMatchupColumn(0, "Angriff", ["2×  Sehr effektiv gegen", "½×  Wenig effektiv gegen", "0×  Wirkungslos gegen"],
+            [DashboardTheme.Accent, DashboardTheme.Gold, DashboardTheme.Muted]);
+        this.defense = this.AddMatchupColumn(1, "Verteidigung", ["2×  Schwach gegen", "½×  Resistent gegen", "0×  Immun gegen"],
+            [DashboardTheme.Danger, DashboardTheme.Accent, DashboardTheme.Muted]);
+        this.document.Controls.AddRange([this.choices, this.results]);
+        this.scroll = new DashboardScrollHost(this.document, this.Measure) { Dock = DockStyle.Fill, AccessibleName = "Typenübersicht" };
+        this.Body.Controls.Add(this.scroll);
+        this.Shown += (_, _) =>
+        {
+            this.FitWorkingArea();
+            this.scroll.ResizeDocument();
+        };
         this.sprites.Changed += this.RefreshIcons;
         this.SelectType(0);
     }
@@ -78,6 +79,7 @@ internal sealed class TypeChartForm : PlayerWindow
         {
             this.selectors[i].BackColor = i == index ? DashboardTheme.Border : DashboardTheme.Panel;
             this.selectors[i].ForeColor = i == index ? DashboardTheme.Accent : DashboardTheme.Text;
+            this.selectors[i].AccessibleDescription = i == index ? "Ausgewählt" : null;
         }
 
         var selected = Matchups[index];
@@ -88,37 +90,92 @@ internal sealed class TypeChartForm : PlayerWindow
         SetTypes(this.defense[1], Incoming(index, type => type.Weak));
         SetTypes(this.defense[2], Incoming(index, type => type.Immune));
         this.RefreshIcons();
+        this.scroll.ResizeDocument();
     }
 
-    private static (TableLayoutPanel Panel, FlowLayoutPanel[] Rows) MatchupPanel(string title, string[] headings)
+    private FlowLayoutPanel[] AddMatchupColumn(int column, string title, string[] headings, Color[] colors)
     {
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(2, 8, 2, 0) };
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 31));
-        panel.Controls.Add(new Label
-        {
-            Text = title,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = DashboardTheme.Text,
-        }, 0, 0);
+        var titleLabel = SectionHeading(title);
+        titleLabel.Dock = DockStyle.Fill;
+        titleLabel.Margin = new Padding(column == 0 ? 4 : 10, 0, 0, 0);
+        this.results.Controls.Add(titleLabel, column, 0);
         var rows = new FlowLayoutPanel[headings.Length];
         for (int i = 0; i < headings.Length; i++)
         {
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / headings.Length));
-            var group = new Panel { Dock = DockStyle.Fill, BackColor = DashboardTheme.Background, Padding = new Padding(5) };
-            var heading = new Label
+            var card = new ToolCard
             {
-                Text = headings[i],
-                Dock = DockStyle.Top,
-                Height = 22,
-                ForeColor = i == 0 ? DashboardTheme.Accent : i == 1 ? DashboardTheme.Gold : DashboardTheme.Muted,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(12),
+                Margin = new Padding(column == 0 ? 0 : 6, 0, column == 0 ? 6 : 0, 8),
             };
-            rows[i] = new FlowLayoutPanel { Dock = DockStyle.Fill };
-            group.Controls.Add(rows[i]);
-            group.Controls.Add(heading);
-            panel.Controls.Add(group, 0, i + 1);
+            var heading = SectionHeading(headings[i]);
+            heading.ForeColor = colors[i];
+            rows[i] = new FlowLayoutPanel { Dock = DockStyle.Fill, AccessibleName = headings[i] };
+            card.Controls.Add(rows[i]);
+            card.Controls.Add(heading);
+            this.results.Controls.Add(card, column, i + 1);
         }
-        return (panel, rows);
+
+        return rows;
+    }
+
+    private int Measure(int width)
+    {
+        int innerWidth = Math.Max(1, width - this.choices.Padding.Horizontal);
+        int gap = this.LogicalToDeviceUnits(6);
+        int columns = Math.Clamp(innerWidth / this.LogicalToDeviceUnits(108), 1, 6);
+        int buttonHeight = this.LogicalToDeviceUnits(35);
+        int buttonWidth = Math.Max(1, (innerWidth / columns) - gap);
+        foreach (var button in this.selectors)
+        {
+            button.Size = new Size(buttonWidth, buttonHeight);
+            button.Margin = new Padding(0, 0, gap, gap);
+        }
+
+        int selectorRows = (this.selectors.Length + columns - 1) / columns;
+        int choicesHeight = this.choices.Padding.Vertical + this.selectionHeading.Height + (selectorRows * (buttonHeight + gap));
+        this.choices.SetBounds(0, 0, width, choicesHeight);
+
+        int titleHeight = this.LogicalToDeviceUnits(35);
+        this.results.RowStyles[0].Height = titleHeight;
+        int matchupsHeight = titleHeight;
+        for (int i = 0; i < this.attack.Length; i++)
+        {
+            int height = Math.Max(this.SizeChips(this.attack[i], width / 2), this.SizeChips(this.defense[i], width / 2));
+            this.results.RowStyles[i + 1].Height = height;
+            matchupsHeight += height;
+        }
+
+        this.results.SetBounds(0, choicesHeight + this.LogicalToDeviceUnits(12), width, matchupsHeight);
+        return this.results.Bottom;
+    }
+
+    private int SizeChips(FlowLayoutPanel row, int columnWidth)
+    {
+        var card = (ToolCard)row.Parent!;
+        int innerWidth = Math.Max(1, columnWidth - card.Margin.Horizontal - card.Padding.Horizontal);
+        int gap = Math.Min(this.LogicalToDeviceUnits(ChipGap), innerWidth - 1);
+        int chipWidth = Math.Min(this.LogicalToDeviceUnits(ChipWidth), innerWidth - gap);
+        int chipHeight = this.LogicalToDeviceUnits(ChipHeight);
+        int across = Math.Max(1, innerWidth / (chipWidth + gap));
+        foreach (var chip in row.Controls.OfType<Button>())
+        {
+            chip.Size = new Size(chipWidth, chipHeight);
+            chip.Margin = new Padding(0, 0, gap, gap);
+        }
+
+        int chipRows = Math.Max(1, (row.Controls.Count + across - 1) / across);
+        int headingHeight = card.Controls.OfType<Label>().Single().Height;
+        int content = card.Margin.Vertical + card.Padding.Vertical + headingHeight + (chipRows * (chipHeight + gap));
+        return Math.Max(this.LogicalToDeviceUnits(97), content);
+    }
+
+    private static Label SectionHeading(string text)
+    {
+        var heading = Heading(text);
+        heading.Dock = DockStyle.Top;
+        heading.Height = 28;
+        return heading;
     }
 
     private static void SetTypes(FlowLayoutPanel row, IEnumerable<int> types)
@@ -130,7 +187,6 @@ internal sealed class TypeChartForm : PlayerWindow
             var chip = DashboardTheme.Button(Matchups[index].Name);
             chip.AutoSize = false;
             chip.Tag = index;
-            chip.Size = new Size(93, 25);
             chip.TabStop = false;
             chip.AccessibleRole = AccessibleRole.StaticText;
             row.Controls.Add(chip);

@@ -449,7 +449,7 @@ internal static class DockSmokeTest
         using var handler = new ArtworkResponse(png.ToArray());
         using var client = new HttpClient(handler);
         string cache = Path.Combine(home, "Artwork");
-        using var sprites = new RubySprites(home, cache, client);
+        using var sprites = new RubySprites(Path.Combine(home, "ArtworkInput"), cache, client);
         var pikachu = RubyDashboardCatalog.Appearance(25)!;
         foreach (string type in new[] { "electric", "normal", "flying", "ground", "rock", "fighting" })
             sprites.TypeIcon(type);
@@ -927,10 +927,40 @@ internal static class DockSmokeTest
         using var sprites = new RubySprites(home);
         using var chart = new TypeChartForm(sprites);
         chart.Show();
+        Application.DoEvents();
         VerifyRoundedWindow(chart);
+        if (chart.FormBorderStyle != FormBorderStyle.None || Descendants(chart).OfType<ToolCard>().Count() != 7 ||
+            !Descendants(chart).OfType<Button>().Any(button => button.AccessibleName == "Schließen"))
+            throw new InvalidOperationException("The type chart must use the themed tool frame and matchup cards.");
+
         var selector = Descendants(chart).OfType<FlowLayoutPanel>().Single(panel => panel.AccessibleName == "Pokémon-Typen");
-        if (selector.Controls.Count != 17 || selector.Controls.OfType<Button>().Count(button => button.Text == "Feuer") != 1)
+        var types = selector.Controls.OfType<Button>().ToDictionary(button => button.Text);
+        if (types.Count != 17 || !types.ContainsKey("Feuer"))
             throw new InvalidOperationException("The type chart should expose all 17 types as buttons.");
+
+        var matchups = Descendants(chart).OfType<FlowLayoutPanel>().Where(panel => panel != selector)
+            .ToDictionary(panel => panel.AccessibleName!);
+        var immunities = matchups["0×  Immun gegen"];
+        if (types["Normal"].AccessibleDescription != "Ausgewählt" ||
+            immunities.Controls.OfType<Button>().Single().Text != "Geist")
+            throw new InvalidOperationException("The initial Normal selection must show its immunity to Ghost.");
+
+        types["Feuer"].PerformClick();
+        var strong = matchups["2×  Sehr effektiv gegen"].Controls.OfType<Button>().Select(button => button.Text).ToHashSet();
+        var weak = matchups["2×  Schwach gegen"].Controls.OfType<Button>().Select(button => button.Text).ToHashSet();
+        if (types["Feuer"].AccessibleDescription != "Ausgewählt" || types["Normal"].AccessibleDescription is not null ||
+            !strong.SetEquals(["Eis", "Käfer", "Pflanze", "Stahl"]) || !weak.SetEquals(["Boden", "Gestein", "Wasser"]))
+            throw new InvalidOperationException("Changing the selected type must refresh both directions of the Ruby matchups.");
+        SaveToolPreview(chart, home, "type-chart");
+
+        chart.Width = Math.Min(chart.Width, chart.LogicalToDeviceUnits(550));
+        types["Stahl"].PerformClick();
+        Application.DoEvents();
+        foreach (var row in matchups.Values.Append(selector))
+        {
+            if (row.Controls.Cast<Control>().Any(control => !row.ClientRectangle.Contains(control.Bounds)))
+                throw new InvalidOperationException($"The narrow type chart clipped a type in {row.AccessibleName}.");
+        }
     }
 
     internal static void VerifyScrollDesign()
