@@ -10,27 +10,35 @@ internal sealed class GroupStatisticsForm : ToolWindow
     private readonly CancellationTokenSource lifetime = new();
     private readonly Label groupName = Heading("");
     private readonly Label[] metrics = new Label[4];
+    private readonly RunMetricChart[] charts =
+    [
+        new("Fänge", DashboardTheme.Accent, run => run.Catches),
+        new("Pokémon-Tode", DashboardTheme.Danger, run => run.Deaths),
+        new("Arenen", DashboardTheme.Gold, run => run.Arenas, axisMinimum: 8),
+    ];
+
     private readonly Button refresh = Action("Aktualisieren");
     private readonly DataGridView runs = new();
-    private readonly Label details = new() { Dock = DockStyle.Bottom, Height = 52, AutoEllipsis = true };
+    private readonly Label details = new() { Dock = DockStyle.Bottom, Height = 36, AutoEllipsis = true };
     private readonly Label feedback = new() { Dock = DockStyle.Bottom, Height = 28, ForeColor = DashboardTheme.Muted };
 
     public GroupStatisticsForm(Func<CancellationToken, Task<GroupStatistics>> load)
-        : base("Gruppenstatistik", new Size(920, 556))
+        : base("Gruppenstatistik", new Size(1032, 758))
     {
         this.load = load;
-        var header = new Panel { Dock = DockStyle.Top, Height = 43 };
+        this.Body.Padding = new Padding(5, 4, 5, 0);
+        var header = new Panel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(0, 3, 0, 10) };
         this.groupName.Dock = DockStyle.Fill;
         this.groupName.TextAlign = ContentAlignment.MiddleLeft;
         this.refresh.Dock = DockStyle.Right;
         header.Controls.AddRange([this.groupName, this.refresh]);
 
-        var summary = new TableLayoutPanel { Dock = DockStyle.Top, Height = 100, ColumnCount = 4, RowCount = 1 };
+        var summary = new TableLayoutPanel { Dock = DockStyle.Top, Height = 98, ColumnCount = 4, RowCount = 1 };
         string[] labels = ["Runs · davon abgeschlossen", "Erfasste Fänge", "Tote Pokémon", "Meiste Arenen in einem Run"];
         for (int i = 0; i < labels.Length; i++)
         {
             summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-            var card = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, i == labels.Length - 1 ? 0 : 8, 10) };
+            var card = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, i == labels.Length - 1 ? 0 : 12, 10) };
             var metric = new Label { Text = "–", Dock = DockStyle.Top, Height = 37, Font = MetricFont, ForeColor = DashboardTheme.Accent };
             this.metrics[i] = metric;
             card.Controls.Add(new Label { Text = labels[i], Dock = DockStyle.Fill, ForeColor = DashboardTheme.Muted });
@@ -39,14 +47,66 @@ internal sealed class GroupStatisticsForm : ToolWindow
         }
 
         this.ConfigureRunList();
-        this.details.Padding = new Padding(0, 8, 0, 0);
-        this.Body.Controls.Add(this.runs);
-        this.Body.Controls.Add(this.details);
+        this.details.Padding = new Padding(0, 10, 0, 0);
+        var list = new ToolCard { Dock = DockStyle.Fill };
+        list.Controls.Add(this.runs);
+        list.Controls.Add(this.details);
+        list.Controls.Add(SectionHeading("Run-Liste", 31));
+
+        var trends = this.BuildCharts();
+        this.Body.SizeChanged += (_, _) =>
+        {
+            trends.Height = Math.Clamp(this.Body.ClientSize.Height * 36 / 100,
+                this.LogicalToDeviceUnits(156), this.LogicalToDeviceUnits(244));
+        };
+        this.Body.Controls.Add(list);
         this.Body.Controls.Add(this.feedback);
+        this.Body.Controls.Add(trends);
+        this.Body.Controls.Add(SectionHeading("Verlauf je Run · ältester zuerst", 33));
         this.Body.Controls.Add(summary);
         this.Body.Controls.Add(header);
-        this.Shown += async (_, _) => await this.ReloadAsync();
+        this.Shown += async (_, _) =>
+        {
+            this.FitWorkingArea();
+            await this.ReloadAsync();
+        };
         this.refresh.Click += async (_, _) => await this.ReloadAsync();
+    }
+
+    private TableLayoutPanel BuildCharts()
+    {
+        var table = new TableLayoutPanel { Dock = DockStyle.Top, Height = 244, ColumnCount = this.charts.Length, RowCount = 1 };
+        string[] labels = ["Fänge", "Pokémon-Tode", "Arena-Fortschritt"];
+        for (int i = 0; i < this.charts.Length; i++)
+        {
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / this.charts.Length));
+            var card = new ToolCard { Dock = DockStyle.Fill, Margin = new Padding(0, 0, i == this.charts.Length - 1 ? 0 : 12, 16) };
+            this.charts[i].Dock = DockStyle.Fill;
+            card.Controls.Add(this.charts[i]);
+            card.Controls.Add(SectionHeading(labels[i], 26));
+            table.Controls.Add(card, i, 0);
+        }
+
+        return table;
+    }
+
+    private void FitWorkingArea()
+    {
+        var area = Screen.FromControl(this).WorkingArea;
+        int margin = this.LogicalToDeviceUnits(12);
+        this.Size = new Size(Math.Min(this.Width, Math.Max(1, area.Width - (margin * 2))),
+            Math.Min(this.Height, Math.Max(1, area.Height - (margin * 2))));
+        this.Location = new Point(Math.Clamp(this.Left, area.Left + margin, Math.Max(area.Left + margin, area.Right - this.Width - margin)),
+            Math.Clamp(this.Top, area.Top + margin, Math.Max(area.Top + margin, area.Bottom - this.Height - margin)));
+    }
+
+    private static Label SectionHeading(string text, int height)
+    {
+        var heading = Heading(text);
+        heading.Dock = DockStyle.Top;
+        heading.Height = height;
+        heading.TextAlign = ContentAlignment.MiddleLeft;
+        return heading;
     }
 
     protected override void Dispose(bool disposing)
@@ -94,6 +154,9 @@ internal sealed class GroupStatisticsForm : ToolWindow
         this.metrics[1].Text = Metric(SumRecorded(records.Select(run => run.Catches)));
         this.metrics[2].Text = Metric(SumRecorded(records.Select(run => run.Deaths)));
         this.metrics[3].Text = Metric(records.Select(run => run.Arenas).DefaultIfEmpty().Max());
+
+        var chronological = records.OrderBy(run => run.Date).ToArray();
+        foreach (var chart in this.charts) chart.SetRuns(chronological);
 
         this.runs.Rows.Clear();
         foreach (var run in records)

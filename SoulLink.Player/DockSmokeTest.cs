@@ -693,12 +693,13 @@ internal static class DockSmokeTest
         var date = new DateTimeOffset(2025, 2, 2, 16, 0, 0, TimeSpan.Zero);
         var live = new RunStatistics(Guid.NewGuid(), "Aktiver Run", false, RunPhase.Active, date, null, null, 12, 3, 4);
         var archived = new RunStatistics(Guid.NewGuid(), "Alter Run", true, RunPhase.Finished, date.AddDays(-10), date.AddDays(-2), "Wipe", null, 5, 3);
-        using var statistics = new GroupStatisticsForm(_ => Task.FromResult(new GroupStatistics("Rubin-Runde", [live, archived])));
+        var oldest = archived with { Id = Guid.NewGuid(), Name = "Erster Run", Date = date.AddDays(-30), Catches = 0, Deaths = null, Arenas = null };
+        using var statistics = new GroupStatisticsForm(_ => Task.FromResult(new GroupStatistics("Rubin-Runde", [live, archived, oldest])));
         statistics.Show();
         Application.DoEvents();
         var grid = Descendants(statistics).OfType<DataGridView>().Single();
         var labels = Descendants(statistics).OfType<Label>().Select(label => label.Text).ToArray();
-        if (grid.Rows.Count != 2 || !labels.Contains("Rubin-Runde") || !labels.Contains("2 / 1") ||
+        if (grid.Rows.Count != 3 || !labels.Contains("Rubin-Runde") || !labels.Contains("3 / 2") ||
             !labels.Contains("12") || !labels.Contains("8") || !labels.Contains("4") ||
             !Equals(grid.Rows[1].Cells[1].Value, "Discord") || !Equals(grid.Rows[1].Cells[4].FormattedValue, "–"))
         {
@@ -711,7 +712,52 @@ internal static class DockSmokeTest
             throw new InvalidOperationException("Selecting an archived run must show its end reason.");
         }
 
+        var charts = Descendants(statistics).OfType<RunMetricChart>().ToArray();
+        if (charts.Length != 3 || charts.Any(chart => !chart.Visible || chart.ClientSize.Height < 60))
+        {
+            throw new InvalidOperationException("The window must display all three run charts.");
+        }
+
+        var catches = charts.Single(chart => chart.AccessibleName == "Fänge je Run");
+        VerifyChartHover(catches, live);
         SaveToolPreview(statistics, home, "statistics");
+    }
+
+    private static void VerifyChartHover(RunMetricChart chart, RunStatistics latest)
+    {
+        using var image = new Bitmap(chart.Width, chart.Height);
+        chart.DrawToBitmap(image, chart.ClientRectangle);
+        int accent = DashboardTheme.Accent.ToArgb();
+        var dots = new List<Point>();
+        for (int y = 0; y < image.Height; y++)
+        {
+            for (int x = 0; x < image.Width; x++)
+            {
+                if (image.GetPixel(x, y).ToArgb() == accent) dots.Add(new Point(x, y));
+            }
+        }
+
+        if (!dots.Any(dot => dot.X < chart.Width / 3) || !dots.Any(dot => dot.X > chart.Width * 2 / 3) ||
+            dots.Any(dot => dot.X >= chart.Width / 3 && dot.X <= chart.Width * 2 / 3))
+        {
+            throw new InvalidOperationException("The chart must plot zero values and leave a gap at missing values.");
+        }
+
+        Point hit = dots.OrderByDescending(dot => dot.X).First();
+        SendMessage(chart.Handle, 0x0200, 0, (hit.Y << 16) | hit.X);
+        string detail = chart.AccessibleDescription ?? "";
+        if (!detail.Contains(latest.Name, StringComparison.Ordinal) || !detail.Contains("Fänge  12", StringComparison.Ordinal) ||
+            !detail.Contains(latest.Date.LocalDateTime.ToString("d"), StringComparison.Ordinal) ||
+            !detail.Contains("SoulLink", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Hovering a plotted point must expose the matching run, date, source and metric.");
+        }
+
+        SendMessage(chart.Handle, 0x0200, 0, (hit.Y << 16) | (chart.Width / 2));
+        if (string.Equals(chart.AccessibleDescription, detail, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Leaving the plotted point must remove its hover details.");
+        }
     }
 
     private static void SaveToolPreview(Form form, string home, string name)

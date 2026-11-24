@@ -64,6 +64,8 @@ Der Server bewahrt die Originaldaten in SQLite auf. Discord-Archive sind schreib
 
 Die Übersicht zeigt gewertete Fänge ohne Starter, als tot markierte Pokémon einschließlich Linkpartner und den höchsten gemeinsamen Arena-Fortschritt. Wähle einen Run aus, um sein Datum und einen vorhandenen Endgrund zu sehen. Ein Gedankenstrich steht für ein fehlendes Archivfeld. Die Summen zählen die erfassten Werte.
 
+Die Diagramme zeigen Fänge, Pokémon-Tode und Arenen in chronologischer Run-Reihenfolge. Bewege den Mauszeiger über einen Punkt, um Run, Datum, Quelle und Wert zu sehen. Mit der Tabulatortaste und den Pfeiltasten kannst du die Punkte auch per Tastatur erkunden. Fehlende Archivwerte erscheinen als Lücken.
+
 Beginnt ihr gemeinsam ein neues Spiel, kannst du den Run starten, sobald alle im Spielfeld angekommen sind. SoulLink erfasst die frisch gewählten Starter automatisch. Mit **Links bearbeiten** kannst du Starter und Fänge im aktiven oder pausierten Run nachträglich zuordnen. Ziehe jedes Pokémon in seiner Spielerspalte zur gewünschten Zeile oder zu **Unverlinkt**. **Links speichern** übernimmt die Zuordnung für alle. Der Starter-Link lässt Route 101 für einen regulären Fang frei. Im Grid steht **Starter** auf den zugeordneten Pokémon. Beim Darüberfahren siehst du den ursprünglichen Fangort.
 
 Unter **SoulLink → Run beitreten / wechseln** findest du die gemerkten Einladungen. Beim Wechsel bitte vorher im Spiel speichern. SoulLink beendet mGBA und öffnet dieselbe EXE mit dem gewählten Run-Profil.
