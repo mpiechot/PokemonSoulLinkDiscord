@@ -2,7 +2,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class PlayerIdentityForm : Form
+internal sealed class PlayerIdentityForm : PlayerWindow
 {
     private readonly TextBox name = RunDialogs.TextInput("Spielername", 64);
     private readonly ComboBox marker = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };

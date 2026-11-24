@@ -3,7 +3,7 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class ItemMenuForm : Form
+internal sealed class ItemMenuForm : PlayerWindow
 {
     private static readonly (PcItem Item, string Name, string Sprite, Color Color)[] Items =
     [

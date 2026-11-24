@@ -4,7 +4,7 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class CompanionForm : Form
+internal sealed class CompanionForm : PlayerWindow
 {
     private readonly ClientRuntime runtime;
     private readonly PortableMgba emulator;
@@ -566,7 +566,7 @@ internal sealed class CompanionForm : Form
     private void ShowRoster(string title, RosterView filter)
     {
         if (this.closing) return;
-        using var dialog = new Form();
+        using var dialog = new PlayerWindow();
         RunDialogs.Configure(dialog, title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 560));
         var roster = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         roster.PokemonOpened += (player, pokemon) => this.ShowPokemon(dialog, player, pokemon);
@@ -592,7 +592,7 @@ internal sealed class CompanionForm : Form
     private void ShowPlaces()
     {
         if (this.closing) return;
-        using var dialog = new Form();
+        using var dialog = new PlayerWindow();
         RunDialogs.Configure(dialog, "Fangorte", new Size(540, 330));
         var tags = new FlowLayoutPanel { Padding = new Padding(4), BackColor = DashboardTheme.Surface };
         var scroll = new DashboardScrollHost(tags, width => tags.GetPreferredSize(new Size(width, 0)).Height)

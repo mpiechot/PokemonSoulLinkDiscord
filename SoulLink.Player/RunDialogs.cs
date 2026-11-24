@@ -4,7 +4,7 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class CatchCheckForm : Form
+internal sealed class CatchCheckForm : PlayerWindow
 {
     private readonly TextBox query = RunDialogs.TextInput("Deutscher oder englischer Pokémon-Name", 80);
     private readonly CatchVerdictPanel outcome = new() { AccessibleName = "Catch-Check-Ergebnis", Margin = new Padding(0, 8, 0, 0) };
@@ -104,7 +104,7 @@ internal sealed class CatchVerdictPanel : TableLayoutPanel
     }
 }
 
-internal sealed class RunEndForm : Form
+internal sealed class RunEndForm : PlayerWindow
 {
     public RunEndForm(Guid incidentId, Func<string, Task> complete)
     {
@@ -148,7 +148,7 @@ internal sealed class RunEndForm : Form
     protected override bool ShowWithoutActivation => true;
 }
 
-internal sealed class DeathReasonForm : Form
+internal sealed class DeathReasonForm : PlayerWindow
 {
     private readonly TextBox reason = new() { Dock = DockStyle.Top, MaxLength = 250, PlaceholderText = "Grund (optional)" };
     private readonly Label details = new() { Dock = DockStyle.Top, Height = 94, Padding = new Padding(0, 0, 0, 12) };
@@ -218,7 +218,7 @@ internal static class RunDialogs
         return (battle!.FinishingBlow ? "K.-o.-Attacke" : "Letzte erfasste Attacke", name);
     }
 
-    public static void Configure(Form form, string title, Size size)
+    public static void Configure(PlayerWindow form, string title, Size size)
     {
         form.Text = title;
         form.ClientSize = size;

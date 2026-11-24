@@ -2,7 +2,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class PokemonDetailsForm : Form
+internal sealed class PokemonDetailsForm : PlayerWindow
 {
     public PokemonDetailsForm(PokemonState pokemon, string? romPath, Func<CancellationToken, Task<PokemonRomDetails?>>? partnerLookup)
     {

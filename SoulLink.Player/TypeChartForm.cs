@@ -1,6 +1,6 @@
 namespace SoulLink.Player;
 
-internal sealed class TypeChartForm : Form
+internal sealed class TypeChartForm : PlayerWindow
 {
     // Pokémon Ruby type matchups, before the Steel changes in Generation VI.
     private static readonly TypeMatchup[] Matchups =

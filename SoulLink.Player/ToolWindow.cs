@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace SoulLink.Player;
 
-internal class ToolWindow : Form
+internal class ToolWindow : PlayerWindow
 {
     private static readonly Font HeadingFont = new("Segoe UI Semibold", 11);
     private static readonly Font TitleFont = new("Segoe UI Semibold", 13);

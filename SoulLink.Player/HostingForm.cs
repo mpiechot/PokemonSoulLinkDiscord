@@ -441,7 +441,7 @@ internal sealed class HostingForm : ToolWindow
         if (this.Group is not { } group || this.Run is not { } run) return;
         var players = await client.PlayersAsync(group.Id, run.Id);
         if (this.IsDisposed) return;
-        using var dialog = new Form();
+        using var dialog = new PlayerWindow();
         RunDialogs.Configure(dialog, $"Spieler in {run.Name}", new Size(660, 360));
         var list = new ListBox
         {
@@ -512,7 +512,7 @@ internal sealed class HostingForm : ToolWindow
 
 internal enum ProfilePickerMode { Both, Load, Join }
 
-internal sealed class ProfilePicker : Form
+internal sealed class ProfilePicker : PlayerWindow
 {
     private readonly ComboBox choices = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = nameof(Row.Name) };
 

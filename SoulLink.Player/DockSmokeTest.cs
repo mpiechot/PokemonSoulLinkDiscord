@@ -562,11 +562,13 @@ internal static class DockSmokeTest
                 throw new InvalidOperationException("The host dialog did not retain its verified in-memory session.");
             using var nextRun = new HostingForm(profiles, "https://example.invalid", session, _ => Task.CompletedTask);
             nextRun.Show();
+            VerifyRoundedWindow(nextRun);
             if (nextRun.Session is not null || nextRun.Controls.Find("HostWorkspace", true).Single().Visible)
                 throw new InvalidOperationException("A remembered key must be verified before exposing host actions.");
             var group = new RunGroup(Guid.NewGuid(), "Rubin-Runde");
             var run = new HostRun(Guid.NewGuid(), "Run 5", RunPhase.Active, true, "EXAMPLE", 2, 2);
             await ConnectAndWait(nextRun, ReplyToGroupAndRunsAsync());
+            VerifyRoundedWindow(nextRun);
             if (nextRun.Session?.Server != server)
                 throw new InvalidOperationException("Opening the host controls in the next run changed the authenticated server.");
             string[] visibleActions = Descendants(nextRun).OfType<Button>().Where(button => button.Visible).Select(button => button.Text).ToArray();
@@ -606,6 +608,21 @@ internal static class DockSmokeTest
         }
     }
 
+    private static void VerifyRoundedWindow(Form form)
+    {
+        int right = form.Width - 1;
+        int bottom = form.Height - 1;
+        if (form.Region is not { } outline ||
+            outline.IsVisible(0, 0) || outline.IsVisible(right, 0) ||
+            outline.IsVisible(0, bottom) || outline.IsVisible(right, bottom) ||
+            !outline.IsVisible(right / 2, 0) || !outline.IsVisible(right / 2, bottom) ||
+            !outline.IsVisible(0, bottom / 2) || !outline.IsVisible(right, bottom / 2) ||
+            outline.IsVisible(form.Width, bottom / 2) || outline.IsVisible(right / 2, form.Height))
+        {
+            throw new InvalidOperationException($"The {form.Text} frame must round all four corners and match the {form.Size} window bounds.");
+        }
+    }
+
     internal static void VerifyToolWindows(ClientRuntime runtime, string home)
     {
         TraceToolPreviews(home, "Checking setup");
@@ -618,6 +635,7 @@ internal static class DockSmokeTest
         TraceToolPreviews(home, "Checking effects");
         using var effects = new StatusEffectsForm();
         effects.Show();
+        VerifyRoundedWindow(effects);
         var toxic = Descendants(effects).OfType<Button>().Single(button => button.Text == "Schwere Vergiftung");
         toxic.PerformClick();
         if (!Descendants(effects).OfType<Label>().Any(label => label.Text.Contains("überspringt schwere Vergiftung", StringComparison.Ordinal)))
@@ -703,6 +721,19 @@ internal static class DockSmokeTest
             using var form = new CompanionForm(runtime, emulator, selection, Path.Combine(home, "Bridge"), null, profile, home, profiles: profiles, testSlot: 2);
             form.Show();
             Application.DoEvents();
+            VerifyRoundedWindow(form);
+            if (profile is null)
+            {
+                form.WindowState = FormWindowState.Maximized;
+                if (form.Region is not null)
+                {
+                    throw new InvalidOperationException("The maximized player must use the full rectangular frame.");
+                }
+
+                form.WindowState = FormWindowState.Normal;
+                VerifyRoundedWindow(form);
+            }
+
             var surface = Descendants(form).OfType<EmulatorSurface>().Single();
             var buttons = Descendants(surface).OfType<Button>().Where(button => button.Visible).ToArray();
             if (runtime.ExecuteTask is not null || form.IsGameDocked || Descendants(form).OfType<RunFeed>().Single().Visible ||
@@ -734,6 +765,8 @@ internal static class DockSmokeTest
 
         using var sprites = new RubySprites(home);
         using var chart = new TypeChartForm(sprites);
+        chart.Show();
+        VerifyRoundedWindow(chart);
         var selector = Descendants(chart).OfType<FlowLayoutPanel>().Single(panel => panel.AccessibleName == "Pokémon-Typen");
         if (selector.Controls.Count != 17 || selector.Controls.OfType<Button>().Count(button => button.Text == "Feuer") != 1)
             throw new InvalidOperationException("The type chart should expose all 17 types as buttons.");

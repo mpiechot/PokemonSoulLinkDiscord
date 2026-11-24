@@ -2,7 +2,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class LinkEditorForm : Form
+internal sealed class LinkEditorForm : PlayerWindow
 {
     private readonly HostLinkEditor editor;
     private readonly Dictionary<int, HostLinkRow> links;
