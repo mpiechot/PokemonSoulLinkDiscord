@@ -115,7 +115,11 @@ public static class AutomationHosting
         admin.MapGet("/runs/{guild}", (string guild, AutomationEngine engine) => engine.Runs(guild));
         admin.MapGet("/groups", (AutomationEngine engine) => engine.Groups());
         admin.MapPost("/groups", (CreateGroupRequest request, AutomationEngine engine) => engine.CreateGroup(request.Name));
-        admin.MapGet("/groups/{id:guid}/runs", (Guid id, AutomationEngine engine) => engine.GroupRuns(id));
+        admin.MapGet("/groups/{id:guid}/runs", (Guid id, bool? includeArchived, AutomationEngine engine, DiscordRunArchive archive) =>
+        {
+            var runs = engine.GroupRuns(id);
+            return includeArchived == true ? runs.Concat(archive.GroupRuns(id)).ToArray() : runs;
+        });
         admin.MapPost("/groups/{id:guid}/runs", (Guid id, GroupRunRequest request, AutomationEngine engine) => engine.CreateGroupRun(id, request));
         admin.MapPost("/groups/{id:guid}/discord-runs/import", DiscordRunArchive.ImportAsync);
         admin.MapPost("/groups/{id:guid}/runs/{run:guid}/{action}", (Guid id, Guid run, string action, AutomationEngine engine) =>

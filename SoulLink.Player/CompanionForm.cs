@@ -386,6 +386,12 @@ internal sealed class CompanionForm : PlayerWindow
         var view = this.runtime.Status();
         using var dialog = new ProfilePicker(this.profiles, current, this.profile is { } profile ? view with { Server = profile.Server } : view, mode);
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        if (dialog.OpenGroupRuns)
+        {
+            await this.OpenHostingAsync();
+            return;
+        }
+
         await this.SwitchProfileAsync(dialog.SelectedProfile);
     }
 

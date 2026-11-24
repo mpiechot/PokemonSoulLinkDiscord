@@ -30,7 +30,7 @@ public sealed class HostAdminClient : IDisposable
 
     public Task<RunGroup> CreateGroupAsync(string name) => this.SendAsync<RunGroup>(HttpMethod.Post, "groups", new CreateGroupRequest(name));
 
-    public Task<HostRun[]> RunsAsync(Guid group) => this.SendAsync<HostRun[]>(HttpMethod.Get, $"groups/{group:D}/runs");
+    public Task<HostRun[]> RunsAsync(Guid group) => this.SendAsync<HostRun[]>(HttpMethod.Get, $"groups/{group:D}/runs?includeArchived=true");
 
     public Task<HostRun> CreateRunAsync(Guid group, string name) =>
         this.SendAsync<HostRun>(HttpMethod.Post, $"groups/{group:D}/runs", new GroupRunRequest(name));

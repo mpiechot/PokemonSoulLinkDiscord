@@ -223,7 +223,13 @@ public sealed record DiscordRunImportResult(int Imported, int AlreadyImported)
     public const int MaxArchiveBytes = 20 * 1024 * 1024;
 }
 
-public sealed record HostRun(Guid Id, string Name, RunPhase Phase, bool Selected, string Invitation, int Players, int Ready);
+public sealed record HostRun(Guid Id, string Name, RunPhase Phase, bool Selected, string Invitation, int Players, int Ready)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HostDiscordArchive? DiscordArchive { get; init; }
+}
+
+public sealed record HostDiscordArchive(string Game, DateTime StartedAtUtc, DateTime? EndedAtUtc, string? EndReason);
 public sealed record HostPlayer(Guid Id, string Name, string Connection, string Diagnostic);
 public sealed record HostStarterPlayer(Guid Id, string Name, HostStarterPokemon[] Pokemon);
 public sealed record HostStarterPokemon(Guid Id, int Species, string Nickname, int? Level);

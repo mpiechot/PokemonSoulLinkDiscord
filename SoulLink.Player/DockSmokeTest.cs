@@ -567,6 +567,11 @@ internal static class DockSmokeTest
                 throw new InvalidOperationException("A remembered key must be verified before exposing host actions.");
             var group = new RunGroup(Guid.NewGuid(), "Rubin-Runde");
             var run = new HostRun(Guid.NewGuid(), "Run 5", RunPhase.Active, true, "EXAMPLE", 2, 2);
+            var archived = new HostRun(Guid.NewGuid(), "Alter Discord-Run", RunPhase.Finished, false, "", 2, 0)
+            {
+                DiscordArchive = new HostDiscordArchive("Rubin", new DateTime(2025, 2, 2, 16, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2025, 2, 8, 20, 0, 0, DateTimeKind.Utc), "Wipe"),
+            };
             await ConnectAndWait(nextRun, ReplyToGroupAndRunsAsync());
             VerifyRoundedWindow(nextRun);
             if (nextRun.Session?.Server != server)
@@ -577,12 +582,25 @@ internal static class DockSmokeTest
                 visibleActions.Contains("Starten") || visibleActions.Contains("Fortsetzen") || visibleActions.Contains("Für mich merken"))
                 throw new InvalidOperationException("The selected active run did not expose exactly its applicable actions.");
             SaveToolPreview(nextRun, home, "host");
+            var runChoices = Descendants(nextRun).OfType<ListBox>().Single(list => list.AccessibleName == "Runs");
+            if (runChoices.Items.Count != 2)
+                throw new InvalidOperationException("The host run list must show the live run and the imported Discord run.");
+            runChoices.SelectedIndex = 1;
+            if (!Descendants(nextRun).OfType<Label>().Any(label => label.Visible &&
+                label.Text.Contains("Discord-Archiv", StringComparison.Ordinal) && label.Text.Contains("Abgeschlossen", StringComparison.Ordinal) &&
+                label.Text.Contains("Wipe", StringComparison.Ordinal)) ||
+                Descendants(nextRun).OfType<Button>().Any(button => button.Visible &&
+                    button.Text is "Abschließen" or "Pausieren" or "Links bearbeiten" or "Selbst beitreten" or "Einladung kopieren" or "Spieler und Spielstände"))
+            {
+                throw new InvalidOperationException("Selecting the archived run must show its details without live controls.");
+            }
+
             nextRun.Close();
 
             async Task ReplyToGroupAndRunsAsync()
             {
                 await ReplyAsync(groupsPath, adminKey, "200 OK", Protocol.Serialize(new[] { group })).ConfigureAwait(false);
-                await ReplyAsync($"{groupsPath}/{group.Id:D}/runs", adminKey, "200 OK", Protocol.Serialize(new[] { run })).ConfigureAwait(false);
+                await ReplyAsync($"{groupsPath}/{group.Id:D}/runs?includeArchived=true", adminKey, "200 OK", Protocol.Serialize(new[] { run, archived })).ConfigureAwait(false);
             }
         }
 

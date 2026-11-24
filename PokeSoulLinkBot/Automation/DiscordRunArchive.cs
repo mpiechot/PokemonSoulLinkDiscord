@@ -23,6 +23,20 @@ internal sealed class DiscordRunArchive(AutomationStore store)
         return archive.Import(id, await reader.ReadToEndAsync(cancellationToken));
     }
 
+    public HostRun[] GroupRuns(Guid groupId)
+    {
+        var archived = store.Execute(tx => tx.ArchivedDiscordRuns(groupId));
+        return archived.Select(entry => JsonSerializer.Deserialize<SoulLinkRun>(entry.Document, LegacyJson) ??
+                throw new InvalidDataException("Ein archivierter Discord-Run ist leer."))
+            .OrderByDescending(run => run.StartedAtUtc)
+            .ThenBy(run => run.Id)
+            .Select(run => new HostRun(run.Id, run.Name, RunPhase.Finished, false, string.Empty, run.Players?.Count ?? 0, 0)
+            {
+                DiscordArchive = new HostDiscordArchive(run.Game, run.StartedAtUtc, run.EndedAtUtc, run.EndReason),
+            })
+            .ToArray();
+    }
+
     private DiscordRunImportResult Import(Guid groupId, string json)
     {
         var runs = new List<ArchivedDiscordRun>();

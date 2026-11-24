@@ -389,14 +389,15 @@ internal sealed class HostingForm : ToolWindow
         this.runs.TabStop = run is not null;
         this.emptyRuns.Text = this.Group is null ? "Wähle eine Gruppe." : "In dieser Gruppe gibt es noch keine Runs.";
         this.runName.Text = run?.Name ?? "Run-Details";
-        this.runStatus.Text = run is null ? "Wähle links einen Run aus." : $"{Phase(run)}  ·  {run.Ready}/{run.Players} Spielstände bereit";
+        this.runStatus.Height = this.LogicalToDeviceUnits(run?.DiscordArchive is null ? 44 : 100);
+        this.runStatus.Text = RunDetails(run);
         var action = PrimaryAction(run);
         this.primary.Visible = action.HasValue;
         this.primary.Enabled = !this.busy && action is { Enabled: true };
         this.primary.Text = action?.Label ?? "";
         this.end.Visible = this.lifecycle.Visible = run is { Phase: not RunPhase.Finished };
         this.end.Enabled = !this.busy;
-        this.players.Visible = this.management.Visible = run is { Players: > 0 };
+        this.players.Visible = this.management.Visible = run is { Players: > 0, DiscordArchive: null };
         this.editLinks.Visible = run is { Players: > 0, Phase: RunPhase.Active or RunPhase.Paused };
         this.players.Enabled = this.editLinks.Enabled = !this.busy;
         this.invitations.Visible = run is { Selected: true, Invitation.Length: > 0 };
@@ -417,6 +418,7 @@ internal sealed class HostingForm : ToolWindow
         await this.UseServerAsync(async client =>
         {
             var result = await client.ImportDiscordRunsAsync(group.Id, picker.FileName);
+            await this.LoadRunsAsync(client);
             if (this.IsDisposed) return;
             this.feedback.ForeColor = DashboardTheme.Accent;
             this.feedback.Text = $"„{group.Name}“ · {result.Imported} importiert, {result.AlreadyImported} bereits vorhanden.";
@@ -495,12 +497,27 @@ internal sealed class HostingForm : ToolWindow
         public string Label => $"{this.Run.Name}  ·  {Phase(this.Run)}";
     }
 
-    private static string Phase(HostRun run) => run.Phase switch
+    private static string RunDetails(HostRun? run)
     {
-        RunPhase.Lobby when !run.Selected => "Inaktive Lobby",
-        RunPhase.Lobby => "Lobby",
-        RunPhase.Active => "Aktiv",
-        RunPhase.Paused => "Pausiert",
+        if (run is null) return "Wähle links einen Run aus.";
+        if (run.DiscordArchive is not { } archive) return $"{Phase(run)}  ·  {run.Ready}/{run.Players} Spielstände bereit";
+
+        string game = string.IsNullOrWhiteSpace(archive.Game) ? "" : $"{archive.Game}  ·  ";
+        string dates = $"Start: {archive.StartedAtUtc.ToLocalTime():d}";
+        if (archive.EndedAtUtc is DateTime end) dates += $"  ·  Ende: {end.ToLocalTime():d}";
+        string reason = string.IsNullOrWhiteSpace(archive.EndReason) ? "" : $"\nEndgrund: {archive.EndReason}";
+        string players = run.Players == 1 ? "1 Spieler" : $"{run.Players} Spieler";
+        return $"{Phase(run)}\n{game}{players}\n{dates}{reason}";
+    }
+
+    private static string Phase(HostRun run) => run switch
+    {
+        { DiscordArchive.EndedAtUtc: not null } => "Discord-Archiv  ·  Abgeschlossen",
+        { DiscordArchive: not null } => "Discord-Archiv  ·  Offen beim Export",
+        { Phase: RunPhase.Lobby, Selected: false } => "Inaktive Lobby",
+        { Phase: RunPhase.Lobby } => "Lobby",
+        { Phase: RunPhase.Active } => "Aktiv",
+        { Phase: RunPhase.Paused } => "Pausiert",
         _ => "Abgeschlossen",
     };
 
@@ -563,7 +580,13 @@ internal sealed class ProfilePicker : PlayerWindow
         this.Controls.Add(feedback);
         if (showProfiles)
         {
-            this.Controls.Add(ButtonRow(open));
+            var browseGroups = DashboardTheme.Button("Alle Runs der Gruppe");
+            browseGroups.Click += (_, _) =>
+            {
+                this.OpenGroupRuns = true;
+                this.DialogResult = DialogResult.OK;
+            };
+            this.Controls.Add(ButtonRow(open, browseGroups));
             this.Controls.Add(this.choices);
             this.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
             this.LoadProfiles(profiles, current, includeLocal: mode == ProfilePickerMode.Both);
@@ -582,6 +605,8 @@ internal sealed class ProfilePicker : PlayerWindow
 
     internal Guid SelectedProfile { get; private set; }
 
+    internal bool OpenGroupRuns { get; private set; }
+
     private void LoadProfiles(PlayerProfileLibrary profiles, Guid selected, bool includeLocal)
     {
         var saved = profiles.List().Select(p => new Row(p.Id, p.Label ?? p.Server));
@@ -590,10 +615,10 @@ internal sealed class ProfilePicker : PlayerWindow
         if (rows.Length > 0) this.choices.SelectedIndex = Math.Max(0, Array.FindIndex(rows, row => row.Id == selected));
     }
 
-    private static FlowLayoutPanel ButtonRow(Button button)
+    private static FlowLayoutPanel ButtonRow(params Button[] buttons)
     {
         var row = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42 };
-        row.Controls.Add(button);
+        row.Controls.AddRange(buttons);
         return row;
     }
 

@@ -37,11 +37,13 @@ public sealed class PlayerClientTests : IDisposable
         using var guest = new HostAdminClient(app.Urls.Single(), new string('x', 32));
         var group = await host.CreateGroupAsync("Rubin-Gruppe");
         var other = await host.CreateGroupAsync("Andere Gruppe");
+        var finished = await host.CreateRunAsync(group.Id, "Abgeschlossener SoulLink-Run");
+        await host.ChangeRunAsync(group.Id, finished.Id, "end");
         var live = await host.CreateRunAsync(group.Id, "Aktuelle Lobby");
         Guid runId = Guid.NewGuid();
         string run = $$$"""
             {"Id":"{{{runId}}}","GuildId":"123","Name":"Alter Run","Game":"Rubin",
-             "StartedAtUtc":"2025-02-02T16:00:00Z","EndReason":"Wipe",
+             "StartedAtUtc":"2025-02-02T16:00:00Z","EndedAtUtc":"2025-02-08T20:00:00Z","EndReason":"Wipe",
              "Players":[{"UserId":123,"UserName":"Anne"}],"CompletedArenas":[],"LinkGroups":[],
              "activeLinks":[null],"HistoricalField":{"keep":true}}
             """;
@@ -65,7 +67,26 @@ public sealed class PlayerClientTests : IDisposable
         Assert.Equal(runId, saved.Id);
         Assert.Equal(run, saved.Document);
         Assert.Empty(reopened.Execute(tx => tx.ArchivedDiscordRuns(other.Id)));
-        Assert.Equal(live.Id, Assert.Single(await host.RunsAsync(group.Id)).Id);
+        var runs = await host.RunsAsync(group.Id);
+        Assert.Equal(3, runs.Length);
+        Assert.Contains(runs, listed => listed.Id == live.Id && listed.Phase == RunPhase.Lobby && listed.DiscordArchive is null);
+        Assert.Contains(runs, listed => listed.Id == finished.Id && listed.Phase == RunPhase.Finished && listed.DiscordArchive is null);
+        var imported = Assert.Single(runs, listed => listed.Id == runId);
+        Assert.Equal("Alter Run", imported.Name);
+        Assert.Equal(RunPhase.Finished, imported.Phase);
+        Assert.False(imported.Selected);
+        Assert.Empty(imported.Invitation);
+        Assert.Equal(1, imported.Players);
+        Assert.Equal(new HostDiscordArchive("Rubin", new DateTime(2025, 2, 2, 16, 0, 0, DateTimeKind.Utc),
+            new DateTime(2025, 2, 8, 20, 0, 0, DateTimeKind.Utc), "Wipe"), imported.DiscordArchive);
+        Assert.Empty(await host.RunsAsync(other.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => guest.RunsAsync(group.Id));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.ChangeRunAsync(group.Id, runId, "load"));
+
+        using var previousClient = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+        previousClient.DefaultRequestHeaders.Add("X-SoulLink-Admin", key);
+        string previousList = await previousClient.GetStringAsync($"/api/soullink/admin/groups/{group.Id:D}/runs", timeout.Token);
+        Assert.Equal(new[] { finished.Id, live.Id }, Protocol.Deserialize<HostRun[]>(previousList).Select(listed => listed.Id));
     }
 
     [Fact]
