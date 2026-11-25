@@ -65,6 +65,7 @@ internal static class Program
         string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
             instance is { IsTest: true } ? Path.Combine(playerHome, "TestPlayers", instance.Slot.ToString()) : playerHome;
         Directory.CreateDirectory(home);
+        if (!smoke) PlayerDiagnostics.Start(home);
         var profiles = new PlayerProfileLibrary(home);
         if (!smokeTest && !smokeGame && !smokeClose && !customHome)
         {
@@ -74,6 +75,7 @@ internal static class Program
             }
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
             {
+                PlayerDiagnostics.Report("profile.open.failed", error);
                 ToolWindow.Notice(null, "Run-Profil", error.Message);
                 return;
             }
@@ -96,6 +98,7 @@ internal static class Program
             {
                 DockSmokeTest.VerifyEmulatorProcessCheck(home);
                 DockSmokeTest.VerifyRunConfirmation();
+                DockSmokeTest.VerifyPlayerDiagnostics(home);
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();
@@ -152,10 +155,12 @@ internal static class Program
         {
             string profileKey = profile?.Id.ToString("N") ?? "local";
             using var runtime = CreateRuntime(home, profile, localTracking: true);
+            runtime.Diagnostic += (code, error) => PlayerDiagnostics.Report(code, error);
             using var form = new CompanionForm(runtime, emulator, RomSelection.ForProfile(home, profile?.Id), Path.Combine(home, "Bridge", profileKey),
                 requestedRom, profile, sprites, UseRemoteArtwork ? Path.Combine(home, "Artwork") : null,
                 profiles, testSlot, session, restoreHosting, launchOnOpen, resumeOnOpen);
             Application.Run(form);
+            PlayerDiagnostics.Report("player.window.closed");
             if (form.PendingUpdate is { } update)
             {
                 try { PlayerUpdater.StartInstaller(update, executable, args); }

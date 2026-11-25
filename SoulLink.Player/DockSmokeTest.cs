@@ -805,6 +805,24 @@ internal static class DockSmokeTest
         }
     }
 
+    internal static void VerifyPlayerDiagnostics(string home)
+    {
+        var diagnostics = new PlayerDiagnostics(home);
+        const string secret = "Private invitation, token, and ROM path.";
+        diagnostics.Write("test.failure", new InvalidOperationException(secret));
+        string log = Path.Combine(diagnostics.DirectoryPath, "player.jsonl");
+        string capture = File.ReadAllText(log);
+        if (!capture.Contains("test.failure", StringComparison.Ordinal) ||
+            !capture.Contains(nameof(InvalidOperationException), StringComparison.Ordinal) ||
+            capture.Contains(secret, StringComparison.Ordinal))
+            throw new InvalidOperationException("Diagnostics must record failure types without saving raw exception messages.");
+        File.WriteAllBytes(log, new byte[512 * 1024]);
+        diagnostics.Write("test.rotation");
+        if (!File.Exists(Path.Combine(diagnostics.DirectoryPath, "player.previous.jsonl")) ||
+            new FileInfo(log).Length >= 512 * 1024)
+            throw new InvalidOperationException("The diagnostics log did not rotate at its size limit.");
+    }
+
     private static void VerifyRoundedWindow(Form form)
     {
         int right = form.Width - 1;

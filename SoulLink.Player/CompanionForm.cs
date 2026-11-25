@@ -87,6 +87,10 @@ internal sealed class CompanionForm : PlayerWindow
     private Guid? initialCheckpointRun;
     private DateTimeOffset nextCheckpointAttempt;
     private bool savingInitialCheckpoint;
+    private bool emulatorExitReported;
+    private bool stalledFramesReported;
+    private DateTimeOffset lastFrameProgress;
+    private (string Epoch, long Frame)? lastFrame;
     private PokemonTradeForm? pokemonTrade;
     private PokemonTradeOfferForm? tradeOffer;
     private Guid lastTradeOffer;
@@ -189,6 +193,14 @@ internal sealed class CompanionForm : PlayerWindow
         this.programMenu.Opening += (_, _) => inputSettings.Enabled = this.game is { HasExited: false } && !inputSettingsOpening;
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
             this.RunPlayerTestInstance()));
+        this.programMenu.Items.Add(new ToolStripMenuItem("Diagnoseprotokoll öffnen", null, (_, _) =>
+        {
+            try { PlayerDiagnostics.OpenDirectory(); }
+            catch (Exception error) when (RunDialogs.IsActionError(error) || error is System.ComponentModel.Win32Exception)
+            {
+                ToolWindow.Notice(this, "Diagnoseprotokoll", "Der Protokollordner konnte nicht geöffnet werden.");
+            }
+        }));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
         if (this.updater is not null) this.programMenu.Items.Add(this.updateMenu);
         if (profiles is not null)
@@ -518,6 +530,7 @@ internal sealed class CompanionForm : PlayerWindow
         e.Cancel = true;
         if (this.closing) return;
         this.closing = true;
+        PlayerDiagnostics.Report("player.close.requested");
         this.refresh.Stop();
         this.status.Text = "mGBA wird beendet …";
         this.BeginInvoke((Action)(async () => await this.ClosePlayerAsync()));
@@ -556,6 +569,7 @@ internal sealed class CompanionForm : PlayerWindow
         }
         catch (Exception error) when (error is OperationCanceledException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
+            PlayerDiagnostics.Report("player.close.failed", error);
             this.RequestedProfile = null;
             this.closing = false;
             this.updateMenu.Enabled = true;
@@ -651,10 +665,12 @@ internal sealed class CompanionForm : PlayerWindow
             this.dock.FocusGame();
             if (load) await this.runtime.LoadSlotOneAsync(this.updateLifetime.Token);
             else await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
+            PlayerDiagnostics.Report(load ? "save.slot1.loaded" : "save.slot1.written");
             this.stateFeedback = load ? "Spielstand aus Slot 1 geladen." : "Spielstand in mGBA auf Slot 1 gespeichert.";
         }
         catch (Exception error) when (RunDialogs.IsActionError(error))
         {
+            PlayerDiagnostics.Report(load ? "save.slot1.load-failed" : "save.slot1.write-failed", error);
             this.stateFeedback = error.Message;
         }
         if (this.closing) return;
@@ -852,6 +868,9 @@ internal sealed class CompanionForm : PlayerWindow
         this.activeRom = null;
         this.initialCheckpointRun = null;
         this.nextCheckpointAttempt = DateTimeOffset.MinValue;
+        this.emulatorExitReported = false;
+        this.stalledFramesReported = false;
+        this.lastFrame = null;
         this.gameError = null;
         this.shutdownError = null;
         if (this.map is { IsDisposed: false } map) map.Map.SetCartridge(null);
@@ -911,6 +930,8 @@ internal sealed class CompanionForm : PlayerWindow
                 return (this.emulator.Start(gameRom, bridge, resume: resume), gameRom);
             });
             if (this.closing) return;
+            this.lastFrameProgress = DateTimeOffset.UtcNow;
+            PlayerDiagnostics.Report("emulator.started", fields: new { resume });
             if (this.map is { IsDisposed: false } openMap) openMap.Map.SetCartridge(path);
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
@@ -921,6 +942,7 @@ internal sealed class CompanionForm : PlayerWindow
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
+            PlayerDiagnostics.Report("emulator.launch-failed", exception);
             this.gameError = exception.Message;
         }
         finally
@@ -945,6 +967,7 @@ internal sealed class CompanionForm : PlayerWindow
         var view = this.runtime.Status();
         this.Render();
         bool playing = this.game is { HasExited: false };
+        this.ObserveEmulator(view, playing);
         if (!playing && !view.Registered) this.refresh.Stop();
         if (playing) _ = this.TrySaveInitialCheckpointAsync(view);
         var pending = OwnDeaths(view);
@@ -955,6 +978,40 @@ internal sealed class CompanionForm : PlayerWindow
             this.ReviewRunEnd(activate: false);
         else if (playing && !this.deathDialogOpen && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident)
             this.ReviewDeath(incident, view.Run?.Id);
+    }
+
+    private void ObserveEmulator(ClientView view, bool playing)
+    {
+        if (!playing)
+        {
+            if (!this.emulatorExitReported && this.game is { HasExited: true } exited)
+            {
+                this.emulatorExitReported = true;
+                PlayerDiagnostics.Report("emulator.exited", fields: new { exited.ExitCode, run = view.Run?.Id, phase = view.Run?.Phase });
+            }
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (view.Snapshot is { } snapshot && this.lastFrame != (snapshot.Epoch, snapshot.Frame))
+        {
+            this.lastFrame = (snapshot.Epoch, snapshot.Frame);
+            this.lastFrameProgress = now;
+            if (this.stalledFramesReported) PlayerDiagnostics.Report("emulator.frames.recovered");
+            this.stalledFramesReported = false;
+        }
+        if (!this.stalledFramesReported && now - this.lastFrameProgress >= TimeSpan.FromSeconds(12))
+        {
+            this.stalledFramesReported = true;
+            PlayerDiagnostics.Report("emulator.frames.stalled", fields: new
+            {
+                run = view.Run?.Id,
+                phase = view.Run?.Phase,
+                frames = this.lastFrame?.Frame,
+                inBattle = view.Snapshot?.InBattle,
+                hasOwnedBridge = this.runtime.OwnedBridgeReady,
+            });
+        }
     }
 
     internal async Task TrySaveInitialCheckpointAsync(ClientView view)
@@ -973,13 +1030,15 @@ internal sealed class CompanionForm : PlayerWindow
             if (!state.Exists || state.Length == 0)
             {
                 await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
+                PlayerDiagnostics.Report("save.initial.written", fields: new { run.Id, run.Phase });
                 this.stateFeedback = "Run-Start in Slot 1 gesichert.";
                 this.stateFeedbackUntil = DateTimeOffset.UtcNow.AddSeconds(5);
             }
             this.initialCheckpointRun = run.Id;
         }
-        catch (Exception error) when (RunDialogs.IsActionError(error) || error is OperationCanceledException)
+        catch (Exception error) when (RunDialogs.IsActionError(error))
         {
+            PlayerDiagnostics.Report("save.initial.failed", error, fields: new { run.Id, run.Phase });
             this.nextCheckpointAttempt = DateTimeOffset.UtcNow.AddSeconds(5);
         }
         finally { this.savingInitialCheckpoint = false; }
@@ -1151,6 +1210,7 @@ internal sealed class CompanionForm : PlayerWindow
         }
 
         this.shownRunEnd = end.Id;
+        PlayerDiagnostics.Report("run.end.prompted", fields: new { run = run.Id, incident = end.Id });
         var dialog = new RunEndForm(end.Id, reason => this.runtime.CompleteWipedRunAsync(run.Id, end.Id, reason));
         this.runEnd = dialog;
         dialog.StartPosition = FormStartPosition.Manual;

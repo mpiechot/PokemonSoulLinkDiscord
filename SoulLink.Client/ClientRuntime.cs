@@ -93,6 +93,8 @@ public sealed partial class ClientRuntime : BackgroundService
         this.SaveSettings(this.settings);
     }
 
+    public event Action<string, Exception?>? Diagnostic;
+
     public ClientView Status()
     {
         lock (this.stateGate)
@@ -384,6 +386,7 @@ public sealed partial class ClientRuntime : BackgroundService
                 });
             }
             this.Note("Registration saved. Connecting to the server.");
+            this.Diagnostic?.Invoke("run.registration.saved", null);
         }
         finally { this.connectionGate.Release(); }
         await this.ReconnectAsync(cancellationToken);
@@ -461,6 +464,7 @@ public sealed partial class ClientRuntime : BackgroundService
                     {
                         this.SetState("Anmeldung noch nicht möglich — wird automatisch erneut versucht.");
                         this.Note("Prepared registration unavailable (" + exception.GetType().Name + ").");
+                        this.Diagnostic?.Invoke("run.registration.failed", exception);
                     }
                 }
                 await this.connectionGate.WaitAsync(stoppingToken);
@@ -469,6 +473,7 @@ public sealed partial class ClientRuntime : BackgroundService
                 {
                     this.SetState("Offline — tracking paused");
                     this.Note("Run-Verbindung unterbrochen (" + exception.GetType().Name + "). Neuer Versuch folgt automatisch.");
+                    this.Diagnostic?.Invoke("run.connection.failed", exception);
                     await this.CloseConnectionAsync();
                     this.reconnectFailures = Math.Min(this.reconnectFailures + 1, 5);
                     this.nextReconnect = this.clock.GetUtcNow().AddMilliseconds(300 * (1 << this.reconnectFailures) + Random.Shared.Next(250));
@@ -517,6 +522,7 @@ public sealed partial class ClientRuntime : BackgroundService
             this.connection.On<int, PokemonRomDetails?>("ReadPokemonDetails", this.ReadPokemonDetails);
             await this.connection.StartAsync(cancellationToken);
             this.session = await this.connection.InvokeAsync<SessionInfo>("Hello", new Hello(this.settings.ClientId), cancellationToken);
+            this.Diagnostic?.Invoke("run.connection.ready", null);
             this.overworldCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             this.overworldTask = this.overworld.RunAsync(this.connection, this.IsRunFinished, this.OverworldPlayers, this.overworldCancellation.Token);
             this.sequence = this.session.NextSequence;
@@ -659,6 +665,7 @@ public sealed partial class ClientRuntime : BackgroundService
                     this.bridgeSeen = null;
                 }
                 this.Note("mGBA bridge connected on loopback.");
+                this.Diagnostic?.Invoke("bridge.connected", null);
                 try
                 {
                     string? frameError = null;
@@ -702,7 +709,11 @@ public sealed partial class ClientRuntime : BackgroundService
                         catch (Exception exception) when (exception is InvalidDataException or JsonException or FormatException)
                         {
                             string detail = exception.Message[..Math.Min(exception.Message.Length, 180)];
-                            if (frameError != detail) this.Note("Spieldaten-Snapshot verworfen: " + detail);
+                            if (frameError != detail)
+                            {
+                                this.Note("Spieldaten-Snapshot verworfen: " + detail);
+                                this.Diagnostic?.Invoke("bridge.snapshot.rejected", exception);
+                            }
                             frameError = detail;
                         }
                     }
@@ -711,6 +722,7 @@ public sealed partial class ClientRuntime : BackgroundService
                 catch (Exception exception) when (exception is InvalidDataException or IOException or SocketException or ObjectDisposedException)
                 {
                     this.Note("mGBA-Verbindung getrennt: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
+                    this.Diagnostic?.Invoke("bridge.connection.failed", exception);
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
                 finally
