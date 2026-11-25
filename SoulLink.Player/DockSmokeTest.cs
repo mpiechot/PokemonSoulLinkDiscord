@@ -807,6 +807,14 @@ internal static class DockSmokeTest
 
     internal static void VerifyToolWindows(ClientRuntime runtime, string home)
     {
+        var pendingEnd = new PendingRunEnd(Guid.NewGuid(), Guid.NewGuid());
+        var participant = new ClientPlayerView("Mitspieler", Guid.NewGuid(), "", "Offline");
+        var run = new ClientRunView("Test", RunPhase.Active, Guid.NewGuid(), [participant], [], [], PendingEnd: pendingEnd);
+        var view = runtime.Status() with { Run = run, Registered = true, LocalPlayerId = participant.Id, Snapshot = null };
+        if (CompanionForm.PendingEndForParticipant(view) != pendingEnd ||
+            CompanionForm.PendingEndForParticipant(view with { LocalPlayerId = Guid.NewGuid() }) is not null)
+            throw new InvalidOperationException("A registered participant must see the pending run end even after exiting mGBA.");
+
         if (Environment.GetEnvironmentVariable("SOULLINK_SMOKE_MAP_ROM") is { Length: > 0 } romPath)
             VerifyMapHover(romPath, home);
         using (var end = new RunEndForm(Guid.NewGuid(), _ => Task.CompletedTask))

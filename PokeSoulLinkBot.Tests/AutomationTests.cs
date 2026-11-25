@@ -607,7 +607,7 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
-    public void OnlyThePlayerWhoLostTheLastCompleteLinkCanFinishTheRun()
+    public void EitherParticipantCanFinishTheWipeOnlyOnce()
     {
         var run = this.engine.Initialize("guild", 0, "Test", DeathRule.ConfirmFaint);
         var first = this.Join(run, "First");
@@ -642,9 +642,9 @@ public sealed class AutomationTests : IDisposable
         var end = Assert.IsType<PendingRunEnd>(view.PendingEnd);
         Assert.Equal(second.Registration.PlayerId, end.PlayerId);
         Assert.Equal(RunPhase.Active, view.Phase);
-        Assert.Throws<InvalidOperationException>(() => this.engine.CompleteWipedRun(first.Registration, end.Id, "Wrong player"));
         var restarted = new AutomationEngine(this.store);
-        restarted.CompleteWipedRun(second.Registration, end.Id, "Team besiegt");
+        restarted.CompleteWipedRun(first.Registration, end.Id, "Team besiegt");
+        Assert.Throws<InvalidOperationException>(() => restarted.CompleteWipedRun(second.Registration, end.Id, "Zu spät"));
         view = restarted.View(first.Registration);
         Assert.Equal(RunPhase.Finished, view.Phase);
         Assert.Equal("Team besiegt", view.EndReason);

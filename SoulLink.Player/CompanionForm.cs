@@ -80,6 +80,7 @@ internal sealed class CompanionForm : PlayerWindow
     private PokemonDetailsForm? pokemonDetails;
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
+    private Task? runtimeStartup;
     private PokemonTradeForm? pokemonTrade;
     private PokemonTradeOfferForm? tradeOffer;
     private Guid lastTradeOffer;
@@ -350,6 +351,15 @@ internal sealed class CompanionForm : PlayerWindow
         this.Shown += async (_, _) =>
         {
             if (launchOnOpen || this.requestedRom is not null) await this.StartGameAsync(path: this.requestedRom, resume: resumeOnOpen);
+            else if (this.runtime.Status().Registered)
+            {
+                try { await this.StartRuntimeAsync(); }
+                catch (Exception error) when (RunDialogs.IsActionError(error))
+                {
+                    this.joinError = "Die Verbindung zum gespeicherten Run konnte nicht gestartet werden.";
+                    this.Render();
+                }
+            }
             if (restoreHosting) await this.OpenHostingAsync();
             await this.CheckUpdatesAsync(interactive: false);
         };
@@ -830,8 +840,7 @@ internal sealed class CompanionForm : PlayerWindow
             }
             if (!this.started)
             {
-                await this.runtime.StartAsync(this.updateLifetime.Token);
-                this.started = true;
+                await this.StartRuntimeAsync();
                 if (this.closing) return;
             }
             this.game = await Task.Run(() =>
@@ -873,21 +882,31 @@ internal sealed class CompanionForm : PlayerWindow
         {
             this.startupScriptingClosed = EmulatorDock.CloseStartupScriptingWindow(game);
         }
-        this.Render();
-        if (this.game is not { HasExited: false })
-        {
-            this.refresh.Stop();
-            return;
-        }
         var view = this.runtime.Status();
+        this.Render();
+        bool playing = this.game is { HasExited: false };
+        if (!playing && !view.Registered) this.refresh.Stop();
         var pending = OwnDeaths(view);
         if (this.activeDeath is { } popup && pending.FirstOrDefault(d => d.IncidentId == popup.IncidentId) is { } update)
             popup.UpdateTrace(update);
         if (!this.Visible || !this.Enabled || this.actionRunning || this.OwnedForms.Any(form => form.Visible && form.Modal)) return;
-        if (OwnRunEnd(view) is { } end && this.shownRunEnd != end.Id)
+        if (PendingEndForParticipant(view) is { } end && this.shownRunEnd != end.Id)
             this.ReviewRunEnd(activate: false);
-        else if (!this.deathDialogOpen && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident)
+        else if (playing && !this.deathDialogOpen && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident)
             this.ReviewDeath(incident, view.Run?.Id);
+    }
+
+    private async Task StartRuntimeAsync()
+    {
+        Task startup = this.runtimeStartup ??= this.runtime.StartAsync(this.updateLifetime.Token);
+        try { await startup; }
+        catch
+        {
+            if (this.runtimeStartup == startup) this.runtimeStartup = null;
+            throw;
+        }
+        this.started = true;
+        if (!this.closing) this.refresh.Start();
     }
 
     internal void ChangeDock()
@@ -961,7 +980,8 @@ internal sealed class CompanionForm : PlayerWindow
         this.joinRun.Available = this.profiles is not null || (this.profile is not null && !view.Registered);
         this.checkCatch.Enabled = this.displayedRunId is not null;
         this.pendingDeathButton.Visible = running && OwnDeaths(view).Length > 0;
-        var pendingEnd = running ? OwnRunEnd(view) : null;
+        var pendingEnd = PendingEndForParticipant(view);
+        this.pendingEndButton.Visible = pendingEnd is not null;
         this.pendingEndButton.Visible = pendingEnd is not null;
         if (this.runEnd is { IsDisposed: false } end && end.IncidentId != pendingEnd?.Id) end.Close();
         if (!running) return;
@@ -1025,14 +1045,15 @@ internal sealed class CompanionForm : PlayerWindow
         if (this.catchRow.Height != height) this.catchRow.Height = height;
     }
 
-    private static PendingRunEnd? OwnRunEnd(ClientView view) =>
-        view.Run is { Phase: RunPhase.Active, PendingEnd: { } end } && end.PlayerId == view.LocalPlayerId ? end : null;
+    internal static PendingRunEnd? PendingEndForParticipant(ClientView view) =>
+        (view.Registered || view.IsLocalRun) && view.LocalPlayerId is Guid local && view.Run is { Phase: RunPhase.Active, PendingEnd: { } end } run &&
+            run.Players.Any(player => player.Id == local) ? end : null;
 
     private void ReviewRunEnd(bool activate = true)
     {
         if (this.closing) return;
         var view = this.runtime.Status();
-        if (OwnRunEnd(view) is not { } end || view.Run is not { } run) return;
+        if (PendingEndForParticipant(view) is not { } end || view.Run is not { } run) return;
         if (this.runEnd is { IsDisposed: false } open)
         {
             if (activate) open.Activate();

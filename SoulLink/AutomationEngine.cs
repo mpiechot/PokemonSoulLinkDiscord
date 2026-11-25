@@ -291,9 +291,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         {
             var run = tx.Run(registration.RunId);
             var player = run.Players.Single(p => p.Id == registration.PlayerId && p.ClientId == registration.ClientId);
-            if (run.Phase != RunPhase.Active || run.PendingEnd != new PendingRunEnd(incidentId, player.Id) ||
+            if (run.Phase != RunPhase.Active || run.PendingEnd?.Id != incidentId ||
                 run.Encounters.Any(IsLiveLink))
-                throw new InvalidOperationException("Für dich ist kein Run-Ende mehr offen.");
+                throw new InvalidOperationException("Für diesen Run ist kein Run-Ende mehr offen.");
 
             string endReason = string.IsNullOrEmpty(reason) ? "Alle Links sind tot." : reason;
             Finish(run, endReason);
@@ -929,10 +929,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             !player.Pokemon.Any(pokemon => pokemon.Present && !pokemon.Dead && !pokemon.State.IsEgg)));
         if (lastPokemonDeath?.PlayerId is not Guid playerId) return false;
 
-        var responsible = run.Players.Single(player => player.Id == playerId);
         run.PendingEnd = new PendingRunEnd(Guid.NewGuid(), playerId);
-        this.Event(tx, run, "run-end-pending", $"Run-Ende erkannt. {responsible.Name} kann den Grund eintragen.",
-            notify: false, player: responsible);
+        this.Event(tx, run, "run-end-pending", "Run-Ende erkannt. Ein Mitspieler kann den Grund eintragen.",
+            notify: false, player: run.Players.Single(player => player.Id == playerId));
         return true;
     }
 
