@@ -160,8 +160,23 @@ internal sealed class CompanionForm : PlayerWindow
                 return Task.CompletedTask;
             });
         };
-        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame, this.editPlayerProfile,
+        bool inputSettingsOpening = false;
+        var inputSettings = new ToolStripMenuItem("Tastatur und Controller …", null, async (_, _) =>
+        {
+            if (this.closing || this.game is not { HasExited: false } game) return;
+            inputSettingsOpening = true;
+            try
+            {
+                if (await this.dock.OpenInputSettingsAsync(game).WaitAsync(TimeSpan.FromSeconds(4))) return;
+            }
+            catch (TimeoutException) { }
+            finally { inputSettingsOpening = false; }
+            if (!this.closing)
+                ToolWindow.Notice(this, "Tastatur und Controller", "Öffne in mGBA „Werkzeuge → Einstellungen“ und wähle „Tastatur“ oder „Gamepads“.");
+        });
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame, this.editPlayerProfile, inputSettings,
             hideLabels, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.programMenu.Opening += (_, _) => inputSettings.Enabled = this.game is { HasExited: false } && !inputSettingsOpening;
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
             this.RunPlayerTestInstance()));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Windows.Automation;
 
 namespace SoulLink.Player;
 
@@ -101,6 +102,69 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
             });
         };
     }
+
+    internal Task<bool> OpenInputSettingsAsync(Process process)
+    {
+        if (process.HasExited) return Task.FromResult(false);
+        uint processId = (uint)process.Id;
+        nint settings = FindInputSettingsWindow(processId);
+        if (settings != 0)
+        {
+            SetForegroundWindow(settings);
+            return Task.FromResult(true);
+        }
+
+        nint target = this.Attached ? this.window : FindMainWindow(processId);
+        if (target == 0 || GetWindowThreadProcessId(target, out uint owner) == 0 || owner != processId)
+            return Task.FromResult(false);
+        return Task.Run(() => OpenSettingsMenu(target, processId));
+    }
+
+    internal static bool CloseInputSettingsWindow(Process process)
+    {
+        nint settings = FindInputSettingsWindow((uint)process.Id);
+        return settings != 0 && PostMessage(settings, CloseWindow, 0, 0);
+    }
+
+    private static bool OpenSettingsMenu(nint window, uint processId)
+    {
+        try
+        {
+            var main = AutomationElement.FromHandle(window);
+            var tools = FindNamedControl(main, ControlType.MenuItem, "Tools", "Werkzeuge");
+            if (tools is null || !tools.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out object pattern)) return false;
+            var menu = (ExpandCollapsePattern)pattern;
+            menu.Expand();
+            try
+            {
+                var settings = FindNamedControl(main, ControlType.MenuItem, "Settings...", "Settings…", "Einstellungen...", "Einstellungen…");
+                if (settings is null || !settings.TryGetCurrentPattern(InvokePattern.Pattern, out object action)) return false;
+                ((InvokePattern)action).Invoke();
+            }
+            finally
+            {
+                if (menu.Current.ExpandCollapseState == ExpandCollapseState.Expanded) menu.Collapse();
+            }
+            nint dialog = 0;
+            if (!SpinWait.SpinUntil(() => (dialog = FindInputSettingsWindow(processId)) != 0, TimeSpan.FromSeconds(1))) return false;
+            var gamepads = FindNamedControl(AutomationElement.FromHandle(dialog), ControlType.ListItem, "Gamepads", "Controllers");
+            if (gamepads is not null && gamepads.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object selection))
+                ((SelectionItemPattern)selection).Select();
+            return true;
+        }
+        catch (Exception error) when (error is ElementNotAvailableException or InvalidOperationException or COMException)
+        {
+            return false;
+        }
+    }
+
+    private static AutomationElement? FindNamedControl(AutomationElement parent, ControlType type, params string[] names) =>
+        parent.FindFirst(TreeScope.Descendants, new AndCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, type),
+            new OrCondition(names.Select(name => (Condition)new PropertyCondition(AutomationElement.NameProperty, name)).ToArray())));
+
+    private static nint FindInputSettingsWindow(uint processId) =>
+        FindWindow(processId, title => title is "Settings" or "Einstellungen");
 
     public async Task CloseGameAsync(Process process, CancellationToken cancellationToken)
     {
@@ -233,6 +297,10 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
 
     [DllImport("user32.dll")]
     private static extern nint SetFocus(nint window);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint window);
 
     [DllImport("user32.dll")]
     private static extern nint GetFocus();

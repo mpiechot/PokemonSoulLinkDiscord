@@ -437,6 +437,9 @@ internal static class DockSmokeTest
                         if (File.GetLastWriteTimeUtc(autoSlot) != automatic || File.GetLastWriteTimeUtc(manualSlot) != manual.LastWriteTimeUtc)
                             throw new InvalidDataException("Quick load or autosave changed a slot unexpectedly.");
                     }
+                    if (emulator.Bundled && !after.InBattle && (!await dock.OpenInputSettingsAsync(process).WaitAsync(timeout.Token) ||
+                        !EmulatorDock.CloseInputSettingsWindow(process)))
+                        throw new InvalidOperationException("The input action did not open mGBA's native settings while docked.");
                     if (!dock.Attached || !dock.Detach()) throw new InvalidOperationException("The native mGBA window was not restored.");
                     File.WriteAllText(Path.Combine(home, "game-result.json"), Protocol.Serialize(after));
                 }

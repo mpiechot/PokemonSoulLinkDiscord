@@ -11,6 +11,7 @@
     <ApplicationIcon>Resources\SoulLink.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
     <EmbeddedResource Include="$(MgbaBundlePath)" LogicalName="SoulLink.mGBA.zip" Condition="'$(MgbaBundlePath)' != ''" />
     <EmbeddedResource Include="$(ApplicationIcon)" LogicalName="SoulLink.Player.SoulLink.ico" />
