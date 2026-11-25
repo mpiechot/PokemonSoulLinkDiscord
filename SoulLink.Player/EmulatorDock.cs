@@ -83,6 +83,25 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
         return this.IsFocused;
     }
 
+    internal void RestoreFocusAfterClosing(Form tool)
+    {
+        if (surface.FindForm() is not { } owner) return;
+        bool toolWasActive = false;
+        tool.FormClosing += (_, _) => toolWasActive = tool.IsHandleCreated && GetActiveWindow() == tool.Handle;
+        tool.FormClosed += (_, args) =>
+        {
+            if (!toolWasActive || args.CloseReason == CloseReason.FormOwnerClosing || !owner.IsHandleCreated || owner.Disposing) return;
+            owner.BeginInvoke(() =>
+            {
+                if (owner.Disposing || !owner.IsHandleCreated || !this.Attached) return;
+                nint active = GetActiveWindow();
+                if (active != 0 && active != owner.Handle) return;
+                if (active == 0) owner.Activate();
+                this.FocusGame();
+            });
+        };
+    }
+
     public async Task CloseGameAsync(Process process, CancellationToken cancellationToken)
     {
         while (!process.HasExited && !this.RequestGameClose(process))
@@ -217,6 +236,9 @@ internal sealed class EmulatorDock(Panel surface) : IDisposable
 
     [DllImport("user32.dll")]
     private static extern nint GetFocus();
+
+    [DllImport("user32.dll")]
+    private static extern nint GetActiveWindow();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

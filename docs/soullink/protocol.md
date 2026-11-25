@@ -8,9 +8,17 @@ A `BridgeFrame` contains `version`, `type: snapshot`, `gameCode: AXVD`, `layoutI
 
 Players send their chosen name and marker when joining. Older join requests default to the circle marker. Run status includes each player's last observed area, while omitting raw snapshots. `HeartbeatWithBridge` distinguishes a connected client without fresh emulator data from a live location. The original map is decoded locally in the player without sending ROM graphics or ROM bytes to the server.
 
-### PC item grants on the local bridge
+### Item grants on the local bridge
 
-The desktop player enables this optional channel on its own emulator launch. A local click sends one fixed PC item ID, an expiring request ID, and the current bridge session, trainer and epoch. Lua confirms these values and the loaded Ruby profile before adding 99 items. It returns the new PC total or a rejection. The server has no route to this channel.
+The desktop player enables this optional channel on its own emulator launch. A local click sends the destination (`PC` or `BAG`), one allowed item ID, an expiring request ID, and the current bridge session, trainer and epoch. Lua confirms these values and the loaded Ruby profile before adding 99 items to storage or the matching bag pocket. It returns the new total at that destination or a rejection. The server has no route to this channel.
+
+### Overworld avatars on the local bridge
+
+The owned emulator sends small `type: overworld` frames with the current bridge session, epoch and a nullable pose. The client returns an authenticated `AVATARS` line containing up to eleven nearby players. The bridge checks the local session and epoch before processing the line. Poses carry numeric map, pixel, animation and depth information. Each emulator reads the sprite graphics from its local cartridge.
+
+The client adds each partner's color and truncated name from the authenticated run view to the local `AVATARS` line. Their optional suffix is a six-digit RGB color and a hex-encoded label of at most twelve glyphs. The Lua bridge also accepts pose-only lines.
+
+`AVATARSTYLE <session> <epoch> <rgb|-> <labels>` supplies the local trainer's color and the local visibility preference for other trainers' nameplates. The last field is `1` to show nameplates or `0` to hide them. A dash restores the original local trainer palette. This message stays on the owned loopback bridge.
 
 ## Client → server
 
@@ -24,6 +32,9 @@ Allowlisted methods:
 | --- | --- |
 | `Hello(Hello)` | Checks client ID and version; returns new session ID and next persistent sequence. Supersedes any old session for that player. |
 | `Observe(Observation)` | Event ID, session ID, sequence, baseline marker and validated complete game snapshot. Returns accepted/state/message/next sequence. |
+| `ExchangeOverworld(pose)` | Updates the current session's transient pose and returns other live participants on its map. A null pose removes the sender's avatar. |
+| `UpdateAppearance(marker, color)` | Updates the authenticated player's map icon and optional 24-bit RGB color. Null selects the automatic color. |
+| `UpdatePlayerProfile(name, marker, color)` | Updates the authenticated player's display name, icon and color together. Names are unique within the run, ignoring case. Returns null on success or a validation message. |
 | `HeartbeatWithBridge(sessionId, available)` | Liveness and bridge freshness, independent of meaningful state changes. |
 | `Status()` | Only the authenticated registration's run. |
 | `CheckCatch(name)` | German or English species name, and the matching caught family in the caller's run if present. |
@@ -42,6 +53,14 @@ Every server/client reconnect requires a full baseline. A sequence gap triggers 
 The optional `wildBattles` list carries up to sixteen completed wild battles from the current emulator epoch, including the map and observed start/end frames. The server consumes the first completed result per player and area after the run begins. A confirmed catch leaves link creation to inventory tracking. A missed catch marks the encounter failed and marks any existing members dead. Baselines after a timeline change or a paused run discard older battle results.
 
 Normal snapshots include fresh time/frame for rollback detection, but their wire transmission is triggered by meaningful inventory/map/battle changes. HP-zero observations are repeated to support the two-observation configurable death rule.
+
+The desktop client exchanges overworld poses about fifteen times per second while the bridge provides fresh field data. The server rate-limits calls per connection and scopes them to the current authenticated session, run and map. Poses expire after 1.2 seconds and live only in memory. The exchange is independent of inventory sequences, run-change notifications and SQLite.
+
+### Pokémon trades
+
+`OfferTrade` addresses a player and their living Pokémon in the caller's completed link. Only that player can answer via `RespondToTrade`. The server persists the offer, the preparation records, and each player's receipt in the run transaction. Standard status exposes only the participants' display details. The participant-specific `TradeWork` response delivers the incoming record after both clients have called `PrepareTrade`.
+
+The owned bridge verifies the save's trainer, the original record and both identities before starting Ruby's local trade scene. It checkpoints before starting and after returning to the field, including moving the result back to its box slot when applicable. Replaying the same instruction in the resulting checkpoint recognizes the incoming identity. `ConfirmTrade` completes the server-side ownership and link update only after both clients report their saved result. A snapshot containing a previously traded-away identity requires a newer saved state.
 
 After `Hello`, the client calls `Subscribe` to receive `RunChanged` signals scoped to its authenticated run. Committed changes are coalesced before notification. Each notification requests the caller's current view. A periodic status refresh repairs missed signals and supports older servers. The native bridge reports active battle Pokémon and HP where the profile supports them. These transient details disappear when the runner is stale or leaves the fight.
 

@@ -16,9 +16,10 @@ def fetch(path):
 
 
 paths = ("include/constants/species.h", "src/data/pokemon/base_stats.h",
-         "src/data/region_map/region_map_sections.json", "src/data/trainer_parties.h")
+         "src/data/region_map/region_map_sections.json", "src/data/trainer_parties.h",
+         "src/data/region_map/region_map_layout.h")
 with concurrent.futures.ThreadPoolExecutor(max_workers=len(paths)) as pool:
-    definitions, stats, sections_json, parties = pool.map(fetch, paths)
+    definitions, stats, sections_json, parties, layout = pool.map(fetch, paths)
 internal = dict(re.findall(r"^#define SPECIES_(\w+) (\d+)$", definitions, re.M))
 national = dict(re.findall(r"^#define NATIONAL_DEX_(\w+) (\d+)$", definitions, re.M))
 forms = []
@@ -32,6 +33,11 @@ for species, dex in national.items():
 forms.sort()
 assert len(forms) == 386 and len({form[1] for form in forms}) == 386
 sections = json.loads(sections_json)["map_sections"]
+section_ids = {section["id"]: i for i, section in enumerate(sections)} | {"MAPSEC_NONE": 255}
+cursor_cells = [section_ids[section] for section in re.findall(r"\b(MAPSEC_\w+)\s*,", layout)]
+assert len(cursor_cells) == 28 * 15
+cursor_rows = ["        " + ", ".join(map(str, cursor_cells[offset:offset + 28])) + ","
+               for offset in range(0, len(cursor_cells), 28)]
 leaders = zip(
     ("Roxanne", "Brawly", "Wattson", "Flannery", "Norman", "Winona", "TateAndLiza", "Wallace"),
     ("Felizia", "Kamillo", "Walter", "Flavia", "Norman", "Wibke", "Ben & Svenja", "Wassili"),
@@ -71,6 +77,28 @@ public static class RubyDashboardCatalog
     [
 """ + "\n".join(gym_rows) + """
     ];
+
+    private static readonly byte[] CursorCells =
+    [
+""" + "\n".join(cursor_rows) + """
+    ];
+
+    public static int? AreaAt(int column, int row) =>
+        column is >= 0 and < 28 && row is >= 0 and < 15 && CursorCells[row * 28 + column] != 255
+            ? CursorCells[row * 28 + column] : null;
+
+    public static int? LandmarkCellAt(int column, int row)
+    {
+        if (AreaAt(column, row) is not int area) return null;
+        int cell = 0;
+        for (int y = row; y >= 0; y--)
+        {
+            int count = CursorCells.AsSpan(y * 28, y == row ? column : 28).Count((byte)area);
+            if (y < row && count == 0) break;
+            cell += count;
+        }
+        return cell;
+    }
 
     public static RubySpeciesAppearance? Appearance(int species) => Forms.GetValueOrDefault(species);
 

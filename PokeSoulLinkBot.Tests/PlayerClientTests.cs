@@ -246,6 +246,41 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Theory]
+    [InlineData(RosterView.Team)]
+    [InlineData(RosterView.Box)]
+    [InlineData(RosterView.Dead)]
+    [InlineData(RosterView.Shiny)]
+    [InlineData(RosterView.Trade)]
+    public void RosterPutsTheLocalPlayerFirstAndKeepsCellsWithTheirPlayers(RosterView filter)
+    {
+        Guid first = Guid.NewGuid(), second = Guid.NewGuid(), local = Guid.NewGuid();
+        DashboardPokemon Pokemon(string identity, int species) => new(new PokemonState
+        {
+            Identity = identity,
+            Species = species,
+            Container = filter == RosterView.Box ? Placement.Box : Placement.Party,
+            IsShiny = true,
+        }, Dead: filter == RosterView.Dead, Present: true);
+
+        var partner = Pokemon("A", 25);
+        var own = Pokemon("B", 1);
+        var unlinked = Pokemon("C", 4);
+        var run = new ClientRunView("Test", RunPhase.Active, Guid.NewGuid(),
+            [new("Anne", first, "", "Ready", Pokemon: [partner]), new("Robin", second, "", "Ready", Pokemon: [unlinked]),
+                new("Max", local, "", "Ready", Pokemon: [own])],
+            [], [], [new("Route 101", filter == RosterView.Dead ? "DEAD" : "ACTIVE",
+                [new("Anne", partner, first), new("Max", own, local)])]);
+        var view = new ClientView("Max", "", true, "", 0, "", null, null, run, [], false, LocalPlayerId: local);
+
+        var roster = RosterGridData.From(view, filter);
+        Assert.Equal(new[] { local, first, second }, roster.Columns.Select(column => column.Id));
+        Assert.Equal(new DashboardPokemon?[] { own, partner, null }, roster.Rows[0].Slots);
+        Assert.Equal(new[] { false, false, true }, roster.Rows[0].MissingMembers);
+        Assert.Equal(new DashboardPokemon?[] { null, null, unlinked }, roster.Rows[1].Slots);
+        Assert.Equal(new[] { first, second, local }, run.Players.Select(player => player.Id));
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -456,6 +491,61 @@ public sealed class PlayerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task OwnedBridgeCanQuickSaveBeforeTheFirstPokemon()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = Path.Combine(this.directory, "empty-party-save.json"),
+            ["BridgePort"] = "0",
+        }).Build();
+        using var client = new ClientRuntime(configuration);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await client.StartAsync(timeout.Token);
+        try
+        {
+            const string epoch = "empty_party";
+            string session = client.BeginLocalItemSession();
+            using var peer = new System.Net.Sockets.TcpClient();
+            await peer.ConnectAsync(System.Net.IPAddress.Loopback, client.Status().BridgePort, timeout.Token);
+            using var sender = new StreamWriter(peer.GetStream()) { AutoFlush = true };
+            using var reader = new StreamReader(peer.GetStream());
+            await Send(new BridgeFrame { Type = "bridge-ready", Epoch = epoch, ItemSession = session });
+            while (!client.CanLoadState) await Task.Delay(25, timeout.Token);
+            Assert.False(client.CanSaveState);
+
+            await Send(SyntheticPokemon.Frame(1) with
+            {
+                Epoch = epoch,
+                ItemSession = session,
+                LayoutId = "ruby-axvd-reference-v2",
+                Position = new MapPosition(5, 7, 28, 24, true),
+                TrainerId = 42,
+            });
+            while (client.Status().Snapshot is null) await Task.Delay(25, timeout.Token);
+            for (int attempts = 0; !client.CanSaveState && attempts < 20; attempts++) await Task.Delay(25, timeout.Token);
+            Assert.True(client.CanSaveState, "An empty team on a valid field must allow saving.");
+            Assert.False(client.CanAddPcItems);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => client.AddPcItemsAsync(PcItem.MasterBall, timeout.Token));
+
+            var save = client.SaveSlotOneAsync(timeout.Token);
+            var request = (await reader.ReadLineAsync(timeout.Token))!.Split(' ');
+            Assert.Equal(new[] { "SAVE", session, epoch, "42" }, request[..4]);
+            Assert.Equal("1", request[5]);
+            await Send(new BridgeFrame
+            {
+                Type = "pc-item-result",
+                ItemSession = session,
+                ItemRequest = Guid.Parse(request[4]),
+                ItemResult = "ok",
+            });
+            await save;
+
+            Task Send(BridgeFrame frame) => sender.WriteLineAsync(Protocol.Serialize(frame).AsMemory(), timeout.Token);
+        }
+        finally { await client.StopAsync(timeout.Token); }
+    }
+
+    [Fact]
     public void BattleHealthOverridesOnlyAValidPartySlotWhileInBattle()
     {
         var party = SyntheticPokemon.Raw(1, 25) with { LiveHp = 7 };
@@ -491,6 +581,45 @@ public sealed class PlayerClientTests : IDisposable
             Assert.Null(client.Status().Snapshot);
             _ = client.BeginLocalItemSession();
             Assert.False(client.OwnedBridgeReady);
+        }
+        finally
+        {
+            await client.StopAsync(timeout.Token);
+        }
+    }
+
+    [Fact]
+    public async Task OwnedEmulatorReceivesLocalColorAndThePersistedLabelPreferenceWithoutAServer()
+    {
+        Directory.CreateDirectory(this.directory);
+        string settings = Path.Combine(this.directory, "avatar-style.json");
+        File.WriteAllText(settings, Protocol.Serialize(new ClientSettings { Color = 0x49DDE4 }));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["SettingsPath"] = settings,
+            ["BridgePort"] = "0",
+        }).Build();
+        using var client = new ClientRuntime(configuration);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await client.StartAsync(timeout.Token);
+        try
+        {
+            string session = client.BeginLocalItemSession();
+            using var peer = new System.Net.Sockets.TcpClient();
+            await peer.ConnectAsync(System.Net.IPAddress.Loopback, client.Status().BridgePort, timeout.Token);
+            using var sender = new StreamWriter(peer.GetStream()) { AutoFlush = true };
+            using var receiver = new StreamReader(peer.GetStream());
+            var ready = new BridgeFrame { Type = "bridge-ready", ItemSession = session, Epoch = "test_epoch" };
+            await sender.WriteLineAsync(Protocol.Serialize(ready).AsMemory(), timeout.Token);
+
+            var sample = ready with { Type = "overworld" };
+            await sender.WriteLineAsync(Protocol.Serialize(sample).AsMemory(), timeout.Token);
+            Assert.Equal($"AVATARSTYLE {session} test_epoch 49DDE4 1", await receiver.ReadLineAsync(timeout.Token));
+
+            client.SetHideOverworldLabels(true);
+            await sender.WriteLineAsync(Protocol.Serialize(sample).AsMemory(), timeout.Token);
+            Assert.Equal($"AVATARSTYLE {session} test_epoch 49DDE4 0", await receiver.ReadLineAsync(timeout.Token));
+            Assert.True(Protocol.Deserialize<ClientSettings>(File.ReadAllText(settings)).HideOverworldLabels);
         }
         finally
         {
@@ -642,6 +771,26 @@ public sealed class PlayerClientTests : IDisposable
         Assert.Equal(new[] { 28, 30, 31 }, RubyDashboardCatalog.NextGym(0b00001111)!.Levels);
         Assert.Null(RubyDashboardCatalog.NextGym(byte.MaxValue));
         Assert.Contains(RubyDashboardCatalog.Areas, area => area.Area == MapCatalog.Section(19, 1));
+    }
+
+    [Fact]
+    public void MapHoverUsesTheRubyCursorGrid()
+    {
+        Assert.Equal(0, RubyDashboardCatalog.AreaAt(4, 11));
+        Assert.Equal(29, RubyDashboardCatalog.AreaAt(1, 0));
+        Assert.Equal(0, RubyDashboardCatalog.LandmarkCellAt(1, 0));
+        Assert.Equal(1, RubyDashboardCatalog.LandmarkCellAt(2, 0));
+        Assert.Null(RubyDashboardCatalog.AreaAt(0, 0));
+        Assert.Null(RubyDashboardCatalog.AreaAt(28, 0));
+        Assert.Equal("LAUBWECHSELFELD", RubyNames.DecodePokeNavText(Convert.FromHexString("C6BBCFBCD1BFBDC2CDBFC6FC00C0BFC6BEFF")));
+        Assert.Equal("MAGMAs VERSTECK", RubyNames.DecodePokeNavText(Convert.FromHexString("FD08E700D0BFCCCDCEBFBDC5FF")));
+    }
+
+    [Fact]
+    public void PixelLabelsAreBoundedAndEscapeTheLoopbackPacketSeparators()
+    {
+        Assert.Equal("4DC452434F2D313233343536", ItemBridge.PixelLabel("Märco-123456789"));
+        Assert.Equal("413F423F43", ItemBridge.PixelLabel("A:B\nC"));
     }
 
     public void Dispose()

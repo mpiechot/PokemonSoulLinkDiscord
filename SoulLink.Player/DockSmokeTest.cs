@@ -132,6 +132,14 @@ internal static class DockSmokeTest
                     if read16(0x02025BCC + 4 * slot) == 12 then testFrame = 1; break end
                 end
                 if testFrame == 0 then return end
+                local bagCandies = 0
+                for slot = 0, 19 do
+                    local address = 0x02025C94 + 4 * slot
+                    if read16(address) == 68 then bagCandies = bagCandies + read16(address + 2) end
+                end
+                assert(bagCandies == 1976, "Bag capacity failure changed the item pocket")
+                assert(read32(0x02025D34) == 0x00630004, "Poké Balls were not added to the bag ball pocket")
+                readCore():write32(0x02025D34, 0)
             end
             testFrame = testFrame + 1
             local function startBattle()
@@ -314,6 +322,27 @@ internal static class DockSmokeTest
                     if (!focusOutsideGame.Focus()) throw new InvalidOperationException("Could not move focus to the test control.");
                     SendMessage(surface.Handle, 0x0210, 0x0201, 0);
                     if (!dock.IsFocused) throw new InvalidOperationException("Click notification did not focus the embedded game.");
+                    using (var sprites = new RubySprites(home))
+                    {
+                        using var trade = new PokemonTradeForm(runtime, sprites);
+                        using var offer = new PokemonTradeOfferForm(new TradeView(Guid.NewGuid(), "Route 101", PokemonTradePhase.Offered,
+                            new TradePlayer(Guid.NewGuid(), "Marco", new PokemonState { Species = 25 }),
+                            new TradePlayer(Guid.NewGuid(), "Misty", new PokemonState { Species = 26 })), sprites, _ => Task.CompletedTask);
+                        foreach (var tool in new Form[] { trade, offer })
+                        {
+                            if (!focusOutsideGame.Focus()) throw new InvalidOperationException("Could not focus the trade launcher.");
+                            dock.RestoreFocusAfterClosing(tool);
+                            tool.Show(window);
+                            tool.Activate();
+                            await Task.Yield();
+                            if (dock.IsFocused || !tool.ContainsFocus)
+                                throw new InvalidOperationException($"{tool.GetType().Name} did not receive focus.");
+                            tool.Close();
+                            await Task.Delay(75, timeout.Token);
+                            if (!dock.IsFocused)
+                                throw new InvalidOperationException($"Closing {tool.GetType().Name} did not return focus to mGBA (active form: {Form.ActiveForm?.Text}, owner contains focus: {window.ContainsFocus}).");
+                        }
+                    }
                     using (var notice = new DeathReasonForm(new PendingDeath(Guid.NewGuid(), 25, null, Guid.NewGuid())))
                     {
                         notice.Show(window);
@@ -350,6 +379,17 @@ internal static class DockSmokeTest
                         else
                         {
                             while (!runtime.CanAddPcItems) await Task.Delay(25, timeout.Token);
+                            for (int grants = 1; grants <= 19; grants++)
+                                if (await runtime.AddItemsAsync(PcItem.RareCandy, ItemDestination.Bag, timeout.Token) != 95 + 99 * grants)
+                                    throw new InvalidDataException("Bag items did not use Ruby's 99-item stacks.");
+                            try
+                            {
+                                await runtime.AddItemsAsync(PcItem.RareCandy, ItemDestination.Bag, timeout.Token);
+                                throw new InvalidDataException("The almost-full bag accepted another 99 items.");
+                            }
+                            catch (InvalidOperationException error) when (error.Message.Contains("im Rucksackfach zu wenig Platz", StringComparison.Ordinal)) { }
+                            if (await runtime.AddItemsAsync(PcItem.PokeBall, ItemDestination.Bag, timeout.Token) != 99)
+                                throw new InvalidDataException("The bag did not receive 99 Poké Balls.");
                             if (await runtime.AddPcItemsAsync(PcItem.RareCandy, timeout.Token) != 1049)
                                 throw new InvalidOperationException("The existing 950 candies did not receive exactly 99 more.");
                             foreach (var ball in Enum.GetValues<PcItem>().Where(item => item != PcItem.RareCandy))
@@ -506,10 +546,16 @@ internal static class DockSmokeTest
     internal static void VerifyLinkEditor()
     {
         Guid player = Guid.NewGuid(), first = Guid.NewGuid(), second = Guid.NewGuid(), third = Guid.NewGuid();
-        var snapshot = new HostLinkEditor("revision", [new(player, "Spieler", [new(first, 1, "", 5, 16, Placement.Party),
+        var snapshot = new HostLinkEditor("revision", [new(Guid.NewGuid(), "Mitspieler", []),
+            new(player, "Spieler", [new(first, 1, "", 5, 16, Placement.Party),
             new(second, 4, "", 5, 17, Placement.Party), new(third, 7, "", null, 17, Placement.Box)])],
             [new(16, false, new() { [player] = first }), new(17, false, new() { [player] = second })]);
-        using var editor = new LinkEditorForm("Rubin", snapshot, _ => Task.CompletedTask);
+        using var editor = new LinkEditorForm("Rubin", snapshot, _ => Task.CompletedTask, player);
+        var grid = Descendants(editor).OfType<DataGridView>().Single();
+        if (grid.Columns[1].HeaderText != "Spieler" || grid.Columns[2].HeaderText != "Mitspieler" ||
+            !grid.Rows.Cast<DataGridViewRow>().Any(row => Equals(row.Cells[0].Value, "Route 101") &&
+                Equals(row.Cells[1].Value, "Bisasam (Lv. 5)")))
+            throw new InvalidOperationException("The first player column must show the local player's name and Pokémon.");
         if (!editor.MovePokemon(player, first, 16, 17) || editor.Changes().Links!.Single(row => row.Area == 16).Members[player] != second)
             throw new InvalidOperationException("Dropping onto an occupied link must swap that player's Pokémon.");
         if (!editor.MovePokemon(player, first, 17, null) || !editor.MovePokemon(player, third, null, Encounter.StarterArea))
@@ -644,6 +690,33 @@ internal static class DockSmokeTest
 
     internal static void VerifyToolWindows(ClientRuntime runtime, string home)
     {
+        if (Environment.GetEnvironmentVariable("SOULLINK_SMOKE_MAP_ROM") is { Length: > 0 } romPath)
+            VerifyMapHover(romPath, home);
+        using (var end = new RunEndForm(Guid.NewGuid(), _ => Task.CompletedTask))
+        {
+            end.Show();
+            Application.DoEvents();
+            VerifyRoundedWindow(end);
+            if (end.FormBorderStyle != FormBorderStyle.None || Descendants(end).OfType<ToolCard>().Count() != 1 ||
+                !Descendants(end).OfType<Button>().Any(button => button.Text == "Run abschließen" && button.ForeColor == DashboardTheme.Danger))
+                throw new InvalidOperationException("The run-end notice must use the themed window and destructive action color.");
+            SaveToolPreview(end, home, "run-end");
+        }
+        using (var profile = new PlayerIdentityForm("Testspieler", PlayerMarker.Heart, 0x49DDE4, editing: true))
+        {
+            profile.Show();
+            Application.DoEvents();
+            var name = Descendants(profile).OfType<TextBox>().Single(input => input.AccessibleName == "Spielername");
+            if (profile.SelectedColor != 0x49DDE4 || profile.Marker != PlayerMarker.Heart || profile.PlayerName != "Testspieler" || name.ReadOnly)
+                throw new InvalidOperationException("The profile must restore the selected appearance.");
+            name.Text = "Neuer Name";
+            if (profile.PlayerName != "Neuer Name")
+                throw new InvalidOperationException("The player name must be editable in the existing profile.");
+            SaveToolPreview(profile, home, "player-appearance");
+        }
+        VerifyTradeWindows(home);
+        VerifyItemMenu(runtime, home);
+
         TraceToolPreviews(home, "Checking setup");
         using var setup = new SetupForm(runtime.Status(), "C:\\ROMs\\Pokémon Rubin.gba", true);
         setup.Show();
@@ -686,6 +759,33 @@ internal static class DockSmokeTest
         if (!edited) throw new InvalidOperationException("The rule edit control was not actionable.");
         TraceToolPreviews(home, "Rule action invoked");
         VerifyGroupStatistics(home);
+    }
+
+    private static void VerifyMapHover(string path, string home)
+    {
+        var labels = RubyMapArtwork.ReadLabels(path) ?? throw new InvalidDataException("The Ruby map labels could not be read.");
+        if (labels.Names.GetValueOrDefault(0) != "WURZELHEIM" ||
+            !labels.LandmarkNames(19, 1, null).SequenceEqual(["BLÜTENBURGWALD"]))
+            throw new InvalidDataException("The tooltip did not read the PokéNav town and route text from the ROM.");
+        byte[] flags = new byte[13];
+        flags[7] = 1 << 5; // FLAG_LANDMARK_MR_BRINEY_HOUSE, 0x83D.
+        if (labels.LandmarkNames(19, 1, flags).Count() != 2)
+            throw new InvalidDataException("The PokéNav tooltip did not reveal the unlocked landmark.");
+
+        var tile = (from y in Enumerable.Range(0, 15)
+                    from x in Enumerable.Range(0, 28)
+                    where RubyDashboardCatalog.AreaAt(x, y) == 19 && RubyDashboardCatalog.LandmarkCellAt(x, y) == 1
+                    select new Point(x, y)).Single();
+        using var map = new HoennMap { Size = new Size(454, 264) };
+        var artwork = RubyMapArtwork.Read(path) ?? throw new InvalidDataException("The Ruby map artwork could not be read.");
+        map.SetArtwork(artwork, labels);
+        map.UpdatePlayers([], flags);
+        int mouseX = 3 + tile.X * 16 + 8;
+        int mouseY = 22 + tile.Y * 16 + 8;
+        SendMessage(map.Handle, 0x0200, 0, mouseX | (mouseY << 16));
+        using var bitmap = new Bitmap(map.Width, map.Height);
+        map.DrawToBitmap(bitmap, map.ClientRectangle);
+        bitmap.Save(Path.Combine(home, "map-hover.png"));
     }
 
     private static void VerifyGroupStatistics(string home)
@@ -795,6 +895,77 @@ internal static class DockSmokeTest
         }
     }
 
+    private static void VerifyTradeWindows(string home)
+    {
+        var offer = new TradeView(Guid.NewGuid(), "Route 101", PokemonTradePhase.Offered,
+            new TradePlayer(Guid.NewGuid(), "Alex", new PokemonState { Species = 67, Level = 27, Hp = 79, MaxHp = 83, MetArea = 16 }),
+            new TradePlayer(Guid.NewGuid(), "Sam", new PokemonState { Species = 25, Container = Placement.Box, Box = 0, Slot = 1, MetArea = 16 }));
+        using var sprites = new RubySprites(Environment.GetEnvironmentVariable("SOULLINK_SMOKE_SPRITES") ?? Path.Combine(home, "sprites"));
+        using (var trade = new PokemonTradeOfferForm(offer, sprites, _ => Task.CompletedTask))
+        {
+            trade.Show();
+            Application.DoEvents();
+            VerifyRoundedWindow(trade);
+            var options = Descendants(trade).OfType<Button>().ToArray();
+            var accept = options.Single(button => button.Text == "Akzeptieren");
+            var decline = options.Single(button => button.Text == "Ablehnen");
+            var labels = Descendants(trade).OfType<Label>().ToArray();
+            var offerGrid = Descendants(trade).OfType<RosterGrid>().Single();
+            if (accept.ForeColor != DashboardTheme.Accent || decline.ForeColor != DashboardTheme.Danger ||
+                !labels.Any(label => label.Text.Contains("Route 101", StringComparison.Ordinal)) ||
+                !labels.Any(label => label.Text.Contains("Alex", StringComparison.Ordinal)) ||
+                offerGrid.ContentSize.IsEmpty || offerGrid.ContentSize.Height > offerGrid.Viewport.Height)
+                throw new InvalidOperationException("The offer must show the link and both Pokémon cards without scrolling.");
+            var buttonBounds = Rectangle.Union(accept.RectangleToScreen(accept.ClientRectangle),
+                decline.RectangleToScreen(decline.ClientRectangle));
+            var dialogBounds = trade.RectangleToScreen(trade.ClientRectangle);
+            if (accept.Top != decline.Top || Math.Abs(buttonBounds.Left + buttonBounds.Right - dialogBounds.Left - dialogBounds.Right) > 2)
+                throw new InvalidOperationException("The trade buttons must sit together at the horizontal center of the dialog.");
+            SaveToolPreview(trade, home, "pokemon-trade");
+        }
+
+        using var selection = new ToolWindow("Poké-Tausch", new Size(880, 274));
+        var grid = new RosterGrid(sprites, null) { Dock = DockStyle.Fill };
+        selection.Body.Controls.Add(grid);
+        Guid row = Guid.NewGuid();
+        var own = new DashboardPokemon(offer.To.Pokemon, false, true, Guid.NewGuid());
+        var partner = new DashboardPokemon(offer.From.Pokemon, false, true, Guid.NewGuid());
+        grid.Render(new RosterGridData(
+            [new RosterColumn(offer.To.Id, "Sam"), new RosterColumn(offer.From.Id, "Alex"), new RosterColumn(Guid.NewGuid(), "Robin")],
+            [new RosterRow(true, [own, partner, null], offer.Link, LinkId: row)], ShowRouteColumn: true));
+        grid.HighlightTrade(row, own.Id, partner.Id);
+        selection.Show();
+        Application.DoEvents();
+        using var bitmap = new Bitmap(grid.Width, grid.Height);
+        grid.DrawToBitmap(bitmap, grid.ClientRectangle);
+        int cardWidth = (grid.ContentSize.Width - 154 - 36) / 3;
+        int ownX = 154;
+        int targetX = ownX + cardWidth + 18;
+        var rowColor = bitmap.GetPixel(145, 134);
+        var targetColor = bitmap.GetPixel(targetX + 18, 134);
+        var ownColor = bitmap.GetPixel(ownX + 18, 134);
+        if (rowColor == DashboardTheme.Background || ownColor.G <= targetColor.G || targetColor.G <= rowColor.G ||
+            bitmap.GetPixel(targetX + 3, 121).ToArgb() != DashboardTheme.Accent.ToArgb() ||
+            bitmap.GetPixel(ownX + 3, 121).ToArgb() == DashboardTheme.Accent.ToArgb())
+            throw new InvalidOperationException("Only the partner card should have an outline. The selected row and own card use fills.");
+        SaveToolPreview(selection, home, "pokemon-trade-selection");
+    }
+
+    private static void VerifyItemMenu(ClientRuntime runtime, string home)
+    {
+        using var sprites = new RubySprites(Environment.GetEnvironmentVariable("SOULLINK_SMOKE_SPRITES") ?? Path.Combine(home, "sprites"));
+        using var items = new ItemMenuForm(runtime, sprites);
+        var destination = Descendants(items).OfType<DashboardComboBox>().Single();
+        if (!destination.Items.Cast<string>().SequenceEqual(["Item-Lager", "Rucksack"]) || destination.SelectedIndex != 0)
+            throw new InvalidOperationException("The cheat menu must default to item storage and offer the bag.");
+        items.Show();
+        SaveToolPreview(items, home, "item-destination");
+        destination.SelectedIndex = 1;
+        using var reopened = new ItemMenuForm(runtime, sprites);
+        if (Descendants(reopened).OfType<DashboardComboBox>().Single().SelectedIndex != 0)
+            throw new InvalidOperationException("Reopening the cheat menu must select item storage again.");
+    }
+
     private static void SaveToolPreview(Form form, string home, string name)
     {
         if (Environment.GetEnvironmentVariable("SOULLINK_SMOKE_PREVIEWS") != "1") return;
@@ -842,6 +1013,10 @@ internal static class DockSmokeTest
         if (emulator.LatestState(cartridge) != automatic) throw new InvalidDataException("The newer autosave must be selected.");
         File.SetLastWriteTimeUtc(manual, time.AddSeconds(2));
         if (emulator.LatestState(cartridge) != manual) throw new InvalidDataException("The newer manual save must be selected.");
+        string tradeCheckpoint = emulator.TradeCheckpointPrefix(cartridge) + Guid.NewGuid().ToString("N") + "-after.ss";
+        File.WriteAllText(tradeCheckpoint, "completed trade");
+        File.SetLastWriteTimeUtc(tradeCheckpoint, time.AddSeconds(3));
+        if (emulator.LatestState(cartridge) != tradeCheckpoint) throw new InvalidDataException("The newer trade checkpoint must be selected.");
 
         void VerifyChoices(PlayerProfile? profile, RomSelection selection, string[] expected)
         {

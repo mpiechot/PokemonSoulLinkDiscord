@@ -16,7 +16,7 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
         string gameRom = this.PrepareRom(rom);
         if (resume)
         {
-            initialState = this.LatestState(gameRom) ?? throw new InvalidDataException("Für diesen Run gibt es keinen Spielstand in Slot 1 oder 2.");
+            initialState = this.LatestState(gameRom) ?? throw new InvalidDataException("Für diesen Run gibt es keinen gespeicherten Spielstand.");
         }
         string executable = this.Install();
         string directory = Path.GetDirectoryName(executable)!;
@@ -61,13 +61,21 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
     {
         string directory = this.StateDirectory() ?? Path.GetDirectoryName(Path.GetFullPath(rom))!;
         string stem = Path.GetFileNameWithoutExtension(rom);
-        var manual = new FileInfo(Path.Combine(directory, stem + ".ss1"));
-        var automatic = new FileInfo(Path.Combine(directory, stem + ".ss2"));
-        bool hasManual = manual.Exists && manual.Length > 0;
-        bool hasAutomatic = automatic.Exists && automatic.Length > 0;
-        if (hasAutomatic && (!hasManual || automatic.LastWriteTimeUtc > manual.LastWriteTimeUtc)) return automatic.FullName;
-        return hasManual ? manual.FullName : null;
+        var slots = new[] { Path.Combine(directory, stem + ".ss1"), Path.Combine(directory, stem + ".ss2") };
+        string prefix = Path.GetFileName(this.TradeCheckpointPrefix(rom));
+        var checkpoints = Directory.Exists(directory) ? Directory.EnumerateFiles(directory, "*.ss").Where(path =>
+        {
+            string name = Path.GetFileName(path);
+            return name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && name.Length >= prefix.Length + 32 &&
+                Guid.TryParseExact(name.AsSpan(prefix.Length, 32), "N", out _) &&
+                (name.EndsWith("-before.ss", StringComparison.Ordinal) || name.EndsWith("-after.ss", StringComparison.Ordinal));
+        }) : [];
+        return slots.Concat(checkpoints).Select(path => new FileInfo(path)).Where(file => file.Exists && file.Length > 0)
+            .OrderByDescending(file => file.LastWriteTimeUtc).FirstOrDefault()?.FullName;
     }
+
+    internal string TradeCheckpointPrefix(string rom) =>
+        Path.Combine(this.StateDirectory() ?? Path.GetDirectoryName(Path.GetFullPath(rom))!, Path.GetFileName(rom) + ".soullink-trade-");
 
     private string? StateDirectory()
     {

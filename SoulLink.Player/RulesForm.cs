@@ -106,8 +106,7 @@ internal sealed class RulesForm : ToolWindow
     private async Task DeleteAsync(string rule)
     {
         if (this.saving || this.displayed?.Id is not Guid run) return;
-        if (MessageBox.Show(this, $"Diese Zusatzregel löschen?\n\n{rule}", "Zusatzregel löschen",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes && this.displayed?.Id == run)
+        if (ToolWindow.Confirm(this, "Zusatzregel löschen", $"Diese Zusatzregel löschen?\n\n{rule}", "Löschen") && this.displayed?.Id == run)
             await this.SaveAsync(id => this.runtime.ChangeRuleAsync(id, rule, null), "Zusatzregel gelöscht.");
     }
 

@@ -11,6 +11,7 @@ internal sealed class RunDashboard : TableLayoutPanel
     private readonly RichTextBox locations = new();
     private readonly ArenaPanel arena;
     private ClientView? view;
+    private Color[] legendColors = [];
 
     public RunDashboard(DiscordIcons icons)
     {
@@ -66,26 +67,28 @@ internal sealed class RunDashboard : TableLayoutPanel
                     "Stale" => "Spieldaten pausiert",
                     "Offline" => "Offline",
                     _ => null,
-                }, localData ? view.Snapshot?.Money ?? p.Money : p.Money);
+                }, localData ? view.Snapshot?.Money ?? p.Money : p.Money, localData ? view.Color : p.Color);
         }).ToList();
         if (!positions.Any(p => p.Local) && view.Snapshot is { } snapshot)
             positions.Insert(0, new MapPlayer(view.Player.Length > 0 ? view.Player : "Du", view.Marker,
-                snapshot.Area, true, true, snapshot.Position, Money: snapshot.Money));
+                snapshot.Area, true, true, snapshot.Position, Money: snapshot.Money, Color: view.Color));
 
-        this.map.UpdatePlayers(positions.ToArray());
+        this.map.UpdatePlayers(positions.ToArray(), view.Snapshot?.PokeNavFlags);
         string legend = positions.Count == 0 ? "Warte auf Spielerpositionen."
             : string.Join(Environment.NewLine, positions.Select(p => $"{MarkerPalette.Glyph(p.Marker)}  {p.Name}: " +
                 (p.Area is int area && area != 255 ? RubyNames.Area(area) : "Warte auf Position") +
                 (p.Money is int wallet ? $"  |  {wallet.ToString("N0", German)} ₽" : "") +
                 (p.SyncStatus is { } status ? $" ({status})" : p.Live ? "" : " (zuletzt)")));
-        if (this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
+        Color[] colors = positions.Select((player, index) => HoennMap.PlayerColor(index, player)).ToArray();
+        if (!this.legendColors.SequenceEqual(colors) || this.locations.Text.Replace("\r", "") != legend.Replace("\r", ""))
         {
+            this.legendColors = colors;
             this.locations.Text = legend;
             int start = 0;
             for (int index = 0; index < positions.Count; index++)
             {
                 this.locations.Select(start, this.locations.Lines[index].Length);
-                this.locations.SelectionColor = HoennMap.PlayerColor(index, positions[index].Live);
+                this.locations.SelectionColor = colors[index];
                 start += this.locations.Lines[index].Length + 1;
             }
             this.locations.Select(0, 0);
@@ -93,5 +96,5 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.arena.Render(view.Snapshot, peers.FirstOrDefault(p => p.Id == view.LocalPlayerId), view.Run?.Phase == RunPhase.Active);
     }
 
-    public void SetMapArtwork(Bitmap? image, bool attempted = false) => this.map.SetArtwork(image, attempted);
+    public void SetMapArtwork(Bitmap? image, RubyMapLabels? labels = null, bool attempted = false) => this.map.SetArtwork(image, labels, attempted);
 }

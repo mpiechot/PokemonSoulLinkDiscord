@@ -12,9 +12,10 @@ internal sealed class HostingForm : ToolWindow
 {
     private const string Connecting = "Verbinde mit dem Run-Server …";
     private readonly PlayerProfileLibrary profiles;
+    private readonly Func<Guid, Guid?>? playerIdForRun;
     private readonly TextBox server = RunDialogs.TextInput("HTTPS-Serveradresse", 2048);
     private readonly TextBox key = RunDialogs.TextInput("Admin-Schlüssel", 2048);
-    private readonly ComboBox groups = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, AccessibleName = "Gruppe" };
+    private readonly DashboardComboBox groups = new() { Dock = DockStyle.Fill, AccessibleName = "Gruppe" };
     private readonly ListBox runs = new() { Dock = DockStyle.Fill, AccessibleName = "Runs", BorderStyle = BorderStyle.None };
     private readonly Label feedback = new() { Name = "HostFeedback", Dock = DockStyle.Bottom, Height = 42, TextAlign = ContentAlignment.MiddleLeft };
     private readonly Label serverName = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = DashboardTheme.Accent, AutoEllipsis = true };
@@ -44,17 +45,18 @@ internal sealed class HostingForm : ToolWindow
     private readonly Button editLinks;
     private bool busy;
 
-    public HostingForm(PlayerProfileLibrary profiles, string currentServer, HostingSession? session = null, Func<Guid, Task>? joinRun = null)
+    public HostingForm(PlayerProfileLibrary profiles, string currentServer, HostingSession? session = null,
+        Func<Guid, Task>? joinRun = null, Func<Guid, Guid?>? playerIdForRun = null)
         : base("Gastgeber", new Size(484, 332))
     {
         this.profiles = profiles;
+        this.playerIdForRun = playerIdForRun;
         this.restoreSession = session;
         this.canJoin = joinRun is not null;
         this.server.Text = session?.Server ?? currentServer;
         this.key.UseSystemPasswordChar = true;
         this.key.Text = session?.Key ?? "";
         this.groups.DisplayMember = nameof(RunGroup.Name);
-        DashboardTheme.StyleComboBox(this.groups);
         this.runs.DisplayMember = nameof(Row.Label);
         this.runs.BackColor = DashboardTheme.Background;
         this.runs.ForeColor = DashboardTheme.Text;
@@ -95,7 +97,7 @@ internal sealed class HostingForm : ToolWindow
         this.end = Action("Abschließen", DashboardTheme.Danger);
         this.end.Click += async (_, _) =>
         {
-            if (MessageBox.Show(this, "Diesen Run abschließen?", "Run abschließen", MessageBoxButtons.YesNo) == DialogResult.Yes)
+            if (ToolWindow.Confirm(this, "Run abschließen", "Diesen Run abschließen?", "Run abschließen"))
                 await this.ChangeRunAsync("end");
         };
         this.invite = Action("Einladung kopieren");
@@ -455,7 +457,8 @@ internal sealed class HostingForm : ToolWindow
         if (this.Group is not { } group || this.Run is not { } run) return;
         var editor = await client.LinkEditorAsync(group.Id, run.Id);
         if (this.IsDisposed) return;
-        using var dialog = new LinkEditorForm(run.Name, editor, changes => client.SaveLinksAsync(group.Id, run.Id, changes));
+        using var dialog = new LinkEditorForm(run.Name, editor, changes => client.SaveLinksAsync(group.Id, run.Id, changes),
+            this.playerIdForRun?.Invoke(run.Id));
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             this.feedback.ForeColor = DashboardTheme.Accent;
@@ -468,8 +471,7 @@ internal sealed class HostingForm : ToolWindow
         if (this.Group is not { } group || this.Run is not { } run) return;
         var players = await client.PlayersAsync(group.Id, run.Id);
         if (this.IsDisposed) return;
-        using var dialog = new PlayerWindow();
-        RunDialogs.Configure(dialog, $"Spieler in {run.Name}", new Size(660, 360));
+        using var dialog = new ToolWindow($"Spieler in {run.Name}", new Size(660, 410));
         var list = new ListBox
         {
             Dock = DockStyle.Fill,
@@ -485,15 +487,14 @@ internal sealed class HostingForm : ToolWindow
         reset.Click += (_, _) =>
         {
             if (list.SelectedItem is PlayerRow row &&
-                MessageBox.Show(dialog, $"Den aktuellen Spielstand von {row.Player.Name} für einen neuen Abgleich zulassen?",
-                    "Spielstand abgleichen", MessageBoxButtons.YesNo) == DialogResult.Yes)
+                ToolWindow.Confirm(dialog, "Spielstand abgleichen", $"Den aktuellen Spielstand von {row.Player.Name} für einen neuen Abgleich zulassen?", "Abgleichen"))
                 dialog.DialogResult = DialogResult.OK;
         };
-        dialog.Controls.Add(list);
-        dialog.Controls.Add(reset);
+        dialog.Body.Controls.Add(list);
+        dialog.Body.Controls.Add(reset);
         if (dialog.ShowDialog(this) != DialogResult.OK || list.SelectedItem is not PlayerRow selected) return;
         await client.RebaselineAsync(group.Id, run.Id, selected.Player.Id);
-        MessageBox.Show(this, "Der Spielstand ist freigegeben. Die aktuelle SoulLink-Version gleicht ihn automatisch neu ab.", "Neuer Abgleich");
+        ToolWindow.Notice(this, "Neuer Abgleich", "Der Spielstand ist freigegeben. Die aktuelle SoulLink-Version gleicht ihn automatisch neu ab.");
     }
 
     private PlayerProfile? SaveInvitation(bool copy)
@@ -554,24 +555,26 @@ internal sealed class HostingForm : ToolWindow
 
 internal enum ProfilePickerMode { Both, Load, Join }
 
-internal sealed class ProfilePicker : PlayerWindow
+internal sealed class ProfilePicker : ToolWindow
 {
-    private readonly ComboBox choices = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, DisplayMember = nameof(Row.Name) };
+    private readonly DashboardComboBox choices = new() { Dock = DockStyle.Top, DisplayMember = nameof(Row.Name) };
 
     public ProfilePicker(PlayerProfileLibrary profiles, Guid current, ClientView view, ProfilePickerMode mode)
-    {
-        bool showInvitation = mode != ProfilePickerMode.Load;
-        bool showProfiles = mode != ProfilePickerMode.Join;
-        string title = mode switch
+        : base(mode switch
         {
             ProfilePickerMode.Join => "Run beitreten",
             ProfilePickerMode.Load => "Run laden",
             _ => "Run beitreten / wechseln",
-        };
-        RunDialogs.Configure(this, title, new Size(540, mode == ProfilePickerMode.Both ? 310 : 210));
-        DashboardTheme.StyleComboBox(this.choices);
-        var invite = new TextBox { Dock = DockStyle.Top, PlaceholderText = "Einladung einfügen", AccessibleName = "Einladung", MaxLength = 4096 };
-        var server = new TextBox { Dock = DockStyle.Top, Text = view.Server, PlaceholderText = "Serveradresse", AccessibleName = "Serveradresse für einen alten Code", Visible = false };
+        }, new Size(540, mode == ProfilePickerMode.Both ? 360 : 260))
+    {
+        bool showInvitation = mode != ProfilePickerMode.Load;
+        bool showProfiles = mode != ProfilePickerMode.Join;
+        var invite = RunDialogs.TextInput("Einladung einfügen", 4096);
+        invite.Dock = DockStyle.Top;
+        var server = RunDialogs.TextInput("Serveradresse für einen alten Code", 2048);
+        server.Dock = DockStyle.Top;
+        server.Text = view.Server;
+        server.Visible = false;
         var join = DashboardTheme.Button("Beitreten");
         var open = DashboardTheme.Button("Run laden");
         var feedback = new Label { Dock = DockStyle.Bottom, Height = 35, ForeColor = DashboardTheme.Danger };
@@ -590,7 +593,7 @@ internal sealed class ProfilePicker : PlayerWindow
                 var details = PlayerInvitation.Read(invite.Text, server.Text);
                 var added = profiles.AddInvitation(details.Server, details.Invitation, details.Label ?? "");
                 if (added.Name is null && !string.IsNullOrWhiteSpace(view.Player))
-                    profiles.Remember(added with { Name = view.Player, Marker = view.Marker });
+                    profiles.Remember(added with { Name = view.Player, Marker = view.Marker, Color = view.Color });
                 this.SelectedProfile = added.Id;
                 this.DialogResult = DialogResult.OK;
             }
@@ -602,7 +605,8 @@ internal sealed class ProfilePicker : PlayerWindow
             this.SelectedProfile = row.Id;
             this.DialogResult = DialogResult.OK;
         };
-        this.Controls.Add(feedback);
+        var card = new ToolCard { Dock = DockStyle.Fill };
+        card.Controls.Add(feedback);
         if (showProfiles)
         {
             var browseGroups = DashboardTheme.Button("Alle Runs der Gruppe");
@@ -611,19 +615,20 @@ internal sealed class ProfilePicker : PlayerWindow
                 this.OpenGroupRuns = true;
                 this.DialogResult = DialogResult.OK;
             };
-            this.Controls.Add(ButtonRow(open, browseGroups));
-            this.Controls.Add(this.choices);
-            this.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
+            card.Controls.Add(ButtonRow(open, browseGroups));
+            card.Controls.Add(this.choices);
+            card.Controls.Add(new Label { Text = "Gespeicherte Runs", Dock = DockStyle.Top, Height = 30 });
             this.LoadProfiles(profiles, current, includeLocal: mode == ProfilePickerMode.Both);
             open.Enabled = this.choices.Items.Count > 0;
         }
         if (showInvitation)
         {
-            this.Controls.Add(ButtonRow(join));
-            this.Controls.Add(server);
-            this.Controls.Add(invite);
-            this.Controls.Add(new Label { Text = "Neue Einladung", Dock = DockStyle.Top, Height = 30 });
+            card.Controls.Add(ButtonRow(join));
+            card.Controls.Add(server);
+            card.Controls.Add(invite);
+            card.Controls.Add(new Label { Text = "Neue Einladung", Dock = DockStyle.Top, Height = 30 });
         }
+        this.Body.Controls.Add(card);
         this.AcceptButton = showProfiles ? open : join;
         this.Shown += (_, _) => { if (showInvitation) invite.Focus(); else this.choices.Focus(); };
     }

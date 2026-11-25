@@ -35,7 +35,7 @@ internal static class Program
         try { profile = PlayerBundle.Read(executable); }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "SoulLink – Datei prüfen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ToolWindow.Notice(null, "Datei prüfen", exception.Message);
             return;
         }
         bool smokeTest = args.Length == 2 && args[0] == "--smoke-test";
@@ -53,7 +53,7 @@ internal static class Program
             allowFallback: !testSlot.HasValue && !selectedProfile.HasValue && !customHome, wait: selectedProfile.HasValue);
         if (!smoke && instance is null)
         {
-            MessageBox.Show("Der gewünschte Spielerplatz ist belegt. Schließe bei Bedarf ein Testfenster.", "SoulLink");
+            ToolWindow.Notice(null, "Spielerplatz belegt", "Der gewünschte Spielerplatz ist belegt. Schließe bei Bedarf ein Testfenster.");
             return;
         }
         if (instance is { IsTest: false }) PlayerUpdater.CleanOldStages();
@@ -70,7 +70,7 @@ internal static class Program
             }
             catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
             {
-                MessageBox.Show(error.Message, "SoulLink – Run-Profil", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ToolWindow.Notice(null, "Run-Profil", error.Message);
                 return;
             }
         }
@@ -155,7 +155,7 @@ internal static class Program
                     System.ComponentModel.Win32Exception or InvalidOperationException)
                 {
                     PlayerUpdater.CleanStage(update.Directory);
-                    MessageBox.Show(error.Message, "SoulLink-Update fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ToolWindow.Notice(null, "SoulLink-Update fehlgeschlagen", error.Message);
                 }
                 return;
             }
@@ -168,7 +168,7 @@ internal static class Program
             }
             catch (Exception error) when (RunDialogs.IsActionError(error))
             {
-                MessageBox.Show(error.Message, "SoulLink – Run-Profil", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ToolWindow.Notice(null, "Run-Profil", error.Message);
                 return;
             }
             session = form.NextHostingSession;

@@ -44,25 +44,6 @@ internal static class DashboardTheme
         return button;
     }
 
-    public static void StyleComboBox(ComboBox combo)
-    {
-        combo.BackColor = Background;
-        combo.ForeColor = Text;
-        combo.FlatStyle = FlatStyle.Flat;
-        combo.DrawMode = DrawMode.OwnerDrawFixed;
-        combo.ItemHeight = 24;
-        combo.DrawItem += (_, args) =>
-        {
-            bool highlighted = args.State.HasFlag(DrawItemState.Selected);
-            using var background = new SolidBrush(highlighted ? Panel : Background);
-            args.Graphics.FillRectangle(background, args.Bounds);
-            if (args.Index >= 0 && args.Index < combo.Items.Count)
-                TextRenderer.DrawText(args.Graphics, combo.GetItemText(combo.Items[args.Index]), combo.Font, args.Bounds,
-                    combo.Enabled ? Text : Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-            args.DrawFocusRectangle();
-        };
-    }
-
     public static void DrawImage(Graphics canvas, Image image, Rectangle bounds, bool pixelArt = false)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;

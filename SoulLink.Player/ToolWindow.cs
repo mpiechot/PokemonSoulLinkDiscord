@@ -6,9 +6,11 @@ internal class ToolWindow : PlayerWindow
 {
     private static readonly Font HeadingFont = new("Segoe UI Semibold", 11);
     private static readonly Font TitleFont = new("Segoe UI Semibold", 13);
+    private readonly bool resizable;
 
-    protected ToolWindow(string title, Size size)
+    internal ToolWindow(string title, Size size, bool resizable = false)
     {
+        this.resizable = resizable;
         this.Text = title;
         this.ClientSize = size;
         this.FormBorderStyle = FormBorderStyle.None;
@@ -39,7 +41,25 @@ internal class ToolWindow : PlayerWindow
         this.Controls.Add(header);
     }
 
-    protected Panel Body { get; } = new() { Dock = DockStyle.Fill };
+    internal Panel Body { get; } = new() { Dock = DockStyle.Fill };
+
+    protected override void WndProc(ref Message message)
+    {
+        base.WndProc(ref message);
+        if (!this.resizable || message.Msg != 0x84 || message.Result != 1) return;
+        long packed = message.LParam.ToInt64();
+        var point = this.PointToClient(new Point((short)packed, (short)(packed >> 16)));
+        int edge = this.LogicalToDeviceUnits(7);
+        int horizontal = point.X < edge ? -1 : point.X >= this.Width - edge ? 1 : 0;
+        int vertical = point.Y < edge ? -1 : point.Y >= this.Height - edge ? 1 : 0;
+        message.Result = (horizontal, vertical) switch
+        {
+            (-1, -1) => 13, (0, -1) => 12, (1, -1) => 14,
+            (-1, 0) => 10, (1, 0) => 11,
+            (-1, 1) => 16, (0, 1) => 15, (1, 1) => 17,
+            _ => 1,
+        };
+    }
 
     protected void FitWorkingArea()
     {
@@ -83,6 +103,36 @@ internal class ToolWindow : PlayerWindow
         dialog.CancelButton = cancel;
         dialog.Shown += (_, _) => { input.Focus(); input.SelectAll(); };
         return dialog.ShowDialog(owner) == DialogResult.OK ? input.Text.Trim() : null;
+    }
+
+    internal static void Notice(Form? owner, string title, string text) => ShowMessage(owner, title, text, null);
+
+    internal static bool Confirm(Form owner, string title, string text, string confirm) =>
+        ShowMessage(owner, title, text, confirm) == DialogResult.OK;
+
+    private static DialogResult ShowMessage(Form? owner, string title, string text, string? confirm)
+    {
+        using var dialog = new ToolWindow(title, new Size(500, 230));
+        if (owner is null) dialog.StartPosition = FormStartPosition.CenterScreen;
+        var card = new ToolCard { Dock = DockStyle.Fill };
+        var message = new Label { Text = text, Dock = DockStyle.Fill, AutoEllipsis = true };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 37, FlowDirection = FlowDirection.RightToLeft };
+        var accept = Action(confirm ?? "Schließen", DashboardTheme.Accent);
+        accept.DialogResult = DialogResult.OK;
+        actions.Controls.Add(accept);
+        if (confirm is not null)
+        {
+            var cancel = Action("Abbrechen");
+            cancel.DialogResult = DialogResult.Cancel;
+            actions.Controls.Add(cancel);
+            dialog.CancelButton = cancel;
+            dialog.ActiveControl = cancel;
+        }
+        else dialog.AcceptButton = dialog.CancelButton = accept;
+        card.Controls.Add(message);
+        card.Controls.Add(actions);
+        dialog.Body.Controls.Add(card);
+        return owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
     }
 
     internal static void DragWindow(nint handle)

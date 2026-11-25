@@ -3,7 +3,7 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class ItemMenuForm : PlayerWindow
+internal sealed class ItemMenuForm : ToolWindow
 {
     private static readonly (PcItem Item, string Name, string Sprite, Color Color)[] Items =
     [
@@ -27,18 +27,29 @@ internal sealed class ItemMenuForm : PlayerWindow
     private readonly Button[] buttons = new Button[Items.Length];
     private readonly PictureBox[] images = new PictureBox[Items.Length];
     private readonly Label feedback = new() { Dock = DockStyle.Bottom, Height = 45, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly DashboardComboBox destination = new() { Dock = DockStyle.Fill, AccessibleName = "Item-Ziel" };
 
-    public ItemMenuForm(ClientRuntime runtime, RubySprites sprites)
+    public ItemMenuForm(ClientRuntime runtime, RubySprites sprites) : base("Cheat-Menü", new Size(660, 625))
     {
-        RunDialogs.Configure(this, "Cheat-Menü", new Size(660, 570));
         this.sprites = sprites;
         var help = new Label
         {
-            Text = "Ins PC-Item-Lager legen\nKehre im Spiel zuerst aufs Spielfeld zurück.",
-            Dock = DockStyle.Top,
-            Height = 52,
+            Text = "Kehre im Spiel zuerst aufs Spielfeld zurück.",
+            Dock = DockStyle.Fill,
             ForeColor = DashboardTheme.Muted,
         };
+        this.destination.Items.AddRange(["Item-Lager", "Rucksack"]);
+        this.destination.SelectedIndex = 0;
+        var target = new TableLayoutPanel { Dock = DockStyle.Top, Height = 69, ColumnCount = 3, RowCount = 2 };
+        target.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        target.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 185));
+        target.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        target.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        target.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        target.Controls.Add(new Label { Text = "Items hinzufügen zu", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+        target.Controls.Add(this.destination, 1, 0);
+        target.Controls.Add(help, 0, 1);
+        target.SetColumnSpan(help, 3);
         const int columns = 4;
         int rows = (Items.Length + columns - 1) / columns;
         var cards = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = columns, RowCount = rows };
@@ -73,9 +84,9 @@ internal sealed class ItemMenuForm : PlayerWindow
             card.Controls.Add(button, 0, 2);
             cards.Controls.Add(card, index % columns, index / columns);
         }
-        this.Controls.Add(cards);
-        this.Controls.Add(this.feedback);
-        this.Controls.Add(help);
+        this.Body.Controls.Add(cards);
+        this.Body.Controls.Add(this.feedback);
+        this.Body.Controls.Add(target);
         this.Shown += (_, _) => this.UpdateImages();
         this.sprites.Changed += this.UpdateImages;
     }
@@ -88,15 +99,18 @@ internal sealed class ItemMenuForm : PlayerWindow
 
     private async Task GrantAsync(ClientRuntime runtime, PcItem item, string name)
     {
+        var target = this.destination.SelectedIndex == 1 ? ItemDestination.Bag : ItemDestination.PcStorage;
+        this.destination.Enabled = false;
         foreach (var button in this.buttons) button.Enabled = false;
         this.feedback.ForeColor = DashboardTheme.Muted;
         this.feedback.Text = "Warte auf mGBA …";
         try
         {
-            int total = await runtime.AddPcItemsAsync(item, this.closing.Token);
+            int total = await runtime.AddItemsAsync(item, target, this.closing.Token);
             if (this.IsDisposed) return;
             this.feedback.ForeColor = DashboardTheme.Accent;
-            this.feedback.Text = $"+99 {name}. Jetzt insgesamt {total} im PC-Item-Lager.";
+            string storage = target == ItemDestination.Bag ? "Rucksack" : "Item-Lager";
+            this.feedback.Text = $"+99 {name}. Jetzt insgesamt {total} im {storage}.";
         }
         catch (Exception error) when (RunDialogs.IsActionError(error) || error is System.Net.Sockets.SocketException)
         {
@@ -107,7 +121,10 @@ internal sealed class ItemMenuForm : PlayerWindow
         finally
         {
             if (!this.IsDisposed)
+            {
+                this.destination.Enabled = true;
                 foreach (var button in this.buttons) button.Enabled = true;
+            }
         }
     }
 

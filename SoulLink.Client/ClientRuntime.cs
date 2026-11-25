@@ -10,7 +10,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record JoinForm(string Server, string Invitation, string Name, PlayerMarker Marker = PlayerMarker.Circle);
+public sealed record JoinForm(string Server, string Invitation, string Name, PlayerMarker Marker = PlayerMarker.Circle, int? Color = null);
 
 public sealed record ClientSettings
 {
@@ -20,11 +20,13 @@ public sealed record ClientSettings
     public string Token { get; init; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     public Registration? Registration { get; init; }
     public PlayerMarker Marker { get; init; }
+    public int? Color { get; init; }
+    public bool HideOverworldLabels { get; init; }
     public JoinForm? PendingJoin { get; init; }
 }
 
 /// <summary>One local bridge, one authenticated server session, and no offline event queue.</summary>
-public sealed class ClientRuntime : BackgroundService
+public sealed partial class ClientRuntime : BackgroundService
 {
     private static readonly HttpClient GroupReadHttp = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -43,9 +45,12 @@ public sealed class ClientRuntime : BackgroundService
     private DateTimeOffset nextJoinAttempt;
     private readonly object stateGate = new();
     private readonly ItemBridge items = new();
+    private readonly OverworldBridge overworld;
     private string? startedBridgeSession;
     private readonly Queue<string> log = new();
     private HubConnection? connection;
+    private CancellationTokenSource? overworldCancellation;
+    private Task? overworldTask;
     private SessionInfo? session;
     private GameSnapshot? latest;
     private GameSnapshot? evaluated;
@@ -74,6 +79,7 @@ public sealed class ClientRuntime : BackgroundService
     public ClientRuntime(IConfiguration configuration, TimeProvider? clock = null, JoinForm? autoJoin = null)
     {
         this.clock = clock ?? TimeProvider.System;
+        this.overworld = new OverworldBridge(this.items, this.clock);
         this.autoJoin = autoJoin;
         this.allowSyntheticFrames = configuration.GetValue("AllowSyntheticFrames", false);
         this.enableLocalRun = configuration.GetValue("EnableLocalRun", false);
@@ -101,8 +107,14 @@ public sealed class ClientRuntime : BackgroundService
                 live ? this.latest : null,
                 local ? this.localView : this.run, this.log.ToArray(), this.allowSyntheticFrames,
                 LocalPlayerId: local ? this.localTracker?.PlayerId : this.settings.Registration?.PlayerId,
-                Marker: pending?.Marker ?? this.settings.Marker, IsLocalRun: local);
+                Marker: pending?.Marker ?? this.settings.Marker, IsLocalRun: local, Color: pending?.Color ?? this.settings.Color);
         }
+    }
+
+    public Guid? PlayerIdForRun(Guid runId)
+    {
+        lock (this.stateGate)
+            return this.settings.Registration is { } registration && registration.RunId == runId ? registration.PlayerId : null;
     }
 
     internal void AcceptFrame(BridgeFrame frame)
@@ -241,13 +253,30 @@ public sealed class ClientRuntime : BackgroundService
     public Task ChangeRuleAsync(Guid runId, string current, string? replacement) =>
         this.RunActionAsync(runId, t => t.ChangeRule(current, replacement), c => c.InvokeAsync("ChangeRule", current, replacement));
 
-    public string BeginLocalItemSession() => this.items.Begin();
+    public string BeginLocalItemSession()
+    {
+        this.overworld.Reset();
+        return this.items.Begin();
+    }
 
     public bool OwnedBridgeReady => this.items.MatchesSession(Volatile.Read(ref this.startedBridgeSession));
 
     public bool CanAddPcItems => this.items.Ready;
 
     public bool CanSaveState => this.items.CanSave;
+
+    public bool HideOverworldLabels
+    {
+        get { lock (this.stateGate) return this.settings.HideOverworldLabels; }
+    }
+
+    public void SetHideOverworldLabels(bool hide)
+    {
+        lock (this.stateGate)
+        {
+            if (hide != this.settings.HideOverworldLabels) this.SaveSettings(this.settings with { HideOverworldLabels = hide });
+        }
+    }
     public bool CanLoadState => this.items.CanLoad;
 
     public Task SaveSlotOneAsync(CancellationToken cancellationToken = default) =>
@@ -257,7 +286,10 @@ public sealed class ClientRuntime : BackgroundService
         this.items.LoadSlotOneAsync(cancellationToken);
 
     public Task<int> AddPcItemsAsync(PcItem item, CancellationToken cancellationToken = default) =>
-        this.items.AddAsync(item, cancellationToken);
+        this.AddItemsAsync(item, ItemDestination.PcStorage, cancellationToken);
+
+    public Task<int> AddItemsAsync(PcItem item, ItemDestination destination, CancellationToken cancellationToken = default) =>
+        this.items.AddAsync(item, destination, cancellationToken);
 
     public Task ResolveFaintAsync(Guid runId, Guid pokemonId, Guid incidentId, bool confirm, string? reason) =>
         this.RunActionAsync(runId, t => t.ResolveFaint(pokemonId, incidentId, confirm, reason),
@@ -298,6 +330,22 @@ public sealed class ClientRuntime : BackgroundService
         }
     }
 
+    public async Task UpdatePlayerProfileAsync(Guid runId, string name, PlayerMarker marker, int? color)
+    {
+        if (!Enum.IsDefined(marker) || !PlayerColors.IsValid(color)) throw new InvalidDataException("Ungültiges Karten-Icon oder ungültige Spielerfarbe.");
+        name = name.Trim();
+        await this.connectionGate.WaitAsync();
+        try
+        {
+            var hub = this.RequireConnection(runId);
+            if (await hub.InvokeAsync<string?>("UpdatePlayerProfile", name, marker, color) is { } rejection)
+                throw new InvalidDataException(rejection);
+            lock (this.stateGate) this.SaveSettings(this.settings with { Name = name, Marker = marker, Color = color });
+            this.UpdateRun(await hub.InvokeAsync<AutomationRun>("Status"));
+        }
+        finally { this.connectionGate.Release(); }
+    }
+
     public async Task JoinAsync(JoinForm form, CancellationToken cancellationToken = default)
     {
         ValidateJoin(form);
@@ -307,7 +355,7 @@ public sealed class ClientRuntime : BackgroundService
             if (this.settings.Registration is not null) throw new InvalidOperationException("Already registered. Use a separate SettingsPath for another player or run.");
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var response = await http.PostAsJsonAsync(form.Server.TrimEnd('/') + "/api/soullink/join",
-                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker),
+                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker, Color: form.Color),
                 Protocol.Json, cancellationToken);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Join rejected. Check invitation, player name, edition and lobby state.");
             var registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json, cancellationToken)
@@ -320,6 +368,7 @@ public sealed class ClientRuntime : BackgroundService
                     Server = form.Server.TrimEnd('/'),
                     Name = form.Name.Trim(),
                     Marker = form.Marker,
+                    Color = form.Color,
                     PendingJoin = null,
                 });
             }
@@ -349,7 +398,7 @@ public sealed class ClientRuntime : BackgroundService
     {
         if (string.IsNullOrWhiteSpace(form.Name)) throw new InvalidDataException("Bitte gib deinen Spielernamen ein.");
         PlayerBundle.Validate(new PlayerProfile(Guid.NewGuid(), form.Server, form.Invitation, form.Name.Trim()));
-        if (!Enum.IsDefined(form.Marker)) throw new InvalidDataException("Ungültiges Karten-Icon.");
+        if (!Enum.IsDefined(form.Marker) || !PlayerColors.IsValid(form.Color)) throw new InvalidDataException("Ungültiges Karten-Icon oder ungültige Spielerfarbe.");
     }
 
     private JoinForm? GetPendingJoin()
@@ -457,6 +506,8 @@ public sealed class ClientRuntime : BackgroundService
             this.connection.On<int, PokemonRomDetails?>("ReadPokemonDetails", this.ReadPokemonDetails);
             await this.connection.StartAsync(cancellationToken);
             this.session = await this.connection.InvokeAsync<SessionInfo>("Hello", new Hello(this.settings.ClientId), cancellationToken);
+            this.overworldCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            this.overworldTask = this.overworld.RunAsync(this.connection, this.IsRunFinished, this.OverworldPlayers, this.overworldCancellation.Token);
             this.sequence = this.session.NextSequence;
             this.SetState("Synchronizing — waiting for mGBA");
             try
@@ -539,12 +590,36 @@ public sealed class ClientRuntime : BackgroundService
             this.UpdateRun(await this.connection.InvokeAsync<AutomationRun>("Status", cancellationToken));
             this.nextRepair = now.AddSeconds(this.pushUpdates ? 8 : 1);
         }
+        await this.TickTradeAsync(this.connection, now, cancellationToken);
     }
 
     private void UpdateRun(AutomationRun status)
     {
         var dashboard = DashboardProjection.FromRun(status);
         lock (this.stateGate) this.run = dashboard;
+    }
+
+    private bool IsRunFinished()
+    {
+        lock (this.stateGate) return this.run?.Phase == RunPhase.Finished;
+    }
+
+    private ClientPlayerView[] OverworldPlayers()
+    {
+        lock (this.stateGate) return this.run?.Players ?? [];
+    }
+
+    private (int? Color, bool ShowLabels) OverworldStyle()
+    {
+        lock (this.stateGate)
+        {
+            var players = this.run?.Players;
+            Guid? playerId = this.settings.Registration?.PlayerId;
+            int index = players is not null && playerId is not null ? Array.FindIndex(players, player => player.Id == playerId) : -1;
+            int? color = index >= 0 ? PlayerColors.Resolve(index, players![index].Color)
+                : this.settings.PendingJoin?.Color ?? this.settings.Color ?? this.autoJoin?.Color;
+            return (color, !this.settings.HideOverworldLabels);
+        }
     }
 
     private async Task ReadBridgeAsync(CancellationToken cancellationToken)
@@ -565,6 +640,7 @@ public sealed class ClientRuntime : BackgroundService
             while (!cancellationToken.IsCancellationRequested)
             {
                 using var peer = await listener.AcceptTcpClientAsync(cancellationToken);
+                peer.NoDelay = true;
                 var stream = peer.GetStream();
                 lock (this.stateGate)
                 {
@@ -575,6 +651,8 @@ public sealed class ClientRuntime : BackgroundService
                 try
                 {
                     string? frameError = null;
+                    (string Epoch, int? Color, bool ShowLabels)? sentStyle = null;
+                    var refreshStyleAt = DateTimeOffset.MinValue;
                     await foreach (string line in JsonLines.ReadAsync(stream, cancellationToken))
                     {
                         try
@@ -591,6 +669,20 @@ public sealed class ClientRuntime : BackgroundService
                                 this.items.AcceptResult(stream, frame);
                                 continue;
                             }
+                            if (frame is { Version: Protocol.Version, Type: "overworld" })
+                            {
+                                this.overworld.Observe(stream, frame);
+                                var (color, showLabels) = this.OverworldStyle();
+                                var style = (frame.Epoch, color, showLabels);
+                                var now = this.clock.GetUtcNow();
+                                if ((sentStyle != style || now >= refreshStyleAt) && await this.items.SendOverworldStyleAsync(
+                                    stream, frame.ItemSession, frame.Epoch, color, showLabels, cancellationToken))
+                                {
+                                    sentStyle = style;
+                                    refreshStyleAt = now.AddSeconds(2);
+                                }
+                                continue;
+                            }
                             this.AcceptFrame(frame);
                             this.items.Observe(stream, frame);
                             if (frameError is not null) this.Note("mGBA sendet wieder gültige Spieldaten.");
@@ -605,7 +697,7 @@ public sealed class ClientRuntime : BackgroundService
                     }
                     lock (this.stateGate) this.bridgeSeen = null;
                 }
-                catch (Exception exception) when (exception is InvalidDataException or IOException or SocketException)
+                catch (Exception exception) when (exception is InvalidDataException or IOException or SocketException or ObjectDisposedException)
                 {
                     this.Note("mGBA-Verbindung getrennt: " + exception.Message[..Math.Min(exception.Message.Length, 180)]);
                     lock (this.stateGate) this.bridgeSeen = null;
@@ -613,6 +705,7 @@ public sealed class ClientRuntime : BackgroundService
                 finally
                 {
                     Volatile.Write(ref this.startedBridgeSession, null);
+                    this.overworld.Reset();
                     this.items.Disconnect(stream);
                 }
             }
@@ -623,6 +716,15 @@ public sealed class ClientRuntime : BackgroundService
 
     private async Task CloseConnectionAsync()
     {
+        if (this.overworldCancellation is { } cancellation)
+        {
+            await cancellation.CancelAsync();
+            if (this.overworldTask is { } task) await task;
+            cancellation.Dispose();
+            this.overworldCancellation = null;
+            this.overworldTask = null;
+        }
+
         if (this.connection is not null) await this.connection.DisposeAsync();
         this.connection = null;
         this.session = null;

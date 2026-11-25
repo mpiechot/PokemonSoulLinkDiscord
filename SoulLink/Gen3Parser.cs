@@ -92,6 +92,39 @@ public static class Gen3Parser
         };
     }
 
+    internal static PokemonState ParseTrade(RawPokemon raw)
+    {
+        if (raw.Container == Placement.Party ? raw.Slot is < 0 or >= 6 || raw.Box is not null :
+            raw.Container != Placement.Box || raw.Slot is < 0 or >= 30 || raw.Box is not (>= 0 and < 14))
+            throw new InvalidDataException("Der Pokémon-Platz ist ungültig.");
+        int length = raw.Container == Placement.Party ? 200 : 160;
+        if (raw.Hex is null || raw.Hex.Length != length || !raw.Hex.All(Uri.IsHexDigit))
+            throw new InvalidDataException("Der Pokémon-Datensatz ist ungültig.");
+        byte[] data = Convert.FromHexString(raw.Hex);
+        if (Parse(data, raw.Container, raw.Slot, raw.Box) is not { IsEgg: false } pokemon || pokemon.Hp == 0)
+            throw new InvalidDataException("Dieses Pokémon kann nicht getauscht werden.");
+        foreach (var name in new[] { data.AsSpan(8, 10).ToArray(), data.AsSpan(20, 7).ToArray() })
+        {
+            if (name.TakeWhile(value => value != 0xFF).Any(value => value >= 0xFA))
+                throw new InvalidDataException("Ein Name enthält ungültige Spielzeichen.");
+        }
+        uint pid = BinaryPrimitives.ReadUInt32LittleEndian(data);
+        uint key = pid ^ BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4));
+        string order = Orders[pid % 24];
+        ushort item = (ushort)((BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(32 + order.IndexOf('G') * 12)) ^ key) >> 16);
+        if (item > 348 || item is >= 121 and <= 132 || (data.Length == 100 && data[85] != 0xFF))
+            throw new InvalidDataException("Pokémon mit Briefen oder ungültigen Items können hier nicht getauscht werden.");
+        int moves = 32 + order.IndexOf('A') * 12;
+        for (int i = 0; i < 2; i++)
+        {
+            uint pair = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(moves + i * 4)) ^ key;
+            if ((pair & 0xFFFF) > 354 || (pair >> 16) > 354)
+                throw new InvalidDataException("Das Pokémon enthält eine ungültige Attacke.");
+        }
+        if (pokemon.Experience > 1_640_000) throw new InvalidDataException("Das Pokémon enthält ungültige Erfahrungspunkte.");
+        return pokemon;
+    }
+
     internal static string DecodeName(ReadOnlySpan<byte> bytes)
     {
         var result = new StringBuilder();
@@ -101,6 +134,9 @@ public static class Gen3Parser
             result.Append(value switch
             {
                 0 => ' ',
+                0x06 => 'É',
+                0x15 => 'ß',
+                0x1B => 'é',
                 >= 0xA1 and <= 0xAA => (char)('0' + value - 0xA1),
                 >= 0xBB and <= 0xD4 => (char)('A' + value - 0xBB),
                 >= 0xD5 and <= 0xEE => (char)('a' + value - 0xD5),
@@ -114,6 +150,7 @@ public static class Gen3Parser
                 0xAC => '?',
                 0xAD => '.',
                 0xAE => '-',
+                0xB4 => '\'',
                 _ => '�',
             });
         }

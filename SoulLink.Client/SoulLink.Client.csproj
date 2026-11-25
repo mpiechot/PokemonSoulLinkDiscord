@@ -7,6 +7,8 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\integration\mgba\soullink.lua" LogicalName="SoulLink.ReadOnlyBridge.lua" />
+    <EmbeddedResource Include="..\integration\mgba\overworld.lua" LogicalName="SoulLink.OverworldBridge.lua" />
+    <EmbeddedResource Include="..\integration\mgba\trade.lua" LogicalName="SoulLink.TradeBridge.lua" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SoulLink\SoulLink.csproj" />

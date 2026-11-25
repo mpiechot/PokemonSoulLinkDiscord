@@ -4,7 +4,7 @@ using SoulLink;
 
 namespace SoulLink.Client;
 
-public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null, string? Label = null, PlayerMarker? Marker = null);
+public sealed record PlayerProfile(Guid Id, string Server, string Invitation, string? Name = null, string? Label = null, PlayerMarker? Marker = null, int? Color = null);
 
 /// <summary>A host may append join details to a copy of the published app; bearer tokens are never bundled.</summary>
 public static class PlayerBundle

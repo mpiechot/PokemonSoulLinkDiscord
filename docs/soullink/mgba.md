@@ -36,6 +36,8 @@ The owned bridge confirms script startup separately from the first snapshot. An 
 
 During battle, the bridge uses live HP for player battlers whose PID, original trainer ID and maximum HP match their party records. A rejected snapshot preserves the last valid inventory and the loopback connection. The diagnostic log identifies the team or box slot and reports when valid data resumes.
 
+The owned Windows bridge samples the native player sprite and camera every four emulated frames for overworld presence. Receiving emulators reserve available sprite slots, tiles and palettes and let Ruby build its OAM buffer in the normal order. They apply the sampled elevation, priority and subsprite table so the map can cover the trainer. Sprite frames and palettes come from the local cartridge. The bridge releases its drawing resources when the game leaves the field and clears them before saving a slot through SoulLink. [Ruby sprite engine](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/src/sprite.c) · [Ruby field sprites and priorities](https://github.com/pret/pokeruby/blob/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f/src/event_object_movement.c)
+
 If your ROM uses relocated structures, configure a verified layout before loading the Lua file:
 
 ```lua

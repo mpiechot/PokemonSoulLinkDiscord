@@ -1,6 +1,6 @@
 # Für Mitspieler: SoulLink starten
 
-Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** erscheint, wenn für den zuletzt gestarteten Run ein mGBA-Spielstand in Slot 1 oder 2 liegt. Es lädt den neueren Stand. Sind beide Zeitstempel gleich, hat Slot 1 Vorrang. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
+Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** lädt für den zuletzt gestarteten Run den neusten Spielstand aus Slot 1, Slot 2 oder einem Poké-Tausch-Sicherungspunkt. Bei gleichem Zeitstempel hat Slot 1 Vorrang. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
 
 SoulLink merkt sich pro Run die Anmeldung und die ROM-Auswahl. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
@@ -20,13 +20,25 @@ Zu Beginn eines eigenen Wildkampfs zeigt der automatische **Catch-Check** unter 
 
 Unter der Karte erscheinen die **Live-Kämpfe** deiner Mitspieler. Dort siehst du die aktiven Pokémon und ihre KP. Bei einem beobachteten Treffer blitzt die Karte des betroffenen Pokémon kurz auf und zeigt den KP-Verlust.
 
+Mitspieler desselben Runs erscheinen automatisch als animierte Trainerfiguren im Rubin-Spielfeld, sobald ihr auf derselben Karte und in Sichtweite seid. Das Spiel zeichnet sie mit seiner eigenen Tiefensortierung, etwa hinter Baumkronen oder unter Brücken. Du kannst durch sie hindurchlaufen. Die Figuren verschwinden bei einem Kartenwechsel, im Kampf oder wenn die Verbindung abbricht. Die Anzeige braucht die aktualisierte `SoulLink.exe` bei beiden Spielern und einen Run-Server mit Avatar-Unterstützung.
+
+Beim Run-Beitritt wählst du neben deinem Namen und Karten-Icon auch deine Spielerfarbe. Namen, Icon und Farbe kannst du während des Runs unter **SoulLink → Spielerprofil bearbeiten** ändern. Du kannst eine der vorgegebenen Farben wählen oder einen eigenen Hex-Farbwert eintragen. Im Spielfeld erscheint über deinen Mitspielern jeweils ein farbiges Pixel-Namensschild mit bis zu zwölf Zeichen. Unter **SoulLink → Namensschilder ausblenden** kannst du sie für deine Ansicht abschalten. Wo der Emulator eine Farbpalette frei hat, ersetzt er die roten Kleidungsfarben deiner Spielfigur und der Mitspieler durch die jeweilige Spielerfarbe. Die Hoenn-Karte zeigt beim Darüberfahren die Ortsnamen und freigeschalteten Landmarken aus dem PokéNav. Beim Spielerpunkt siehst du zusätzlich den Namen.
+
+### Poké-Tausch
+
+Öffne **Poké-Tausch** im laufenden Run. Das Grid zeigt lebende Pokémon aus Team und Box. Klicke zuerst auf dein Pokémon und wähle dann in derselben markierten Zeile das Pokémon eines Mitspielers. Ein erneuter Klick auf dein Pokémon hebt die Auswahl auf. **Anfrage senden** öffnet beim Mitspieler ein Popup mit dem Link und beiden Pokémon.
+
+Nach der Zustimmung warten beide Emulatoren auf das Spielfeld. Rubin führt dann seine Tauschanimation aus und entwickelt empfangene Pokémon nach den Regeln der jeweiligen ROM. Das empfangene Pokémon übernimmt den Team- oder Box-Platz des abgegebenen Pokémon. Eier und Pokémon mit Briefen sind vom Tausch ausgenommen.
+
+SoulLink legt pro Tausch lokale Sicherungspunkte an und übernimmt den Tausch in den Link, sobald beide Spielstände bestätigt sind. Nach einer Unterbrechung setzt ein erneuter Start über **Run fortsetzen** den Tausch aus dem Sicherungspunkt fort.
+
 Bei einem Erstencounter sieht nur der kämpfende Spieler die Art im Spiel und im Catch-Check. Für Mitspieler erscheint der Gegner als **Unbekannt** mit seinen KP. Der Fang selbst enthüllt das Pokémon im gemeinsamen Feed.
 
 Für einen Mehrspieler-Test am selben PC öffnest du in **SoulLink → Testspieler öffnen** weitere Fenster. Jedes Testfenster hat eigene Profile und einen eigenen mGBA-Spielstand. Du kannst dieselbe Ausgangs-ROM auswählen. Die Testfenster verwenden getrennte Kopien und übernehmen keine vorhandenen Spielstände. Tritt in jedem Fenster mit einem eigenen Namen derselben Einladung bei und starte danach den Run als Gastgeber.
 
 Der Geldstand steht in der Spielerliste unter der Karte neben dem Ort. Wenn ein Spieler offline ist, zeigt die Liste den zuletzt übertragenen Stand.
 
-Im **Cheat-Menü** stehen Sonderbonbons und alle zwölf Bälle aus Rubin mit Bild und Namen. Mit **+99** legst du das jeweilige Item ins PC-Item-Lager.
+Im **Cheat-Menü** stehen Sonderbonbons und alle zwölf Bälle aus Rubin mit Bild und Namen. Wähle oben **Item-Lager** oder **Rucksack** und klicke auf **+99**. Bei jedem Öffnen ist **Item-Lager** vorausgewählt.
 
 Versionen mit eingebautem Updater prüfen beim Öffnen auf neue Releases. Steht eine bereit, findest du unter **SoulLink** den Eintrag **Update … installieren**. Vor der Bestätigung speicherst du in mGBA. SoulLink lädt das signierte Paket, beendet das eigene mGBA und öffnet danach die neue Version. Einladungen, Run-Auswahl und ROM-Pfade bleiben in deinem bisherigen Spielerprofil gespeichert.
 
@@ -34,7 +46,7 @@ Klicke im Team, in der Box, unter **Tot**, **Shinies** oder im Live-Kampf auf ei
 
 Die nächste Arena richtet sich nach dem gemeinsamen Fortschritt. **Abschließen** und **Zurücknehmen** gelten für alle Spieler im Run. Für erkannte Arenateams zeigt SoulLink die Level aus der jeweils geladenen Rubin-ROM. Für andere ROM-Varianten gelten die Rubin-Standardlevel.
 
-**Cheats** zeigt Sonderbonbons, Pokébälle, Superbälle, Hyperbälle und Meisterbälle. Kehre im Spiel aufs Spielfeld zurück. Ein Klick auf **+99** legt 99 Stück der ausgewählten Sorte ins Item-Lager deines PCs. Der Dialog meldet den neuen Bestand. Hole die Items am PC ab und speichere wie gewohnt im Spiel.
+Kehre vor dem Hinzufügen von Items aufs Spielfeld zurück. Das Cheat-Menü zeigt danach den neuen Bestand am gewählten Ziel. Speichere wie gewohnt im Spiel.
 
 **Regeln** zeigt jede Grundregel einzeln und stellt eure eigenen Regeln als Karten dar. Alle angemeldeten Teilnehmer können in einem laufenden Run Zusatzregeln hinzufügen, bearbeiten und löschen. Fahr mit der Maus über eine Karte oder wähle sie mit der Tab-Taste, um die Aktionen zu sehen. Im lokalen Spieltest speichert SoulLink Zusatzregeln mit dem lokalen Verlauf.
 

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using SoulLink;
 
 namespace SoulLink.Player;
 
@@ -17,6 +18,63 @@ internal static class RubyMapArtwork
     private const int CropTileY = 2;
     private const int MapWidth = 28;
     private const int MapHeight = 15;
+    private const int RegionEntries = 0x3F3770;
+    private const int LandmarkLists = 0x40794C;
+
+    public static RubyMapLabels? ReadLabels(string path)
+    {
+        try
+        {
+            using var rom = File.OpenRead(path);
+            if (rom.Length < LandmarkLists + 0x170 || !ReadAt(rom, 0xA0, 16).AsSpan().SequenceEqual("POKEMON RUBYAXVD"u8) ||
+                ReadAt(rom, 0xBC, 1)[0] > 1) return null;
+            var names = new Dictionary<int, string>();
+            var landmarks = new Dictionary<(int Area, int Cell), RubyMapLandmark[]>();
+            var regions = ReadAt(rom, RegionEntries, 0x2C0);
+            for (int area = 0; area < regions.Length / 8; area++)
+            {
+                if (ReadName(ReadPointer(regions.AsSpan(area * 8 + 4)), rom) is { } name) names.Add(area, name);
+            }
+
+            var lists = ReadAt(rom, LandmarkLists, 0x170);
+            int lastArea = -1;
+            for (int index = 0; index < lists.Length; index += 8)
+            {
+                int area = lists[index];
+                if (area >= regions.Length / 8) break;
+                // Ruby stops looking when it leaves an area's contiguous landmark entries.
+                if (area < lastArea) continue;
+                lastArea = area;
+                int list = ReadPointer(lists.AsSpan(index + 4));
+                if (list < 0 || list > rom.Length - 16) continue;
+                var points = new List<RubyMapLandmark>();
+                var pointers = ReadAt(rom, list, 16);
+                for (int i = 0; i < pointers.Length; i += 4)
+                {
+                    int landmark = ReadPointer(pointers.AsSpan(i));
+                    if (landmark < 0 || landmark > rom.Length - 8) break;
+                    var definition = ReadAt(rom, landmark, 8);
+                    if (ReadName(ReadPointer(definition), rom) is { } name)
+                        points.Add(new RubyMapLandmark(name, BinaryPrimitives.ReadUInt16LittleEndian(definition.AsSpan(4))));
+                }
+                landmarks.TryAdd((area, lists[index + 1]), points.ToArray());
+            }
+
+            return new RubyMapLabels(names, landmarks);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    private static int ReadPointer(ReadOnlySpan<byte> bytes) => BinaryPrimitives.ReadInt32LittleEndian(bytes) - 0x08000000;
+
+    private static string? ReadName(int offset, FileStream rom)
+    {
+        if (offset < 0 || offset > rom.Length - 64) return null;
+        var bytes = ReadAt(rom, offset, 64);
+        if (Array.IndexOf(bytes, (byte)0xFF) <= 0) return null;
+        string name = RubyNames.DecodePokeNavText(bytes);
+        return name.Length > 0 && !name.Contains('�') ? name : null;
+    }
 
     public static Bitmap? Read(string path)
     {
@@ -107,5 +165,28 @@ internal static class RubyMapArtwork
             }
         }
         return result;
+    }
+}
+
+internal sealed record RubyMapLandmark(string Name, int Flag);
+
+internal sealed record RubyMapLabels(IReadOnlyDictionary<int, string> Names,
+    IReadOnlyDictionary<(int Area, int Cell), RubyMapLandmark[]> Landmarks)
+{
+    public static bool IsVisible(int area, byte[]? flags) => area switch
+    {
+        58 => FlagSet(flags, 0x848),
+        73 => FlagSet(flags, 0x849),
+        _ => true,
+    };
+
+    public IEnumerable<string> LandmarkNames(int area, int cell, byte[]? flags) =>
+        (this.Landmarks.GetValueOrDefault((area, cell)) ?? []).Where(point => point.Flag == 0xFFFF || FlagSet(flags, point.Flag))
+            .Select(point => point.Name);
+
+    private static bool FlagSet(byte[]? flags, int flag)
+    {
+        int bit = flag - 0x800;
+        return flags is not null && bit >= 0 && bit / 8 < flags.Length && (flags[bit / 8] & (1 << (bit % 8))) != 0;
     }
 }

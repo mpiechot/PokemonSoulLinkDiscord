@@ -157,6 +157,18 @@ try
     Console.WriteLine("Verified: the shared feed reports all three catches, and starter and catch links appear as rows in the team and box grids.");
     if (verifyOnly)
     {
+        const string updatedPlayerName = "Alex Rubin";
+        string? rejection = await hubs[0].InvokeAsync<string?>("UpdatePlayerProfile", updatedPlayerName, PlayerMarker.Sun, 0x49DDE4, lifetime.Token);
+        if (rejection is not null)
+            throw new InvalidDataException("The player profile could not be edited in the active run: " + rejection);
+        await WaitUntil(async () => (await http.GetFromJsonAsync<ClientView>(ui + "/api/status", Protocol.Json, lifetime.Token))!
+            .Run?.Players.Any(player => player.Id == sessions[0].PlayerId &&
+                player is { Name: updatedPlayerName, Marker: PlayerMarker.Sun, Color: 0x49DDE4 }) == true);
+        rejection = await hubs[1].InvokeAsync<string?>("UpdatePlayerProfile", updatedPlayerName.ToLowerInvariant(), PlayerMarker.Heart, null, lifetime.Token);
+        if (string.IsNullOrEmpty(rejection))
+            throw new InvalidDataException("A second player was allowed to claim the same display name.");
+        Console.WriteLine("Verified: a renamed player keeps their ID, and live clients receive the updated name, icon and color.");
+
         var originalLinks = await hostTools.LinkEditorAsync(demoGroup.Id, run.Id);
         var originalEdits = originalLinks.Links.Select(link => new HostLinkEdit(link.Area, link.Members)).ToArray();
         var route = new Dictionary<Guid, Guid>(originalEdits.Single(link => link.Area == 16).Members);

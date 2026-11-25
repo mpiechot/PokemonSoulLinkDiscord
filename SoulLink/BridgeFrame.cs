@@ -21,6 +21,8 @@ public sealed record BridgeFrame
     public Guid? ItemRequest { get; init; }
     public string? ItemResult { get; init; }
     public int? ItemQuantity { get; init; }
+    public RawPokemon? TradePokemon { get; init; }
+    public OverworldPose? Overworld { get; init; }
     public int MapGroup { get; init; }
     public int MapNumber { get; init; }
     public int Area { get; init; } = 255;
@@ -30,6 +32,7 @@ public sealed record BridgeFrame
     public RawBattleStatus? Battle { get; init; }
     public RawWildBattle[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
+    public string? PokeNavFlagsHex { get; init; }
     public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
     public int[]?[]? GymLineups { get; init; }
@@ -99,6 +102,7 @@ public sealed record BridgeFrame
                     battle.Species is int species && SpeciesCatalog.IsValid(species) ? species : null))
                 .Where(battle => battle.Area != 255).ToArray() : null,
             BadgeMask = this.BadgeMask,
+            PokeNavFlags = this.PokeNavFlagsHex is { Length: 26 } navFlags ? Convert.FromHexString(navFlags) : null,
             RubyStarterWindow = this.RubyStarterWindow,
             GymLevels = ValidateLevels(this.GymLevels),
             GymLineups = this.GymLineups is { Length: 8 } ? this.GymLineups.Select(ValidateLevels).ToArray() : null,

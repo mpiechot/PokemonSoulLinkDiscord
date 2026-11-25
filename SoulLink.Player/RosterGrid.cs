@@ -10,8 +10,12 @@ internal sealed class RosterGrid : DashboardScrollView
     private const int RowHeight = 122;
     private const int Gap = 18;
     private const int RouteWidth = 136;
+    private static readonly Color TradeRowBackground = Color.FromArgb(20, 40, 48);
+    private static readonly Color TradeCardBackground = Color.FromArgb(29, 55, 63);
+    private static readonly Color TradeOwnBackground = Color.FromArgb(40, 83, 79);
     private readonly RubySprites sprites;
     private readonly Image? placeholder;
+    private readonly bool showLocationTags;
     private readonly Font heading = new("Segoe UI Semibold", 10);
     private readonly Font small = new("Segoe UI", 8.5f);
     private readonly ToolTip cellHint = new();
@@ -19,22 +23,35 @@ internal sealed class RosterGrid : DashboardScrollView
     private RosterGridData data = new([], []);
     private int cellWidth;
     private string? hoveredLabel;
+    private Guid highlightRow;
+    private Guid highlightedOwn;
+    private Guid highlightedPartner;
 
     public event Action<Guid, PokemonState>? PokemonOpened;
 
-    public RosterGrid(RubySprites sprites, Image? placeholder)
+    public RosterGrid(RubySprites sprites, Image? placeholder, bool showLocationTags = true)
     {
         this.sprites = sprites;
         this.placeholder = placeholder;
+        this.showLocationTags = showLocationTags;
         this.sprites.Changed += this.Invalidate;
         this.BackColor = DashboardTheme.Background;
         this.AccessibleName = "Pokémon-Grid";
     }
 
-    public void Render(ClientView view, RosterView filter)
+    public void Render(ClientView view, RosterView filter) => this.Render(RosterGridData.From(view, filter));
+
+    public void Render(RosterGridData data)
     {
-        this.data = RosterGridData.From(view, filter);
+        this.data = data;
         this.ResizeContent();
+        this.Invalidate();
+    }
+
+    public void HighlightTrade(Guid row, Guid own, Guid partner)
+    {
+        if ((this.highlightRow, this.highlightedOwn, this.highlightedPartner) == (row, own, partner)) return;
+        (this.highlightRow, this.highlightedOwn, this.highlightedPartner) = (row, own, partner);
         this.Invalidate();
     }
 
@@ -87,18 +104,29 @@ internal sealed class RosterGrid : DashboardScrollView
             int y = scroll.Y + Header + row * RowHeight;
             if (y + RowHeight < this.Viewport.Top || y > this.Viewport.Bottom) continue;
             var group = this.data.Rows[row];
+            bool highlighted = this.highlightRow != Guid.Empty && group.LinkId == this.highlightRow;
+            if (highlighted)
+                DashboardTheme.Fill(canvas, new Rectangle(scroll.X, y, this.ContentSize.Width, RowHeight - 7), TradeRowBackground);
             if (this.data.ShowRouteColumn)
-                this.DrawRoute(canvas, new Rectangle(scroll.X, y, RouteWidth, RowHeight - 7), group);
+                this.DrawRoute(canvas, new Rectangle(scroll.X, y, RouteWidth, RowHeight - 7), group,
+                    highlighted ? TradeRowBackground : DashboardTheme.Surface);
             int first = Array.FindIndex(group.Slots, p => p is not null);
             int last = Array.FindLastIndex(group.Slots, p => p is not null);
             for (int col = 0; col < group.Slots.Length; col++)
             {
                 int x = scroll.X + this.RouteOffset + col * (this.cellWidth + Gap);
                 var box = new Rectangle(x, y, this.cellWidth, RowHeight - 7);
-                if (group.Slots[col] is { } pokemon) this.DrawPokemon(canvas, box, pokemon, group.LinkName);
+                if (group.Slots[col] is { } pokemon)
+                {
+                    Color background = !highlighted ? DashboardTheme.Panel :
+                        pokemon.Id == this.highlightedOwn ? TradeOwnBackground : TradeCardBackground;
+                    this.DrawPokemon(canvas, box, pokemon, group.LinkName, background);
+                    if (highlighted && this.highlightedPartner != Guid.Empty && pokemon.Id == this.highlightedPartner)
+                        DrawPartnerSelection(canvas, Rectangle.Inflate(box, -3, -3));
+                }
                 else
                 {
-                    DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
+                    if (!highlighted) DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
                     if (this.placeholder is { } unknown && group.MissingMembers?[col] == true)
                     {
                         var icon = new Rectangle(box.X + (box.Width - 52) / 2, box.Y + (box.Height - 52) / 2, 52, 52);
@@ -112,9 +140,16 @@ internal sealed class RosterGrid : DashboardScrollView
         }
     }
 
-    private void DrawRoute(Graphics canvas, Rectangle box, RosterRow row)
+    private static void DrawPartnerSelection(Graphics canvas, Rectangle box)
     {
-        DashboardTheme.Fill(canvas, box, DashboardTheme.Surface);
+        using var outline = DashboardTheme.Rounded(box, 7);
+        using var pen = new Pen(DashboardTheme.Accent, 2);
+        canvas.DrawPath(pen, outline);
+    }
+
+    private void DrawRoute(Graphics canvas, Rectangle box, RosterRow row, Color background)
+    {
+        DashboardTheme.Fill(canvas, box, background);
         var mon = row.Slots.FirstOrDefault(slot => slot is not null);
         string route = row.LinkName ?? (mon is null || mon.State.MetArea == 255 ? "Unbekannt" : RubyNames.Area(mon.State.MetArea));
         var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix;
@@ -127,11 +162,11 @@ internal sealed class RosterGrid : DashboardScrollView
         TextRenderer.DrawText(canvas, route, this.heading, title, row.Failed ? DashboardTheme.Danger : DashboardTheme.Text, flags);
     }
 
-    private void DrawPokemon(Graphics canvas, Rectangle box, DashboardPokemon pokemon, string? linkName)
+    private void DrawPokemon(Graphics canvas, Rectangle box, DashboardPokemon pokemon, string? linkName, Color background)
     {
         var state = pokemon.State;
         var appearance = state.IsEgg ? null : RubyDashboardCatalog.Appearance(state.Species);
-        DashboardTheme.Fill(canvas, box, DashboardTheme.Panel);
+        DashboardTheme.Fill(canvas, box, background);
         var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis;
         int width = Math.Min(box.Width - 10, 270);
         int left = box.X + (box.Width - width) / 2;
@@ -155,14 +190,14 @@ internal sealed class RosterGrid : DashboardScrollView
                 portrait, DashboardTheme.Muted, flags);
         }
         string? metArea = state.MetArea == 255 ? null : RubyNames.Area(state.MetArea);
-        if (!this.data.ShowRouteColumn && !state.IsEgg && (linkName ?? metArea) is { } tag)
+        if (this.showLocationTags && !this.data.ShowRouteColumn && !state.IsEgg && (linkName ?? metArea) is { } tag)
         {
             int tagWidth = Math.Min(leftWidth, TextRenderer.MeasureText(tag, this.small).Width + 15);
             var tagBounds = new Rectangle(left + (leftWidth - tagWidth) / 2, box.Y + 87, tagWidth, 19);
             this.DrawTag(canvas, tagBounds, tag, DashboardTheme.Accent);
             if (metArea is not null && metArea != tag) this.hints.Add((tagBounds, $"Ursprünglicher Fangort: {metArea}"));
         }
-        if (this.data.ShowRouteColumn && metArea is not null && linkName is not null && metArea != linkName)
+        if ((this.data.ShowRouteColumn || !this.showLocationTags) && metArea is not null && linkName is not null && metArea != linkName)
             this.hints.Add((portrait, $"Ursprünglicher Fangort: {metArea}"));
         var details = TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
         bool inTeam = state.Container == Placement.Party;
@@ -190,7 +225,8 @@ internal sealed class RosterGrid : DashboardScrollView
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        this.Cursor = this.CardAt(e.Location)?.Pokemon.State.IsEgg == false ? Cursors.Hand : Cursors.Default;
+        this.Cursor = this.PokemonOpened is not null && this.CardAt(e.Location)?.Pokemon.State.IsEgg == false
+            ? Cursors.Hand : Cursors.Default;
         string? label = this.hints.Find(hint => hint.Bounds.Contains(e.Location)).Label;
         if (this.hoveredLabel == label) return;
         this.hoveredLabel = label;

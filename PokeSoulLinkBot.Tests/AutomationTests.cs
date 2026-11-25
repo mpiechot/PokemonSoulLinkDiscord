@@ -18,6 +18,177 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void AppearanceBelongsToTheRegisteredPlayerAndSupportsExistingProfiles()
+    {
+        var run = this.engine.Initialize("appearance", 0, "Rubin");
+        var existing = this.Join(run, "First");
+        var newcomer = this.engine.Join(new JoinRequest(run.Invitation, "Second", Guid.NewGuid(),
+            Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)), "AXVD", Marker: PlayerMarker.Heart, Color: 0x49DDE4));
+
+        Assert.Null(this.engine.View(existing.Registration).Players.Single(p => p.Id == existing.Registration.PlayerId).Color);
+        Assert.Throws<InvalidDataException>(() => this.engine.UpdateAppearance(existing.Registration, PlayerMarker.Circle, 0x1000000));
+        this.engine.UpdateAppearance(existing.Registration, PlayerMarker.Star, 0xFFD372);
+        var peers = this.engine.View(newcomer).Players;
+        Assert.Contains(peers, player => player.Id == existing.Registration.PlayerId && player is { Marker: PlayerMarker.Star, Color: 0xFFD372 });
+        Assert.Contains(peers, player => player.Id == newcomer.PlayerId && player is { Marker: PlayerMarker.Heart, Color: 0x49DDE4 });
+        this.engine.UpdateAppearance(existing.Registration, PlayerMarker.Star, null);
+        Assert.Null(this.engine.View(newcomer).Players.Single(p => p.Id == existing.Registration.PlayerId).Color);
+    }
+
+    [Fact]
+    public void ProfileEditsDuringAnActiveRunKeepTheRegistrationAndRejectDuplicateNames()
+    {
+        var run = this.engine.Initialize("profile", 0, "Rubin");
+        var player = this.Join(run, "First");
+        var partner = this.Join(run, "Second");
+        Assert.True(this.Send(player, 1, true, Snapshot(1)).Accepted);
+        Assert.True(this.Send(partner, 1, true, Snapshot(1)).Accepted);
+        this.engine.ChangeRun("profile", run.Id, "start");
+
+        Assert.Throws<InvalidDataException>(() =>
+            this.engine.UpdateAppearance(player.Registration, PlayerMarker.Star, 0xFFD372, "  "));
+        Assert.Throws<InvalidDataException>(() =>
+            this.engine.UpdateAppearance(player.Registration, PlayerMarker.Star, 0xFFD372, "@First"));
+        Assert.Throws<InvalidOperationException>(() =>
+            this.engine.UpdateAppearance(player.Registration, PlayerMarker.Star, 0xFFD372, " second "));
+        Assert.Contains(this.engine.View(partner.Registration).Players, entry =>
+            entry.Id == player.Registration.PlayerId && entry is { Name: "First", Marker: PlayerMarker.Circle, Color: null });
+
+        this.engine.UpdateAppearance(player.Registration, PlayerMarker.Star, 0xFFD372, "  First Trainer  ");
+        var reloaded = new AutomationEngine(this.store).View(partner.Registration);
+        Assert.Equal(RunPhase.Active, reloaded.Phase);
+        Assert.Contains(reloaded.Players, entry => entry.Id == player.Registration.PlayerId && entry.ClientId == player.Registration.ClientId &&
+            entry is { Name: "First Trainer", Marker: PlayerMarker.Star, Color: 0xFFD372 });
+        Assert.Contains(reloaded.Players, entry => entry.Id == partner.Registration.PlayerId && entry.Name == "Second");
+    }
+
+    [Fact]
+    public void OverworldPosesOnlyReachOtherCurrentSessionsOnTheSameRunAndMap()
+    {
+        var run = this.engine.Initialize("avatar", 0, "Together");
+        var first = this.Join(run, "First");
+        var second = this.Join(run, "Second");
+        var outsider = this.Join(this.engine.Initialize("other", 0, "Separate"), "Outsider");
+        var pose = new OverworldPose(0, 16, 100, 200, 0, -3, 89, 2, 1, 3, 2, 1);
+
+        Assert.Empty(this.engine.ExchangeOverworld(first.Registration, first.Session.SessionId, pose));
+        Assert.Empty(this.engine.ExchangeOverworld(outsider.Registration, outsider.Session.SessionId, pose));
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.ExchangeOverworld(
+            outsider.Registration with { RunId = run.Id }, outsider.Session.SessionId, pose));
+        Assert.Empty(this.engine.ExchangeOverworld(second.Registration, second.Session.SessionId, pose with { MapGroup = 1 }));
+        Assert.Equal(new OverworldPlayer(first.Registration.PlayerId, pose),
+            Assert.Single(this.engine.ExchangeOverworld(second.Registration, second.Session.SessionId, pose)));
+
+        var next = this.engine.Connect(first.Registration, new Hello(first.Registration.ClientId));
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.ExchangeOverworld(first.Registration, first.Session.SessionId, pose));
+        Assert.Empty(this.engine.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+        this.engine.ExchangeOverworld(first.Registration, next.SessionId, pose);
+        this.engine.Disconnect(first.Registration, first.Session.SessionId);
+        Assert.Single(this.engine.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+        this.engine.Disconnect(first.Registration, next.SessionId);
+        Assert.Empty(this.engine.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+    }
+
+    [Fact]
+    public void TradeIsScopedToOneLivingLinkAndCompletesOnlyWithBothDurableReceipts()
+    {
+        var run = this.engine.Initialize("trades", 0, "Rubin");
+        var first = this.Join(run, "First");
+        var second = this.Join(run, "Second");
+        var firstId = first.Registration.PlayerId;
+        var secondId = second.Registration.PlayerId;
+        var machoke = TradeRecord(8, 67);
+        var pikachu = TradeRecord(9, 25, box: true);
+        Assert.True(this.Send(first, 1, true, Snapshot(1, Mon(1)) with { TrainerId = 101 }).Accepted);
+        Assert.True(this.Send(second, 1, true, Snapshot(1, Mon(2)) with { TrainerId = 102 }).Accepted);
+        this.engine.ChangeRun("trades", run.Id, "start");
+        Assert.True(this.Send(first, 2, false, Snapshot(2, Mon(1), Parse(machoke)) with { TrainerId = 101 }).Accepted);
+        Assert.True(this.Send(second, 2, false, Snapshot(2, Mon(2), Parse(pikachu)) with { TrainerId = 102 }).Accepted);
+        var original = this.engine.View(first.Registration);
+        var link = Assert.Single(original.Encounters);
+        var offer = new TradeOffer(link.Id, link.Members[firstId], secondId, link.Members[secondId]);
+        Assert.Throws<InvalidOperationException>(() => this.engine.OfferTrade(first.Registration, offer with { EncounterId = Guid.NewGuid() }));
+
+        this.engine.OfferTrade(first.Registration, offer);
+        var pending = this.engine.View(second.Registration).Trade!;
+        Assert.Throws<InvalidOperationException>(() => this.engine.RespondToTrade(first.Registration, pending.Id, true));
+        Assert.Null(this.engine.WorkForTrade(first.Registration, pending.Id));
+        this.engine.RespondToTrade(second.Registration, pending.Id, false);
+        Assert.Equal(PokemonTradePhase.Declined, this.engine.View(first.Registration).Trade!.Phase);
+
+        this.engine.OfferTrade(first.Registration, offer);
+        Guid id = this.engine.View(first.Registration).Trade!.Id;
+        this.engine.RespondToTrade(second.Registration, id, true);
+        this.engine.PrepareTrade(first.Registration, id, machoke);
+        Assert.Null(this.engine.WorkForTrade(second.Registration, id)!.Incoming);
+        this.engine.PrepareTrade(second.Registration, id, pikachu);
+        Assert.Equal(pikachu, this.engine.WorkForTrade(first.Registration, id)!.Incoming);
+        Assert.Equal("Trading", this.Send(first, 3, false, Snapshot(3, Mon(1))).State);
+        Assert.Throws<InvalidOperationException>(() => this.engine.ChangeRun("trades", run.Id, "pause"));
+        this.engine.ConfirmTrade(first.Registration, id, TradeRecord(9, 25));
+        Assert.Equal(link.Members, Assert.Single(this.engine.View(first.Registration).Encounters).Members);
+
+        var restarted = new AutomationEngine(this.store);
+        Assert.Null(restarted.WorkForTrade(first.Registration, id));
+        Assert.Equal(machoke, restarted.WorkForTrade(second.Registration, id)!.Incoming);
+        var evolved = TradeRecord(8, 68, box: true);
+        restarted.ConfirmTrade(second.Registration, id, evolved);
+        restarted.ConfirmTrade(second.Registration, id, evolved);
+        var completed = restarted.View(second.Registration);
+        Assert.Equal(PokemonTradePhase.Completed, completed.Trade!.Phase);
+        var swapped = Assert.Single(completed.Encounters);
+        Assert.Equal(link.GroupId, swapped.GroupId);
+        Assert.Equal(link.Members[firstId], swapped.Members[secondId]);
+        Assert.Equal(link.Members[secondId], swapped.Members[firstId]);
+        Assert.Equal(68, completed.Players.Single(p => p.Id == secondId).Pokemon.Single(p => p.Id == swapped.Members[secondId]).State.Species);
+        Assert.Single(completed.History, entry => entry.Kind == "trade");
+        var resumed = restarted.Connect(first.Registration, new Hello(first.Registration.ClientId));
+        var oldSave = Snapshot(3, Mon(1), Parse(machoke)) with { TrainerId = 101 };
+        Assert.Equal("OutOfSync", restarted.Observe(first.Registration, new Observation(Guid.NewGuid(), resumed.SessionId, 3, true, oldSave)).State);
+        var newSave = Snapshot(4, Mon(1), Parse(TradeRecord(9, 25))) with { TrainerId = 101 };
+        Assert.True(restarted.Observe(first.Registration, new Observation(Guid.NewGuid(), resumed.SessionId, 3, true, newSave)).Accepted);
+        Assert.Equal(original.History.Count(entry => entry.Kind == "caught"), restarted.View(first.Registration).History.Count(entry => entry.Kind == "caught"));
+
+        static RawPokemon TradeRecord(uint pid, int species, bool box = false)
+        {
+            byte[] record = SyntheticPokemon.Bytes(pid, species, box: box);
+            if (!box) record[85] = 0xFF;
+            return new RawPokemon(Convert.ToHexString(record), box ? Placement.Box : Placement.Party, 1, box ? 0 : null);
+        }
+
+        static PokemonState Parse(RawPokemon record) =>
+            Gen3Parser.Parse(Convert.FromHexString(record.Hex), record.Container, record.Slot, record.Box)!;
+    }
+
+    [Fact]
+    public void OverworldPosesExpireWithoutInventoriesAndCanBeClearedImmediately()
+    {
+        var clock = new OverworldClock();
+        var engineWithClock = new AutomationEngine(this.store, clock);
+        var run = engineWithClock.Initialize("overworld", 0, "Rubin");
+        var first = Register("First");
+        var second = Register("Second");
+        var pose = new OverworldPose(0, 16, 100, 200, 0, 0, 0, 2, 1, 4, 1, 2);
+        Assert.Throws<InvalidDataException>(() => engineWithClock.ExchangeOverworld(first.Registration, first.Session.SessionId, pose with { Graphics = 255 }));
+        engineWithClock.ExchangeOverworld(first.Registration, first.Session.SessionId, pose);
+        Assert.Single(engineWithClock.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+        clock.Elapsed += TimeSpan.FromSeconds(2);
+        Assert.Empty(engineWithClock.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+        engineWithClock.ExchangeOverworld(first.Registration, first.Session.SessionId, pose);
+        Assert.Empty(engineWithClock.ExchangeOverworld(first.Registration, first.Session.SessionId, null));
+        Assert.Empty(engineWithClock.ExchangeOverworld(second.Registration, second.Session.SessionId, pose));
+        Assert.All(engineWithClock.View(second.Registration).Players, player => Assert.Null(player.LastSnapshot));
+
+        TestClient Register(string name)
+        {
+            var id = Guid.NewGuid();
+            var token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            var registration = engineWithClock.Join(new JoinRequest(run.Invitation, name, id, token, "AXVD"));
+            return new TestClient(registration, engineWithClock.Connect(registration, new Hello(id)));
+        }
+    }
+
+    [Fact]
     public void StandaloneGroupsRetainTheirOwnLobbyRulesAndRunWhenSwitching()
     {
         var groupOne = this.engine.CreateGroup("Gruppe eins");
@@ -925,4 +1096,15 @@ public sealed class AutomationTests : IDisposable
         this.engine.Observe(client.Registration, new Observation(Guid.NewGuid(), client.Session.SessionId, sequence, baseline, snapshot));
 
     private sealed record TestClient(Registration Registration, SessionInfo Session);
+
+    private sealed class OverworldClock : TimeProvider
+    {
+        public TimeSpan Elapsed { get; set; }
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => this.Elapsed.Ticks;
+
+        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UnixEpoch + this.Elapsed;
+    }
 }

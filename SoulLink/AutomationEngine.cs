@@ -10,6 +10,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 {
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<Guid, LiveSession> sessions = new();
+    private readonly OverworldPresence overworld = new(timeProvider ?? TimeProvider.System);
 
     public List<AutomationRun> Runs(string guild) => store.Execute(tx => tx.Runs(guild));
 
@@ -71,6 +72,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     public void EditGroupLinks(Guid groupId, Guid runId, EditLinksRequest request) => store.Execute(tx =>
     {
         var run = RequireGroupRun(tx, groupId, runId);
+        RequireNoCommittingTrade(run);
         var editor = BuildLinkEditor(run);
         if (editor.Revision != request.Revision)
             throw new InvalidOperationException("Die Links haben sich geändert. Öffne das Menü erneut, bevor du speicherst.");
@@ -209,6 +211,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     private static void Deselect(AutomationStore.StoreTransaction tx, AutomationRun previous)
     {
+        RequireNoCommittingTrade(previous);
         if (previous.Phase == RunPhase.Lobby && !previous.GuildId.StartsWith("group:", StringComparison.Ordinal))
         {
             tx.Delete(previous.Id);
@@ -225,6 +228,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         {
             var run = tx.Run(runId);
             if (run.GuildId != guild) throw new UnauthorizedAccessException("Run belongs to another guild.");
+            RequireNoCommittingTrade(run);
             switch (action)
             {
                 case "start":
@@ -308,7 +312,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (request.Version != Protocol.Version) throw new InvalidDataException("Protocol version unsupported; update the client.");
         ValidateName(request.Name);
-        if (!Enum.IsDefined(request.Marker)) throw new InvalidDataException("Unknown player marker.");
+        ValidateAppearance(request.Marker, request.Color);
         if (request.ClientId == Guid.Empty || request.Token.Length != 64 || !HexToken().IsMatch(request.Token))
             throw new InvalidDataException("Invalid client registration.");
         if (request.GameCode != "AXVD") throw new InvalidDataException("Only the German Ruby AXVD read-only adapter is currently enabled.");
@@ -326,7 +330,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 ?? throw new UnauthorizedAccessException("Invitation invalid, expired, or lobby already started.");
             if (run.Players.Count >= 12 || run.Players.Any(p => string.Equals(p.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Player name already used or lobby full.");
-            var player = new AutomationPlayer { ClientId = request.ClientId, Name = request.Name, Marker = request.Marker };
+            var player = new AutomationPlayer { ClientId = request.ClientId, Name = request.Name, Marker = request.Marker, Color = request.Color };
             run.Players.Add(player);
             var registration = new Registration(run.Id, player.Id, request.ClientId);
             tx.Save(run);
@@ -338,6 +342,34 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     public Registration Authenticate(string token) => store.Execute(tx =>
         tx.Registration(HashToken(token)) ?? throw new UnauthorizedAccessException("Invalid client token."));
 
+    public void UpdateAppearance(Registration registration, PlayerMarker marker, int? color, string? name = null)
+    {
+        ValidateAppearance(marker, color);
+        name = name?.Trim();
+        if (name is not null) ValidateName(name);
+        store.Execute(tx =>
+        {
+            var run = tx.Run(registration.RunId);
+            var player = run.Players.SingleOrDefault(p => p.Id == registration.PlayerId && p.ClientId == registration.ClientId)
+                ?? throw new UnauthorizedAccessException("Invalid player registration.");
+            string displayName = name ?? player.Name;
+            if (player.Name == displayName && player.Marker == marker && player.Color == color) return false;
+            if (player.Name != displayName && run.Players.Any(other => other.Id != player.Id &&
+                string.Equals(other.Name, displayName, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("Dieser Spielername ist in diesem Run bereits vergeben.");
+            player.Name = displayName;
+            player.Marker = marker;
+            player.Color = color;
+            tx.Save(run);
+            return true;
+        });
+    }
+
+    private static void ValidateAppearance(PlayerMarker marker, int? color)
+    {
+        if (!Enum.IsDefined(marker) || !PlayerColors.IsValid(color)) throw new InvalidDataException("Ungültiges Karten-Icon oder ungültige Spielerfarbe.");
+    }
+
     public SessionInfo Connect(Registration registration, Hello hello)
     {
         if (hello.Version != Protocol.Version || hello.ClientId != registration.ClientId)
@@ -346,8 +378,9 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         {
             var run = tx.Run(registration.RunId);
             var player = run.Players.Single(p => p.Id == registration.PlayerId);
-            var session = new LiveSession(Guid.NewGuid(), this.clock.GetUtcNow());
+            var session = new LiveSession(Guid.NewGuid(), run.Id, this.clock.GetUtcNow());
             this.sessions[player.Id] = session;
+            this.overworld.Remove(run.Id, player.Id);
             if (player.Connection != "OutOfSync" || player.Diagnostic != DifferentTrainer) player.Connection = "Synchronizing";
             player.LastSeen = this.clock.GetUtcNow();
             tx.Save(run);
@@ -358,6 +391,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     public AutomationRun View(Registration registration) => store.Execute(tx =>
     {
         var run = tx.Run(registration.RunId);
+        this.ExpireTrade(tx, run);
         if (this.QueueRunEnd(tx, run)) tx.Save(run);
         return run;
     });
@@ -419,7 +453,18 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         if (this.sessions.TryGetValue(registration.PlayerId, out var session) && session.Id == sessionId)
             this.sessions.TryRemove(new KeyValuePair<Guid, LiveSession>(registration.PlayerId, session));
+        this.overworld.Remove(registration.RunId, registration.PlayerId, sessionId);
     }
+
+    public OverworldPlayer[] ExchangeOverworld(Registration registration, Guid sessionId, OverworldPose? pose)
+    {
+        if (pose is not null && !pose.IsValid()) throw new InvalidDataException("Invalid overworld pose.");
+        return this.overworld.Exchange(registration, sessionId, pose, this.IsCurrentSession);
+    }
+
+    private bool IsCurrentSession(Guid runId, Guid playerId, Guid sessionId) =>
+        this.sessions.TryGetValue(playerId, out var session) && session.Id == sessionId && session.RunId == runId &&
+        this.clock.GetUtcNow() - session.LastSeen <= TimeSpan.FromSeconds(45);
 
     public ObservationResult Observe(Registration registration, Observation observation)
     {
@@ -443,6 +488,10 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 return new ObservationResult(false, "Paused", "Run is paused, inactive or finished.", player.Sequence + 1);
 
             var snapshot = observation.Snapshot;
+            if (run.Trade is { Phase: PokemonTradePhase.Committing } trade && trade.Includes(player.Id))
+                return new ObservationResult(false, "Trading", "Der Poké-Tausch wird in beiden Spielständen gespeichert.", player.Sequence + 1);
+            if (snapshot.Pokemon.Any(mon => player.TradedAway.Contains(mon.Identity)))
+                return this.OutOfSync(tx, run, player, "Dieser Spielstand liegt vor einem abgeschlossenen Poké-Tausch. Lade den neueren Spielstand über „Run fortsetzen“.");
             var previous = player.LastSnapshot;
             bool baseline = !session.Ready || observation.Baseline;
             if (!player.RebaselineAllowed && snapshot.TrainerId is uint trainer && player.TrainerId is uint registeredTrainer && trainer != registeredTrainer)
@@ -523,7 +572,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             throw new UnauthorizedAccessException("Session expired.");
         if (this.clock.GetUtcNow() - session.LastSeen > TimeSpan.FromSeconds(45))
         {
-            this.sessions.TryRemove(new KeyValuePair<Guid, LiveSession>(registration.PlayerId, session));
+            this.Disconnect(registration, sessionId);
             throw new UnauthorizedAccessException("Session went offline; reconnect with a baseline.");
         }
         session.LastSeen = this.clock.GetUtcNow();
@@ -606,6 +655,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         {
             var run = tx.Run(runId);
             if (run.GuildId != guild) throw new UnauthorizedAccessException("Wrong guild.");
+            RequireNoCommittingTrade(run);
             var player = run.Players.Single(p => p.Id == playerId);
             player.RebaselineAllowed = true;
             player.Connection = "Synchronizing";
@@ -664,7 +714,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     private static void ValidateName(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > 64 || name.Any(c => char.IsControl(c) || c is '@' or '`' or '<' or '>'))
-            throw new InvalidDataException("Use a name of 1–64 characters without mentions, markup or control characters.");
+            throw new InvalidDataException("Der Name muss 1 bis 64 Zeichen lang sein und darf keine Erwähnungen, Markup- oder Steuerzeichen enthalten.");
     }
 
     private static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
@@ -932,9 +982,10 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     [GeneratedRegex("^[0-9A-F]{8}:[0-9A-F]{8}$")]
     private static partial Regex IdentityFormat();
 
-    private sealed class LiveSession(Guid id, DateTimeOffset lastSeen)
+    private sealed class LiveSession(Guid id, Guid runId, DateTimeOffset lastSeen)
     {
         public Guid Id { get; } = id;
+        public Guid RunId { get; } = runId;
         public bool Ready { get; set; }
         public bool? BridgeAvailable { get; set; }
         public DateTimeOffset LastSeen { get; set; } = lastSeen;

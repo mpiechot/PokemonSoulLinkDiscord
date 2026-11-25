@@ -85,7 +85,7 @@ internal sealed class PlayerUpdater : IDisposable
         catch (Exception error) when (error is IOException or Win32Exception or InvalidDataException or
             InvalidOperationException or UnauthorizedAccessException or JsonException or ArgumentException)
         {
-            MessageBox.Show(error.Message, "SoulLink-Update fehlgeschlagen", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            ToolWindow.Notice(null, "SoulLink-Update fehlgeschlagen", error.Message);
             Environment.ExitCode = 1;
         }
     }

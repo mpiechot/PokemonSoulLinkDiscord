@@ -107,6 +107,8 @@ public sealed record GameSnapshot
     public BattleTrace[]? Faints { get; init; }
     public WildBattleResult[]? WildBattles { get; init; }
     public byte? BadgeMask { get; init; }
+    [JsonIgnore]
+    public byte[]? PokeNavFlags { get; init; }
     public bool RubyStarterWindow { get; init; }
     public int[]? GymLevels { get; init; }
     public int[]?[]? GymLineups { get; init; }
@@ -114,7 +116,7 @@ public sealed record GameSnapshot
 }
 
 public sealed record JoinRequest(string Invitation, string Name, Guid ClientId, string Token, string GameCode,
-    int Version = Protocol.Version, PlayerMarker Marker = PlayerMarker.Circle);
+    int Version = Protocol.Version, PlayerMarker Marker = PlayerMarker.Circle, int? Color = null);
 public sealed record Registration(Guid RunId, Guid PlayerId, Guid ClientId);
 public sealed record Hello(Guid ClientId, int Version = Protocol.Version);
 public sealed record SessionInfo(Guid SessionId, Guid RunId, Guid PlayerId, long NextSequence);
@@ -141,6 +143,12 @@ public sealed class AutomationRun
     public List<Encounter> Encounters { get; set; } = [];
     public List<AutomationEvent> History { get; set; } = [];
     public List<string> AdditionalRules { get; set; } = [];
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PokemonTrade? Trade { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TradeView? DisplayTrade { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool TradeAvailable { get; set; }
 }
 
 public sealed class AutomationPlayer
@@ -150,6 +158,7 @@ public sealed class AutomationPlayer
     public string Name { get; set; } = "";
     public long Sequence { get; set; }
     public PlayerMarker Marker { get; set; }
+    public int? Color { get; set; }
     public string Connection { get; set; } = "Offline";
     public string Diagnostic { get; set; } = "Waiting for the first snapshot.";
     public DateTimeOffset? LastSeen { get; set; }
@@ -173,6 +182,7 @@ public sealed class AutomationPlayer
     public long RunStartFrame { get; set; }
     public bool NeedsActiveBaseline { get; set; }
     public HashSet<int> FirstWildAreas { get; set; } = [];
+    public HashSet<string> TradedAway { get; set; } = [];
     public List<TrackedPokemon> Pokemon { get; set; } = [];
 }
 

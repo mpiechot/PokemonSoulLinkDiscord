@@ -88,6 +88,67 @@ public sealed class AutomationHub : Hub
     /// <summary>Updates liveness independently of game changes.</summary>
     public string Heartbeat(Guid sessionId) => this.engine.Heartbeat(this.Registration(), sessionId);
 
+    /// <summary>Updates the caller's marker and selected color.</summary>
+    public void UpdateAppearance(PlayerMarker marker, int? color)
+    {
+        this.RequireReadTracking();
+        this.engine.UpdateAppearance(this.Registration(), marker, color);
+    }
+
+    /// <summary>Updates the caller's name, marker and selected color.</summary>
+    /// <returns>A validation message when the profile could not be saved.</returns>
+    public string? UpdatePlayerProfile(string name, PlayerMarker marker, int? color)
+    {
+        this.RequireReadTracking();
+        try
+        {
+            this.engine.UpdateAppearance(this.Registration(), marker, color, name ?? string.Empty);
+            return null;
+        }
+        catch (Exception error) when (error is InvalidDataException or InvalidOperationException)
+        {
+            return error.Message;
+        }
+    }
+
+    /// <summary>Offers a swap of two members from one living link.</summary>
+    public void OfferTrade(TradeOffer offer) => this.RunAction(player => this.engine.OfferTrade(player, offer));
+
+    /// <summary>Accepts or declines an offer addressed to the caller.</summary>
+    public void RespondToTrade(Guid tradeId, bool accept) => this.RunAction(player => this.engine.RespondToTrade(player, tradeId, accept));
+
+    /// <summary>Returns the caller's next durable step in an agreed trade.</summary>
+    public TradeWork? TradeWork(Guid tradeId)
+    {
+        this.RequireReadTracking();
+        return this.engine.WorkForTrade(this.Registration(), tradeId);
+    }
+
+    /// <summary>Submits the locally checkpointed outgoing Pokémon.</summary>
+    public void PrepareTrade(Guid tradeId, RawPokemon? pokemon) => this.RunAction(player => this.engine.PrepareTrade(player, tradeId, pokemon));
+
+    /// <summary>Confirms a trade after the receiver's checkpoint was saved.</summary>
+    public void ConfirmTrade(Guid tradeId, RawPokemon pokemon) => this.RunAction(player => this.engine.ConfirmTrade(player, tradeId, pokemon));
+
+    /// <summary>Exchanges the latest avatar poses with participants on the same map.</summary>
+    public OverworldPlayer[] ExchangeOverworld(OverworldPose? pose)
+    {
+        if (!this.options.Value.Enabled || !this.options.Value.EnableReadTracking ||
+            !this.Context.Items.TryGetValue("sessionId", out object? value) || value is not Guid sessionId)
+        {
+            throw new HubException("An active SoulLink session is required.");
+        }
+
+        long now = Environment.TickCount64;
+        if (this.Context.Items.TryGetValue("lastOverworld", out object? previous) && previous is long last && now - last < 40)
+        {
+            throw new HubException("Overworld update rate exceeded.");
+        }
+
+        this.Context.Items["lastOverworld"] = now;
+        return this.engine.ExchangeOverworld(this.Registration(), sessionId, pose);
+    }
+
     /// <summary>Updates session liveness and reports whether the bridge has current game data.</summary>
     public string HeartbeatWithBridge(Guid sessionId, bool available)
     {
@@ -132,11 +193,11 @@ public sealed class AutomationHub : Hub
     }
 
     /// <summary>Adds a shared rule to the caller's run.</summary>
-    public void AddRule(string text) => this.UpdateRules(registration => this.engine.AddRule(registration, text));
+    public void AddRule(string text) => this.RunAction(registration => this.engine.AddRule(registration, text));
 
     /// <summary>Replaces or removes an existing shared rule in the caller's run.</summary>
     public void ChangeRule(string current, string? replacement) =>
-        this.UpdateRules(registration => this.engine.ChangeRule(registration, current, replacement));
+        this.RunAction(registration => this.engine.ChangeRule(registration, current, replacement));
 
     /// <summary>Updates shared arena progress for the caller's run.</summary>
     public void ChangeArena(int number, bool complete)
@@ -178,6 +239,9 @@ public sealed class AutomationHub : Hub
     {
         var registration = this.Registration();
         var run = this.engine.View(registration);
+        run.DisplayTrade = AutomationEngine.VisibleTrade(run, registration.PlayerId);
+        run.TradeAvailable = this.options.Value.Enabled && this.options.Value.EnableReadTracking;
+        run.Trade = null;
         if (run.PendingEnd?.PlayerId != registration.PlayerId)
         {
             run.PendingEnd = null;
@@ -207,12 +271,13 @@ public sealed class AutomationHub : Hub
             }
 
             player.LastSnapshot = null;
+            player.TradedAway.Clear();
         }
 
         return run;
     }
 
-    private void UpdateRules(Action<Registration> update)
+    private void RunAction(Action<Registration> update)
     {
         this.RequireReadTracking();
         try

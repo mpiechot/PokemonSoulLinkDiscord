@@ -2,11 +2,11 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class PokemonDetailsForm : PlayerWindow
+internal sealed class PokemonDetailsForm : ToolWindow
 {
     public PokemonDetailsForm(PokemonState pokemon, string? romPath, Func<CancellationToken, Task<PokemonRomDetails?>>? partnerLookup)
+        : base(RubyNames.PokemonWithNickname(pokemon), new Size(450, 575))
     {
-        RunDialogs.Configure(this, RubyNames.PokemonWithNickname(pokemon), new Size(450, 525));
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = new Padding(13) };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -17,7 +17,7 @@ internal sealed class PokemonDetailsForm : PlayerWindow
         close.DialogResult = DialogResult.Cancel;
         layout.Controls.Add(close, 0, 1);
         this.CancelButton = close;
-        this.Controls.Add(layout);
+        this.Body.Controls.Add(layout);
         if (partnerLookup is null)
         {
             var local = ReadLocal(pokemon.Species, romPath);

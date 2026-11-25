@@ -41,6 +41,7 @@ internal sealed class CompanionForm : PlayerWindow
     private readonly Button pendingDeathButton;
     private readonly Button pendingEndButton;
     private readonly ToolStripMenuItem saveGame;
+    private readonly ToolStripMenuItem editPlayerProfile;
     private readonly ToolStripMenuItem loadGame;
     private readonly ToolStripMenuItem startGame;
     private readonly ToolStripMenuItem toggleDock;
@@ -78,6 +79,9 @@ internal sealed class CompanionForm : PlayerWindow
     private TypeChartForm? typeChart;
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
+    private PokemonTradeForm? pokemonTrade;
+    private PokemonTradeOfferForm? tradeOffer;
+    private Guid lastTradeOffer;
     private Guid? shownRunEnd;
     private string? stateFeedback;
     private DateTimeOffset stateFeedbackUntil;
@@ -142,8 +146,19 @@ internal sealed class CompanionForm : PlayerWindow
         this.joinRun = new ToolStripMenuItem(profiles is null ? "Run beitreten" : "Run beitreten / wechseln", null, async (_, _) => await this.JoinOrSwitchAsync());
         this.saveGame = new ToolStripMenuItem("Speichern (Slot 1)", null, async (_, _) => await this.ChangeGameStateAsync(load: false));
         this.loadGame = new ToolStripMenuItem("Schnellladen (Slot 1)", null, async (_, _) => await this.ChangeGameStateAsync(load: true));
-        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame,
-            new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
+        this.editPlayerProfile = new ToolStripMenuItem("Spielerprofil bearbeiten …", null, async (_, _) => await this.EditPlayerProfileAsync());
+        var hideLabels = new ToolStripMenuItem("Namensschilder ausblenden") { Checked = this.runtime.HideOverworldLabels };
+        hideLabels.Click += async (_, _) =>
+        {
+            await this.RunActionAsync(() =>
+            {
+                this.runtime.SetHideOverworldLabels(!this.runtime.HideOverworldLabels);
+                hideLabels.Checked = this.runtime.HideOverworldLabels;
+                return Task.CompletedTask;
+            });
+        };
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame, this.editPlayerProfile,
+            hideLabels, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
             this.RunPlayerTestInstance()));
         this.updateMenu = new ToolStripMenuItem("Nach Updates suchen", null, async (_, _) => await this.CheckUpdatesAsync(interactive: true));
@@ -178,7 +193,7 @@ internal sealed class CompanionForm : PlayerWindow
             using var dialog = new ItemMenuForm(this.runtime, this.spriteCache);
             dialog.ShowDialog(this);
         });
-        this.hints.SetToolTip(this.cheats, "Je 99 Items ins lokale PC-Lager legen");
+        this.hints.SetToolTip(this.cheats, "Je 99 Items ins Item-Lager oder in den Rucksack legen");
         navigation.Controls.AddRange([
             Button("Statistik", (_, _) =>
             {
@@ -201,6 +216,17 @@ internal sealed class CompanionForm : PlayerWindow
             {
                 if (this.statusEffects is null || this.statusEffects.IsDisposed) this.statusEffects = new StatusEffectsForm();
                 ShowTool(this.statusEffects);
+            }),
+            Button("Poké-Tausch", (_, _) =>
+            {
+                if (this.closing) return;
+                if (this.pokemonTrade is null || this.pokemonTrade.IsDisposed)
+                {
+                    this.pokemonTrade = new PokemonTradeForm(this.runtime, this.spriteCache);
+                    this.dock.RestoreFocusAfterClosing(this.pokemonTrade);
+                }
+                this.ShowTool(this.pokemonTrade);
+                this.RenderTrade(this.runtime.Status(), reopenOffer: true);
             }),
             this.cheats, this.checkCatch, this.pendingDeathButton, this.pendingEndButton,
         ]);
@@ -334,19 +360,19 @@ internal sealed class CompanionForm : PlayerWindow
             if (this.closing || this.IsDisposed) return;
             if (this.availableUpdate is not { } offer)
             {
-                if (interactive) MessageBox.Show(this, "Deine SoulLink-Version ist aktuell.", "SoulLink-Update");
+                if (interactive) ToolWindow.Notice(this, "SoulLink-Update", "Deine SoulLink-Version ist aktuell.");
                 return;
             }
             this.updateMenu.Text = $"Update {offer.Version} installieren";
             if (!interactive) return;
             if (PlayerInstance.HasTestPlayers())
             {
-                MessageBox.Show(this, "Schließe die SoulLink-Testfenster vor dem Update.", "SoulLink-Update");
+                ToolWindow.Notice(this, "SoulLink-Update", "Schließe die SoulLink-Testfenster vor dem Update.");
                 return;
             }
-            if (MessageBox.Show(this,
+            if (!ToolWindow.Confirm(this, "SoulLink aktualisieren",
                 $"Version {offer.Version} ist verfügbar. Speichere zuerst im Spiel. SoulLink beendet mGBA und startet nach der Installation neu.",
-                "SoulLink aktualisieren", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+                "Update installieren")) return;
 
             this.updateStatus = $"Update {offer.Version} wird heruntergeladen …";
             this.Render();
@@ -357,7 +383,7 @@ internal sealed class CompanionForm : PlayerWindow
             {
                 PlayerUpdater.CleanStage(staged.Directory);
                 if (!this.closing && !this.IsDisposed)
-                    MessageBox.Show(this, "Schließe die SoulLink-Testfenster vor dem Update.", "SoulLink-Update");
+                    ToolWindow.Notice(this, "SoulLink-Update", "Schließe die SoulLink-Testfenster vor dem Update.");
                 return;
             }
             this.PendingUpdate = staged;
@@ -368,8 +394,7 @@ internal sealed class CompanionForm : PlayerWindow
         {
             this.availableUpdate = null;
             if (interactive && !this.closing && !this.IsDisposed)
-                MessageBox.Show(this, error is OperationCanceledException ? "Zeitüberschreitung beim Update." : error.Message,
-                    "SoulLink-Update", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ToolWindow.Notice(this, "SoulLink-Update", error is OperationCanceledException ? "Zeitüberschreitung beim Update." : error.Message);
         }
         finally
         {
@@ -409,7 +434,8 @@ internal sealed class CompanionForm : PlayerWindow
     {
         if (this.closing || this.profiles is null) return;
         bool firstOpen = this.hosting is null;
-        this.hosting ??= new HostingForm(this.profiles, this.profile?.Server ?? this.runtime.Status().Server, this.hostingSession, id => this.SwitchProfileAsync(id));
+        this.hosting ??= new HostingForm(this.profiles, this.profile?.Server ?? this.runtime.Status().Server, this.hostingSession,
+            id => this.SwitchProfileAsync(id), this.runtime.PlayerIdForRun);
         this.ShowTool(this.hosting);
         if (firstOpen && this.hostingSession is not null) await this.hosting.ConnectAsync();
     }
@@ -425,8 +451,7 @@ internal sealed class CompanionForm : PlayerWindow
             return;
         }
         if (this.game is { HasExited: false } &&
-            MessageBox.Show(this, "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.",
-                "Run wechseln", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+            !ToolWindow.Confirm(this, "Run wechseln", "Hast du im Spiel gespeichert? Beim Run-Wechsel wird mGBA geschlossen.", "Run wechseln")) return;
         this.RequestedProfile = selection;
         this.RequestedResume = resume;
         this.NextHostingSession = this.hosting?.Session ?? this.hostingSession;
@@ -582,11 +607,10 @@ internal sealed class CompanionForm : PlayerWindow
     private void ShowRoster(string title, RosterView filter)
     {
         if (this.closing) return;
-        using var dialog = new PlayerWindow();
-        RunDialogs.Configure(dialog, title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 560));
+        using var dialog = new ToolWindow(title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 610));
         var roster = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         roster.PokemonOpened += (player, pokemon) => this.ShowPokemon(dialog, player, pokemon);
-        dialog.Controls.Add(roster);
+        dialog.Body.Controls.Add(roster);
         this.openRoster = roster;
         this.openRosterFilter = filter;
         roster.Render(this.runtime.Status(), filter);
@@ -608,15 +632,14 @@ internal sealed class CompanionForm : PlayerWindow
     private void ShowPlaces()
     {
         if (this.closing) return;
-        using var dialog = new PlayerWindow();
-        RunDialogs.Configure(dialog, "Fangorte", new Size(540, 330));
+        using var dialog = new ToolWindow("Fangorte", new Size(540, 380));
         var tags = new FlowLayoutPanel { Padding = new Padding(4), BackColor = DashboardTheme.Surface };
         var scroll = new DashboardScrollHost(tags, width => tags.GetPreferredSize(new Size(width, 0)).Height)
         {
             Dock = DockStyle.Fill,
             AccessibleName = "Fangorte",
         };
-        dialog.Controls.Add(scroll);
+        dialog.Body.Controls.Add(scroll);
         (int Area, bool Failed)[]? displayed = null;
         void RenderPlaces()
         {
@@ -748,10 +771,15 @@ internal sealed class CompanionForm : PlayerWindow
                 this.started = true;
                 if (this.closing) return;
             }
-            string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort, this.runtime.BeginLocalItemSession());
-            this.game = await Task.Run(() => this.emulator.Start(path, bridge, resume: resume));
+            this.game = await Task.Run(() =>
+            {
+                string gameRom = this.emulator.PrepareRom(path);
+                string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort,
+                    this.runtime.BeginLocalItemSession(), this.emulator.TradeCheckpointPrefix(gameRom));
+                return this.emulator.Start(gameRom, bridge, resume: resume);
+            });
             if (this.closing) return;
-            this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), attempted: true);
+            this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), RubyMapArtwork.ReadLabels(path), attempted: true);
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
             this.dockUntil = DateTimeOffset.UtcNow.AddSeconds(12);
@@ -818,6 +846,7 @@ internal sealed class CompanionForm : PlayerWindow
     private void Render()
     {
         var view = this.runtime.Status();
+        this.RenderTrade(view);
         bool running = this.game is { HasExited: false };
         this.displayedRunId = running ? view.Run?.Id : null;
         this.news.Visible = this.sidebar.Visible = running;
@@ -829,7 +858,7 @@ internal sealed class CompanionForm : PlayerWindow
             this.loadRun.Visible = this.profiles?.List().Length > 0;
             this.joinFromLauncher.Visible = this.profiles is not null || this.profile is not null;
         }
-        this.cheats.Enabled = running && this.runtime.CanAddPcItems;
+        this.cheats.Enabled = running && this.runtime.CanAddPcItems && !this.runtime.TradeUsesGame;
         string registration = view.IsLocalRun ? "Lokaler Spieltest"
             : view.Run is { } run ? run.Name + ": " + view.Player + " (" + (run.Phase switch
             {
@@ -841,7 +870,7 @@ internal sealed class CompanionForm : PlayerWindow
             : view.Registered ? view.Player : this.profile is null ? "Lokaler Spieltest" : "Run-Anmeldung";
         if (!running) registration = this.profile is { } profile ? profile.Label ?? "SoulLink" : "SoulLink";
         this.status.Text = this.shutdownError ?? this.joinError ?? (!running ? this.gameError : null) ??
-            (DateTimeOffset.UtcNow < this.stateFeedbackUntil ? this.stateFeedback : null) ?? this.updateStatus ??
+            (DateTimeOffset.UtcNow < this.stateFeedbackUntil ? this.stateFeedback : null) ?? this.updateStatus ?? this.runtime.TradeHint ??
             (this.instanceLabel is { } label ? $"{label} | {registration}" : registration);
         this.SetConnection(this.runConnection, running && view.Run is not null && !view.IsLocalRun,
             !running ? "Kein Run geöffnet." : view.IsLocalRun && !view.Registered ? "Lokal. Für einen Run beitreten." : "Offline. Run-Server prüfen.");
@@ -862,8 +891,9 @@ internal sealed class CompanionForm : PlayerWindow
             : "Wähle beim ersten Start die ROM für diesen Run.");
         this.startGame.Enabled = !running && !this.launching;
         this.toggleDock.Enabled = running;
-        this.saveGame.Enabled = running && this.runtime.CanSaveState;
-        this.loadGame.Enabled = running && this.runtime.CanLoadState;
+        this.saveGame.Enabled = running && this.runtime.CanSaveState && !this.runtime.TradeUsesGame;
+        this.editPlayerProfile.Enabled = view.Registered && !view.IsLocalRun && view.Run is not null;
+        this.loadGame.Enabled = running && this.runtime.CanLoadState && !this.runtime.TradeUsesGame;
         this.toggleDock.Text = this.dock.Attached ? "mGBA lösen" : "mGBA einbetten";
         this.joinRun.Available = this.profiles is not null || (this.profile is not null && !view.Registered);
         this.checkCatch.Enabled = this.displayedRunId is not null;
@@ -883,6 +913,27 @@ internal sealed class CompanionForm : PlayerWindow
             ? "Lobby. Fänge werden erfasst, sobald der Gastgeber auf „Starten“ klickt." : "Noch keine Ereignisse.");
     }
 
+    private void RenderTrade(ClientView view, bool reopenOffer = false)
+    {
+        if (this.closing) return;
+        if (this.pokemonTrade is { IsDisposed: false } window) window.Render(view);
+        var offer = view.Run?.Trade is { Phase: PokemonTradePhase.Offered } pending && pending.To.Id == view.LocalPlayerId ? pending : null;
+        if (this.tradeOffer is { IsDisposed: false } previous)
+        {
+            if (previous.TradeId == offer?.Id)
+            {
+                if (reopenOffer) this.ShowTool(previous);
+                return;
+            }
+            previous.Close();
+        }
+        if (offer is null || view.Run is not { } run || (!reopenOffer && this.lastTradeOffer == offer.Id)) return;
+        this.lastTradeOffer = offer.Id;
+        this.tradeOffer = new PokemonTradeOfferForm(offer, this.spriteCache, accept => this.runtime.RespondToTradeAsync(run.Id, offer.Id, accept));
+        this.dock.RestoreFocusAfterClosing(this.tradeOffer);
+        this.ShowTool(this.tradeOffer);
+    }
+
     private void RunPlayerTestInstance()
     {
         if (this.closing || Environment.ProcessPath is not { } executable) return;
@@ -894,7 +945,7 @@ internal sealed class CompanionForm : PlayerWindow
         }
         catch (System.ComponentModel.Win32Exception error)
         {
-            MessageBox.Show(this, error.Message, "Testspieler konnte nicht geöffnet werden.");
+            ToolWindow.Notice(this, "Testspieler konnte nicht geöffnet werden", error.Message);
         }
     }
 
@@ -972,7 +1023,7 @@ internal sealed class CompanionForm : PlayerWindow
         try { await action(); }
         catch (Exception error) when (RunDialogs.IsActionError(error))
         {
-            if (!this.closing) MessageBox.Show(this, "Die Änderung konnte gerade nicht gespeichert werden.", "SoulLink");
+            if (!this.closing) ToolWindow.Notice(this, "SoulLink", "Die Änderung konnte gerade nicht gespeichert werden.");
         }
         finally
         {
@@ -986,11 +1037,11 @@ internal sealed class CompanionForm : PlayerWindow
         if (this.closing || this.profile is null || this.runtime.Status().Registered) return;
         var view = this.runtime.Status();
         using var identity = new PlayerIdentityForm(view.Player.Length == 0 ? this.profile.Name : view.Player,
-            view.Player.Length == 0 ? this.profile.Marker ?? view.Marker : view.Marker);
+            view.Player.Length == 0 ? this.profile.Marker ?? view.Marker : view.Marker, view.Color ?? this.profile.Color);
         if (identity.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            await this.runtime.QueueJoinAsync(new JoinForm(this.profile.Server, this.profile.Invitation, identity.PlayerName, identity.Marker));
+            await this.runtime.QueueJoinAsync(new JoinForm(this.profile.Server, this.profile.Invitation, identity.PlayerName, identity.Marker, identity.SelectedColor));
             this.joinError = null;
         }
         catch (InvalidDataException exception)
@@ -998,6 +1049,31 @@ internal sealed class CompanionForm : PlayerWindow
             this.joinError = exception.Message;
         }
         this.Render();
+    }
+
+    private async Task EditPlayerProfileAsync()
+    {
+        if (this.closing) return;
+        var view = this.runtime.Status();
+        if (!view.Registered || view.IsLocalRun || view.Run is not { } run) return;
+        var player = run.Players.FirstOrDefault(p => p.Id == view.LocalPlayerId);
+        if (player is null) return;
+        using var identity = new PlayerIdentityForm(player.Name, player.Marker, player.Color, editing: true);
+        await this.RunActionAsync(async () =>
+        {
+            while (!this.closing && identity.ShowDialog(this) == DialogResult.OK)
+            {
+                try
+                {
+                    await this.runtime.UpdatePlayerProfileAsync(run.Id, identity.PlayerName, identity.Marker, identity.SelectedColor);
+                    return;
+                }
+                catch (InvalidDataException error)
+                {
+                    if (!this.closing) ToolWindow.Notice(this, "Spielerprofil", error.Message);
+                }
+            }
+        });
     }
 
     private async void OpenSetup(object? sender, EventArgs e)

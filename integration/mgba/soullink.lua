@@ -24,7 +24,7 @@ SOULLINK_ITEM_SESSION = nil
 local peer, pending, position = nil, nil, 1
 local itemInput, itemReply, lastItemRequest = "", nil, nil
 local loadingSlot, resetAfterReply = false, false
-local function isPcGrantItem(item)
+local function isGrantItem(item)
     return item and ((item >= 1 and item <= 12) or item == 68)
 end
 local epochSeed = tostring({}):gsub("[^%w]", "") .. tostring(os.time()) .. "_"
@@ -47,6 +47,12 @@ local function readCore()
     return emu
 end
 
+local overworld = itemSession and SOULLINK_OVERWORLD and SOULLINK_OVERWORLD(readCore, profiles.AXVD)
+local trade = itemSession and SOULLINK_TRADE and SOULLINK_TRADE(readCore, profiles.AXVD, SOULLINK_TRADE_CHECKPOINT, function()
+    if overworld then overworld.hide() end
+end)
+local overworldError
+
 local function read8(address)
     return readCore():read8(address)
 end
@@ -67,6 +73,7 @@ local function stop()
     if peer then pcall(function() peer:close() end) end
     peer, pending, position = nil, nil, 1
     itemInput, itemReply = "", nil
+    if overworld then pcall(overworld.reset) end
 end
 
 local function report(message)
@@ -127,25 +134,33 @@ local function readTrainerId(profile)
     return read16(profile.save2 + 0x0A) | (read16(profile.save2 + 0x0C) << 16)
 end
 
-local function grantPcItem(profile, item)
+local function grantItem(profile, item, bag)
     local count = read8(profile.partyCount)
     if (read8(profile.main + 0x43D) & 2) ~= 0 or count < 1 or count > 6 or
+        (bag and not profile.fieldCallbacks[read32(profile.main + 4) & ~1]) or
         read8(profile.avatar + 6) ~= 0 or readPosition(profile, read8(profile.save1 + 4)) == "null" then
         return "location"
     end
 
-    -- Ruby's SaveBlock1 has 50 unencrypted {u16 id, u16 count} PC slots. Prepare the full grant before writing.
+    -- Ruby stores these pockets as unencrypted {u16 id, u16 count} pairs.
+    local offset, slots, stackLimit = 0x498, 50, 999
+    if bag then
+        offset, slots = 0x600, 16
+        if item == 68 then offset, slots = 0x560, 20 end
+        stackLimit = 99
+    end
+    -- Prepare the full grant before touching the live pocket.
     local remaining, free, changes, total = 99, nil, {}, 0
-    for slot = 0, 49 do
-        local address = profile.save1 + 0x498 + 4 * slot
+    for slot = 0, slots - 1 do
+        local address = profile.save1 + offset + 4 * slot
         local id, quantity = read16(address), read16(address + 2)
-        if id > 348 or (id == 0 and quantity ~= 0) or (id ~= 0 and (quantity == 0 or quantity > 999)) then
+        if id > 348 or (id == 0 and quantity ~= 0) or (id ~= 0 and (quantity == 0 or quantity > stackLimit)) then
             return "storage"
         end
         if id == 0 and not free then free = address end
         if id == item then total = total + quantity end
-        if id == item and remaining > 0 and quantity < 999 then
-            local added = math.min(remaining, 999 - quantity)
+        if id == item and remaining > 0 and quantity < stackLimit then
+            local added = math.min(remaining, stackLimit - quantity)
             changes[#changes + 1] = {address, item | ((quantity + added) << 16)}
             remaining = remaining - added
         end
@@ -161,26 +176,23 @@ local function grantPcItem(profile, item)
     return "ok", total + 99
 end
 
-local function receiveLocalAction()
-    if not itemSession or not peer or itemReply then return end
-    if peer:hasdata() then
-        local chunk = peer:receive(256)
-        if chunk then itemInput = itemInput .. chunk end
-    end
-    if #itemInput > 256 then stop(); return end
-    local ending = itemInput:find("\n", 1, true)
-    if not ending then return end
-    local line = itemInput:sub(1, ending - 1)
-    itemInput = itemInput:sub(ending + 1)
+local function saveSlot(slot)
+    if overworld then pcall(overworld.hide) end
+    return readCore():saveStateSlot(slot)
+end
+
+local function handleLocalAction(line)
+    if #line > 256 then return end
     local action, token, expectedEpoch, trainer, request, kind, expires =
         line:match("^(%u+) (%x+) ([%w_]+) (%d+) ([%x%-]+) (%d+) (%d+)$")
     local item = tonumber(kind)
     local save = action == "SAVE" and item == 1
     local load = action == "LOAD" and item == 1
     if token ~= itemSession or not request or #request ~= 36 or request == lastItemRequest or
-        not (save or load or (action == "PC" and isPcGrantItem(item))) then return end
+        not (save or load or ((action == "PC" or action == "BAG") and isGrantItem(item))) then return end
     lastItemRequest = request
     local ok, outcome, quantity = pcall(function()
+        if trade and trade.locked() then return "changed" end
         local profile = activeProfile
         if profile ~= profiles.AXVD or epoch ~= expectedEpoch or tonumber(expires) < os.time() then
             return "changed"
@@ -192,12 +204,63 @@ local function receiveLocalAction()
             return loaded and "ok" or "load"
         end
         if readTrainerId(profile) ~= tonumber(trainer) then return "changed" end
-        if save then return readCore():saveStateSlot(1) and "ok" or "save" end
-        return grantPcItem(profile, item)
+        if save then return saveSlot(1) and "ok" or "save" end
+        return grantItem(profile, item, action == "BAG")
     end)
     loadingSlot = false
     itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","itemQuantity":%s}\n',
         itemSession, request, ok and outcome or "changed", quantity or "null")
+end
+
+local function handleTradeAction(line)
+    if #line > 640 then return end
+    local token, expectedEpoch, trainer, request, id, action, identity, prepared, incoming =
+        line:match("^TRADE (%x+) ([%w_]+) (%d+) ([%x%-]+) (%x+) (%u+) (%x+) ([%x%-]+) ([%x%-]+)$")
+    if token ~= itemSession or not request or #request ~= 36 or #id ~= 32 or #identity ~= 16 or
+        request == lastItemRequest or (action ~= "PREP" and action ~= "APPLY") then return end
+    lastItemRequest = request
+    local ok, status, pokemon = pcall(function()
+        if not trade or activeProfile ~= profiles.AXVD or expectedEpoch ~= epoch then return "field" end
+        return trade.act(id, action, tonumber(trainer), identity, prepared, incoming)
+    end)
+    local data = "null"
+    if ok and pokemon then
+        data = string.format('{"hex":"%s","container":"%s","slot":%d,"box":%s}',
+            hex(pokemon.address, #pokemon.data), pokemon.box and "Box" or "Party", pokemon.slot, pokemon.box or "null")
+    end
+    itemReply = string.format('{"version":1,"type":"pc-item-result","itemSession":"%s","itemRequest":"%s","itemResult":"%s","tradePokemon":%s}\n',
+        itemSession, request, ok and status or "storage", data)
+end
+
+local function receiveLocalAction()
+    if not itemSession or not peer or itemReply then return end
+    if peer:hasdata() then
+        local chunk = peer:receive(4096)
+        if chunk then itemInput = itemInput .. chunk end
+    end
+    if #itemInput > 8192 then stop(); return end
+    for _ = 1, 8 do
+        local ending = itemInput:find("\n", 1, true)
+        if not ending or itemReply then return end
+        local line = itemInput:sub(1, ending - 1)
+        itemInput = itemInput:sub(ending + 1)
+        if line:sub(1, 8) == "AVATARS " then
+            local token, expectedEpoch, poses = line:match("^AVATARS (%x+) ([%w_]+) (.*)$")
+            if overworld and activeProfile == profiles.AXVD and token == itemSession and expectedEpoch == epoch and #line <= 2048 then
+                overworld.update(poses, tick)
+            end
+        elseif line:sub(1, 12) == "AVATARSTYLE " then
+            local token, expectedEpoch, tint, labels = line:match("^AVATARSTYLE (%x+) ([%w_]+) ([%x%-]+) ([01])$")
+            if overworld and activeProfile == profiles.AXVD and token == itemSession and expectedEpoch == epoch and
+                (tint == "-" or tint:match("^%x%x%x%x%x%x$")) then
+                overworld.style(tonumber(tint, 16), labels == "1")
+            end
+        elseif line:sub(1, 6) == "TRADE " then
+            handleTradeAction(line)
+        else
+            handleLocalAction(line)
+        end
+    end
 end
 
 local function pendingDirectHit(a, count, frame)
@@ -345,7 +408,7 @@ local function autosaveAfterBattle(profile)
     if not autosavePending or not profile.fieldCallbacks[read32(profile.main + 4) & ~1] or
         readPosition(profile, read8(profile.save1 + 4)) == "null" then return end
     autosavePending = false
-    local ok, saved = pcall(function() return readCore():saveStateSlot(2) end)
+    local ok, saved = pcall(saveSlot, 2)
     if not ok or not saved then report("Automatisches Speichern auf Slot 2 fehlgeschlagen.") end
 end
 
@@ -464,10 +527,11 @@ local function snapshot(frame)
         rubyTypes = typesOk and types or ""
     end
     local itemCapability = itemSession and profile == reference and '"' .. itemSession .. '"' or "null"
-    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"money":%s,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"battle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
+    local nav = itemSession and profile == reference and '"' .. hex(profile.save1 + 0x1320, 13) .. '"' or "null"
+    return string.format('{"version":1,"type":"snapshot","gameCode":"%s","layoutId":"%s","epoch":"%s","frame":%d,"playSeconds":%d,"trainerId":%d,"money":%s,"itemSession":%s,"mapGroup":%d,"mapNumber":%d,"area":255,"position":%s,"inBattle":%s,"battle":%s,"faints":[%s],"wildBattles":[%s],"badgeMask":%d,"pokeNavFlagsHex":%s,"rubyStarterWindow":%s,"gymLevels":%s,"gymLineups":[%s],"rubyTypesHex":"%s","completeInventory":true,"pokemon":[%s]}\n',
         code, profile.id, epoch, frame, hours * 3600 + minutes * 60 + seconds, trainerId,
         money >= 0 and money <= 999999 and tostring(money) or "null", itemCapability,
-        group, number, lastPosition, tostring(battle), liveBattle, table.concat(faints, ","), table.concat(wildResults, ","), badges,
+        group, number, lastPosition, tostring(battle), liveBattle, table.concat(faints, ","), table.concat(wildResults, ","), badges, nav,
         tostring(starterWindow), gym, table.concat(gymLineups, ","), rubyTypes, table.concat(pokemon, ","))
 end
 
@@ -480,6 +544,7 @@ local function reset()
     canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
     battleStarted, liveBattle, battleDirty = nil, "null", false
     autosaveInBattle, autosavePending = false, false
+    if trade then trade.reset() end
     stop()
 end
 
@@ -511,11 +576,27 @@ local function onFrame()
     sendPending()
     receiveLocalAction()
     flushActionReply()
+    if trade and trade.running() then
+        trade.frame(tick)
+        if trade.running() then return end
+    end
     if resetAfterReply then
         if not peer or not pending then reset() end
         return
     end
     if itemSession and activeProfile == profiles.AXVD then autosaveAfterBattle(activeProfile) end
+    if overworld and activeProfile == profiles.AXVD and peer then
+        local ok, pose = pcall(overworld.step, tick, tick % 4 == 0 and not pending)
+        if ok and pose then
+            pending, position = string.format('{"version":1,"type":"overworld","itemSession":"%s","epoch":"%s","overworld":%s}\n',
+                itemSession, epoch, pose), 1
+            sendPending()
+        elseif not ok and pose ~= overworldError then
+            overworldError = pose
+            console:log("SoulLink overworld: " .. tostring(pose))
+            pcall(overworld.reset)
+        end
+    end
     if (tick % 30 ~= 0 and not faintDirty and not wildDirty and not battleDirty) or pending then return end
     if not peer then
         local valid, codeOrError, profile = pcall(readProfile)
@@ -542,14 +623,18 @@ end
 -- Re-loading this file removes only callbacks installed by its previous instance.
 if SOULLINK_STOP then SOULLINK_STOP() end
 local frameCallback = callbacks:add("frame", onFrame)
+local tradeKeys = trade and callbacks:add("keysRead", function() trade.keys(tick) end)
 local resetCallback = callbacks:add("reset", reset)
+local stopCallback = callbacks:add("stop", stop)
 local loadCallback = callbacks:add("loadState", function()
     -- The client must receive the slot result before resetting the stream and taking a new baseline.
     if loadingSlot then resetAfterReply = true else reset() end
 end)
 SOULLINK_STOP = function()
     callbacks:remove(frameCallback)
+    if tradeKeys then callbacks:remove(tradeKeys) end
     callbacks:remove(resetCallback)
+    callbacks:remove(stopCallback)
     callbacks:remove(loadCallback)
     stop()
 end

@@ -82,6 +82,7 @@ function New-TestRom([string]$Path, [byte]$Revision, [byte]$Species, [switch]$Em
     [BitConverter]::GetBytes(0xEA000054u).CopyTo($rom, 0xE8)
     $writes = [ordered]@{
         '02025BCC' = 0x03B60044u # First PC item slot: 950 Rare Candies.
+        '02025C94' = 0x005F0044u # First bag item slot: 95 Rare Candies.
         '0202E828' = 0x08000600u # Map header: pointer to a 28 x 24 layout.
         '030048B0' = 0x00010001u # Active player object.
         '030048C0' = 0x000E000Cu # Live (5, 7), padding of seven metatiles.
@@ -181,7 +182,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $emptyHome 'shutdown-result.txt'))) { throw 'Empty-party startup was not verified.' }
     $romSelections = @(Get-ChildItem -LiteralPath $preparedHome -Filter 'rom-*.txt' | Get-Content)
     if ($romSelections.Count -ne 2 -or $romSelections[0] -eq $romSelections[1]) { throw 'ROM selection leaked between prepared run profiles.' }
-    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, empty-party startup, dock, detach and PC item checks for German Ruby.'
+    Write-Host 'Single-file player verified: clean startup, prepared invitation, isolated ROM choices, and real mGBA read, empty-party startup, dock, detach and PC and bag item checks for German Ruby.'
 } finally {
     $directory = Get-Item -LiteralPath $testRoot
     if ($directory.FullName -eq $testRoot -and $directory.Name -match '^soullink-player-check-[a-f0-9]{32}$' -and

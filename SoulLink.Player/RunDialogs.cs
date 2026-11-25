@@ -4,15 +4,14 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class CatchCheckForm : PlayerWindow
+internal sealed class CatchCheckForm : ToolWindow
 {
     private readonly TextBox query = RunDialogs.TextInput("Deutscher oder englischer Pokémon-Name", 80);
     private readonly CatchVerdictPanel outcome = new() { AccessibleName = "Catch-Check-Ergebnis", Margin = new Padding(0, 8, 0, 0) };
     private readonly Button check = DashboardTheme.Button("Prüfen");
 
-    public CatchCheckForm(ClientRuntime runtime, Guid runId)
+    public CatchCheckForm(ClientRuntime runtime, Guid runId) : base("Catch-Check", new Size(460, 260))
     {
-        RunDialogs.Configure(this, "Catch-Check", new Size(460, 208));
         this.query.AccessibleName = "Pokémon-Name";
         this.query.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = 38, ColumnCount = 2, Margin = new Padding(0) };
@@ -26,7 +25,7 @@ internal sealed class CatchCheckForm : PlayerWindow
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(header, 0, 0);
         layout.Controls.Add(this.outcome, 0, 1);
-        this.Controls.Add(layout);
+        this.Body.Controls.Add(layout);
         this.AcceptButton = this.check;
         this.check.Click += async (_, _) =>
         {
@@ -104,12 +103,11 @@ internal sealed class CatchVerdictPanel : TableLayoutPanel
     }
 }
 
-internal sealed class RunEndForm : PlayerWindow
+internal sealed class RunEndForm : ToolWindow
 {
-    public RunEndForm(Guid incidentId, Func<string, Task> complete)
+    public RunEndForm(Guid incidentId, Func<string, Task> complete) : base("Run abschließen", new Size(480, 245))
     {
         this.IncidentId = incidentId;
-        RunDialogs.Configure(this, "Run abschließen", new Size(480, 155));
         var explanation = new Label
         {
             Dock = DockStyle.Top,
@@ -119,13 +117,20 @@ internal sealed class RunEndForm : PlayerWindow
         var reason = RunDialogs.TextInput("Grund für das Run-Ende (optional)", 250);
         reason.Dock = DockStyle.Top;
         var feedback = new Label { Dock = DockStyle.Fill, ForeColor = DashboardTheme.Danger, TextAlign = ContentAlignment.MiddleLeft };
-        var button = DashboardTheme.Button("Run abschließen");
-        button.Dock = DockStyle.Bottom;
-        this.Controls.Add(feedback);
-        this.Controls.Add(reason);
-        this.Controls.Add(explanation);
-        this.Controls.Add(button);
+        var card = new ToolCard { Dock = DockStyle.Fill };
+        var button = Action("Run abschließen", DashboardTheme.Danger);
+        var later = Action("Später");
+        later.Click += (_, _) => this.Close();
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 40, FlowDirection = FlowDirection.RightToLeft };
+        actions.Controls.AddRange([button, later]);
+        card.Controls.Add(feedback);
+        card.Controls.Add(reason);
+        card.Controls.Add(new Label { Dock = DockStyle.Top, Height = 24, Text = "Grund (optional)", ForeColor = DashboardTheme.Muted });
+        card.Controls.Add(explanation);
+        card.Controls.Add(actions);
+        this.Body.Controls.Add(card);
         this.AcceptButton = button;
+        this.CancelButton = later;
         button.Click += async (_, _) =>
         {
             button.Enabled = false;
@@ -148,14 +153,14 @@ internal sealed class RunEndForm : PlayerWindow
     protected override bool ShowWithoutActivation => true;
 }
 
-internal sealed class DeathReasonForm : PlayerWindow
+internal sealed class DeathReasonForm : ToolWindow
 {
-    private readonly TextBox reason = new() { Dock = DockStyle.Top, MaxLength = 250, PlaceholderText = "Grund (optional)" };
+    private readonly TextBox reason = RunDialogs.TextInput("Grund (optional)", 250);
     private readonly Label details = new() { Dock = DockStyle.Top, Height = 94, Padding = new Padding(0, 0, 0, 12) };
 
-    public DeathReasonForm(PendingDeath pending)
+    public DeathReasonForm(PendingDeath pending) : base("Todesfall prüfen", new Size(485, 265))
     {
-        RunDialogs.Configure(this, "Todesfall prüfen", new Size(465, 223));
+        this.reason.Dock = DockStyle.Top;
         this.IncidentId = pending.IncidentId;
         this.reason.AccessibleName = "Todesursache";
         this.UpdateTrace(pending);
@@ -168,9 +173,11 @@ internal sealed class DeathReasonForm : PlayerWindow
         later.Click += (_, _) => this.Close();
         actions.Controls.AddRange([confirm, dismiss, later]);
         this.CancelButton = later;
-        this.Controls.Add(this.reason);
-        this.Controls.Add(this.details);
-        this.Controls.Add(actions);
+        var card = new ToolCard { Dock = DockStyle.Fill };
+        card.Controls.Add(this.reason);
+        card.Controls.Add(this.details);
+        card.Controls.Add(actions);
+        this.Body.Controls.Add(card);
     }
 
     public Guid IncidentId { get; }
@@ -216,20 +223,6 @@ internal static class RunDialogs
     {
         if (RubyNames.Move(battle?.Move) is not { } name) return ("Attacke", "Unbekannt");
         return (battle!.FinishingBlow ? "K.-o.-Attacke" : "Letzte erfasste Attacke", name);
-    }
-
-    public static void Configure(PlayerWindow form, string title, Size size)
-    {
-        form.Text = title;
-        form.ClientSize = size;
-        form.StartPosition = FormStartPosition.CenterParent;
-        form.FormBorderStyle = FormBorderStyle.FixedDialog;
-        form.MinimizeBox = false;
-        form.MaximizeBox = false;
-        form.ShowInTaskbar = false;
-        form.BackColor = DashboardTheme.Surface;
-        form.ForeColor = DashboardTheme.Text;
-        form.Padding = new Padding(15);
     }
 
     public static TextBox TextInput(string placeholder, int maxLength) => new()

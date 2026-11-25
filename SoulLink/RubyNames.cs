@@ -72,6 +72,27 @@ public static partial class RubyNames
     public static string Area(int id) => id == Encounter.StarterArea ? "Starter" : id >= 0 && id < Places.Length ? Places[id]
         : id == 255 ? "Unbekannter Ort" : Landmarks.GetValueOrDefault(id, AreaCatalog.Name(id));
 
+    public static string DecodePokeNavText(ReadOnlySpan<byte> bytes)
+    {
+        Span<byte> text = stackalloc byte[64];
+        int length = 0;
+        for (int i = 0; i < bytes.Length && length < text.Length && bytes[i] != 0xFF; i++)
+        {
+            if (bytes[i] == 0xFC && i + 1 < bytes.Length && bytes[i + 1] == 0) { i++; continue; }
+            if (bytes[i] == 0xFD && i + 1 < bytes.Length && bytes[i + 1] == 8)
+            {
+                ReadOnlySpan<byte> rubyTeam = [0xC7, 0xBB, 0xC1, 0xC7, 0xBB]; // MAGMA
+                if (length + rubyTeam.Length > text.Length) break;
+                rubyTeam.CopyTo(text[length..]);
+                length += rubyTeam.Length;
+                i++;
+                continue;
+            }
+            text[length++] = bytes[i];
+        }
+        return Gen3Parser.DecodeName(text[..length]);
+    }
+
     public sealed record SpeciesName(int Family, string German, string English);
 }
 

@@ -2,7 +2,7 @@ using SoulLink;
 
 namespace SoulLink.Player;
 
-internal sealed class LinkEditorForm : PlayerWindow
+internal sealed class LinkEditorForm : ToolWindow
 {
     private readonly HostLinkEditor editor;
     private readonly Dictionary<int, HostLinkRow> links;
@@ -15,17 +15,18 @@ internal sealed class LinkEditorForm : PlayerWindow
     private long lastScroll;
     private bool saving;
 
-    public LinkEditorForm(string runName, HostLinkEditor editor, Func<EditLinksRequest, Task> store)
+    public LinkEditorForm(string runName, HostLinkEditor editor, Func<EditLinksRequest, Task> store, Guid? localPlayerId = null)
+        : base($"Links bearbeiten in {runName}", new Size(930, 625), resizable: true)
     {
-        this.editor = editor;
+        this.editor = localPlayerId is Guid local
+            ? editor with { Players = editor.Players.OrderByDescending(player => player.Id == local).ToArray() }
+            : editor;
         this.links = editor.Links.ToDictionary(row => row.Area, row => row with { Members = new(row.Members) });
         foreach (int area in editor.Players.SelectMany(player => player.Pokemon).Select(mon => mon.MetArea)
             .Where(area => area != 255).Append(Encounter.StarterArea).Distinct())
             this.links.TryAdd(area, new HostLinkRow(area, false, []));
 
-        RunDialogs.Configure(this, $"Links bearbeiten in {runName}", new Size(930, 570));
-        this.FormBorderStyle = FormBorderStyle.Sizable;
-        this.MinimumSize = new Size(720, 420);
+        this.MinimumSize = new Size(720, 474);
         this.grid.Dock = DockStyle.Fill;
         this.grid.AllowUserToAddRows = this.grid.AllowUserToDeleteRows = this.grid.AllowUserToResizeRows = false;
         this.grid.AllowDrop = true;
@@ -45,7 +46,7 @@ internal sealed class LinkEditorForm : PlayerWindow
             SelectionForeColor = DashboardTheme.Text,
         };
         this.grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Link", MinimumWidth = 160, SortMode = DataGridViewColumnSortMode.NotSortable });
-        foreach (var player in editor.Players)
+        foreach (var player in this.editor.Players)
             this.grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = player.Name, MinimumWidth = 130, SortMode = DataGridViewColumnSortMode.NotSortable });
         this.grid.MouseDown += (_, e) =>
         {
@@ -112,7 +113,7 @@ internal sealed class LinkEditorForm : PlayerWindow
         layout.Controls.Add(this.grid, 0, 1);
         layout.Controls.Add(this.feedback, 0, 2);
         layout.Controls.Add(actions, 0, 3);
-        this.Controls.Add(layout);
+        this.Body.Controls.Add(layout);
         this.RefreshRows();
     }
 
