@@ -95,6 +95,7 @@ internal static class Program
             try
             {
                 DockSmokeTest.VerifyEmulatorProcessCheck(home);
+                DockSmokeTest.VerifyRunConfirmation();
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();

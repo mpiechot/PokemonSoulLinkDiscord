@@ -731,6 +731,37 @@ internal static class DockSmokeTest
         }
     }
 
+    internal static void VerifyRunConfirmation()
+    {
+        const string title = "Run abschließen";
+        using var owner = new Form();
+        owner.Show();
+        Verify(confirmed: false);
+        Verify(confirmed: true);
+
+        void Verify(bool confirmed)
+        {
+            bool cancelIsDefault = false;
+            using var poll = new System.Windows.Forms.Timer { Interval = 25 };
+            poll.Tick += (_, _) =>
+            {
+                if (Application.OpenForms.OfType<ToolWindow>().SingleOrDefault(form => form.Modal && form.Text == title) is not { } dialog)
+                    return;
+                poll.Stop();
+
+                var cancel = dialog.CancelButton as Button;
+                cancelIsDefault = cancel is { Visible: true, Enabled: true } && dialog.ActiveControl == cancel && dialog.AcceptButton == cancel;
+                var action = confirmed ? Descendants(dialog).OfType<Button>().FirstOrDefault(button => button.Text == title) : cancel;
+                if (action is null) dialog.DialogResult = DialogResult.Abort;
+                else action.PerformClick();
+            };
+            poll.Start();
+            bool result = ToolWindow.Confirm(owner, title, "Diesen Run abschließen?", title);
+            if (!cancelIsDefault || result != confirmed)
+                throw new InvalidOperationException("Run confirmation must default to cancel and require an explicit confirmation.");
+        }
+    }
+
     private static void VerifyRoundedWindow(Form form)
     {
         int right = form.Width - 1;

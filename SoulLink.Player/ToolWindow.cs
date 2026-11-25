@@ -125,8 +125,8 @@ internal class ToolWindow : PlayerWindow
             var cancel = Action("Abbrechen");
             cancel.DialogResult = DialogResult.Cancel;
             actions.Controls.Add(cancel);
-            dialog.CancelButton = cancel;
-            dialog.ActiveControl = cancel;
+            dialog.AcceptButton = dialog.CancelButton = cancel;
+            dialog.Shown += (_, _) => cancel.Select();
         }
         else dialog.AcceptButton = dialog.CancelButton = accept;
         card.Controls.Add(message);
