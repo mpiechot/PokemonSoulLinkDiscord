@@ -823,6 +823,37 @@ internal static class DockSmokeTest
             throw new InvalidOperationException("The diagnostics log did not rotate at its size limit.");
     }
 
+    internal static void VerifyKeyboardSettings(string home)
+    {
+        string directory = Path.Combine(home, "Keyboard");
+        Directory.CreateDirectory(directory);
+        string emulator = Path.Combine(directory, "mGBA.exe");
+        string file = Path.Combine(directory, "config.ini");
+        File.WriteAllText(file, "[ports.qt]\nsavestatePath=save\n[gba.input.QT_K]\nkeyA=81\nkeyB=90\n[gba.input.SDLB]\nkeyA=4\n");
+        var settings = new MgbaKeyboardBindings(directory);
+        var initial = settings.Read(emulator);
+        if (initial["A"] != 'Q' || initial["B"] != 'Z' || MgbaKeyboardBindings.QtKey(Keys.Up) != initial["Up"])
+            throw new InvalidOperationException("The editor must load the actual keyboard mappings used by mGBA.");
+
+        using var editor = new KeyboardSettingsForm(settings, initial);
+        editor.Show();
+        var fields = Descendants(editor).OfType<TextBox>().ToArray();
+        var primary = fields.Single(input => input.AccessibleName == "A – Tastaturbelegung");
+        if (fields.Length != 10 || fields.Any(input => !input.Visible || !editor.ClientRectangle.Contains(
+            editor.RectangleToClient(input.RectangleToScreen(input.ClientRectangle)))))
+            throw new InvalidOperationException("The controller must have a visible input for each GBA button.");
+        SendMessage(primary.Handle, 0x0100, (int)Keys.C, 0);
+        Descendants(editor).OfType<Button>().Single(button => button.Text == "Speichern").PerformClick();
+        if (settings.Read(emulator)["A"] != 'C' || !File.ReadAllText(file).Contains("keyA=81", StringComparison.Ordinal))
+            throw new InvalidOperationException("Save must stage the new keyboard mapping until mGBA restarts.");
+        settings.ApplyPending(emulator);
+        string updated = File.ReadAllText(file);
+        if (settings.Read(emulator)["A"] != 'C' || !updated.Contains("savestatePath=save", StringComparison.Ordinal) ||
+            !updated.Contains("keyA=4", StringComparison.Ordinal) || updated.Contains("keyA=81", StringComparison.Ordinal))
+            throw new InvalidOperationException("Applying keyboard settings must retain other mGBA configuration.");
+        SaveToolPreview(editor, home, "keyboard-settings");
+    }
+
     private static void VerifyRoundedWindow(Form form)
     {
         int right = form.Width - 1;

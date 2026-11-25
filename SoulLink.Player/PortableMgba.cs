@@ -8,6 +8,7 @@ namespace SoulLink.Player;
 internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = false, bool isolated = false)
 {
     private readonly string externalSelection = Path.Combine(home, "mgba-path.txt");
+    internal MgbaKeyboardBindings Keyboard { get; } = new(home);
 
     public bool Bundled => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
 
@@ -41,6 +42,11 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
             initialState = this.LatestState(gameRom) ?? throw new InvalidDataException("Für diesen Run gibt es keinen gespeicherten Spielstand.");
         }
         string executable = this.Install();
+        try { this.Keyboard.ApplyPending(executable); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            PlayerDiagnostics.Report("keyboard.apply.failed", error);
+        }
         string directory = Path.GetDirectoryName(executable)!;
         if (this.Bundled && (softwareDisplay || preferSoftwareDisplay))
         {

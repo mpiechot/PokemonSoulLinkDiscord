@@ -101,6 +101,8 @@ internal static class Program
                 DockSmokeTest.VerifyPlayerDiagnostics(home);
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
+                DockSmokeTest.TraceToolPreviews(home, "Checking keyboard mappings");
+                DockSmokeTest.VerifyKeyboardSettings(home);
                 DockSmokeTest.VerifyScrollDesign();
                 DockSmokeTest.VerifyRosterAndTypeArtwork(home);
                 DockSmokeTest.TraceToolPreviews(home, "Checking host");

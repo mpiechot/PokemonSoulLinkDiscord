@@ -80,6 +80,7 @@ internal sealed class CompanionForm : PlayerWindow
     private GroupStatisticsForm? statistics;
     private TypeChartForm? typeChart;
     private PokemonDetailsForm? pokemonDetails;
+    private KeyboardSettingsForm? keyboardSettings;
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
     private Task? runtimeStartup;
@@ -175,7 +176,7 @@ internal sealed class CompanionForm : PlayerWindow
             });
         };
         bool inputSettingsOpening = false;
-        var inputSettings = new ToolStripMenuItem("Tastatur und Controller …", null, async (_, _) =>
+        var inputSettings = new ToolStripMenuItem("Gamepads in mGBA …", null, async (_, _) =>
         {
             if (this.closing || this.game is not { HasExited: false } game) return;
             inputSettingsOpening = true;
@@ -188,7 +189,8 @@ internal sealed class CompanionForm : PlayerWindow
             if (!this.closing)
                 ToolWindow.Notice(this, "Tastatur und Controller", "Öffne in mGBA „Werkzeuge → Einstellungen“ und wähle „Tastatur“ oder „Gamepads“.");
         });
-        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame, this.editPlayerProfile, inputSettings,
+        this.programMenu.Items.AddRange([this.joinRun, this.startGame, this.toggleDock, this.saveGame, this.loadGame, this.editPlayerProfile,
+            new ToolStripMenuItem("Tastenbelegung …", null, (_, _) => this.OpenKeyboardSettings()), inputSettings,
             hideLabels, new ToolStripMenuItem("Einrichtung", null, this.OpenSetup)]);
         this.programMenu.Opening += (_, _) => inputSettings.Enabled = this.game is { HasExited: false } && !inputSettingsOpening;
         this.programMenu.Items.Add(new ToolStripMenuItem("Testspieler öffnen", null, (_, _) =>
@@ -625,6 +627,26 @@ internal sealed class CompanionForm : PlayerWindow
         if (this.closing) return;
         if (!tool.Visible) tool.Show(this);
         tool.Activate();
+    }
+
+    private void OpenKeyboardSettings()
+    {
+        if (this.closing) return;
+        try
+        {
+            if (this.keyboardSettings is null || this.keyboardSettings.IsDisposed)
+            {
+                var keyboard = this.emulator.Keyboard;
+                this.keyboardSettings = new KeyboardSettingsForm(keyboard, keyboard.Read(this.emulator.ExecutablePath));
+                this.dock.RestoreFocusAfterClosing(this.keyboardSettings);
+            }
+            this.ShowTool(this.keyboardSettings);
+        }
+        catch (Exception error) when (RunDialogs.IsActionError(error))
+        {
+            PlayerDiagnostics.Report("keyboard.open.failed", error);
+            ToolWindow.Notice(this, "Tastenbelegung", "Die gespeicherte Tastenbelegung konnte nicht geöffnet werden.");
+        }
     }
 
     private void ShowMap()
