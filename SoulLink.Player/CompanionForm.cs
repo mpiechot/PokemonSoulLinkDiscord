@@ -24,7 +24,8 @@ internal sealed class CompanionForm : PlayerWindow
     private readonly Control sidebar;
     private readonly EmulatorSurface surface = new();
     private readonly EmulatorDock dock;
-    private readonly RubyRunDashboard dashboard;
+    private readonly ArenaPanel arena;
+    private RubyMapForm? map;
     private readonly RunFeed feed;
     private readonly BattlePanel battles;
     private readonly RowStyle battleRow = new(SizeType.Absolute, 0);
@@ -147,6 +148,8 @@ internal sealed class CompanionForm : PlayerWindow
         brand.Click += (_, _) => this.programMenu.Show(brand, new Point(0, brand.Height));
         var wiki = Button("PokéWiki", (_, _) => this.OpenWiki());
         this.hints.SetToolTip(wiki, "Öffnet das deutsche PokéWiki im Browser");
+        var shortcuts = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
+        shortcuts.Controls.AddRange([Button("Karte", (_, _) => this.ShowMap()), wiki]);
         this.programMenu.BackColor = DashboardTheme.Panel;
         this.programMenu.ForeColor = DashboardTheme.Text;
         this.programMenu.Renderer = new ToolStripProfessionalRenderer(new ProgramMenuColors());
@@ -264,7 +267,7 @@ internal sealed class CompanionForm : PlayerWindow
         foreach (var button in new[] { minimize, maximize, close }) this.hints.SetToolTip(button, button.AccessibleName);
         chrome.Controls.AddRange([minimize, maximize, close]);
         bar.Controls.Add(brand, 0, 0);
-        bar.Controls.Add(wiki, 1, 0);
+        bar.Controls.Add(shortcuts, 1, 0);
         bar.Controls.Add(this.status, 2, 0);
         bar.Controls.Add(navigation, 3, 0);
         bar.Controls.Add(chrome, 4, 0);
@@ -308,9 +311,12 @@ internal sealed class CompanionForm : PlayerWindow
         this.launcher.BringToFront();
         this.surface.SizeChanged += (_, _) => this.dock.Resize();
         this.surface.GameClicked += () => this.dock.FocusGame();
-        this.dashboard = new RubyRunDashboard(this.discordIcons);
-        this.dashboard.ArenaChanged += async (runId, number, complete) =>
-            await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
+        this.arena = new ArenaPanel(this.discordIcons) { Dock = DockStyle.Fill };
+        this.arena.ProgressChange += async (number, complete) =>
+        {
+            if (this.runtime.Status().Run is { } run)
+                await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(run.Id, number, complete));
+        };
         this.feed = new RunFeed(this.discordIcons, this.spriteCache) { Dock = DockStyle.Fill, BackColor = DashboardTheme.Surface };
         this.battles = new BattlePanel(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
         this.battles.PokemonOpened += async (player, pokemon) => await this.ShowPokemonAsync(this, player, pokemon);
@@ -325,11 +331,11 @@ internal sealed class CompanionForm : PlayerWindow
             this.RosterButton(DashboardIcon.Skull, "Tot", RosterView.Dead, DashboardTheme.Text),
             this.RosterButton(DashboardIcon.Sparkle, "Shinies", RosterView.Shiny, DashboardTheme.Gold));
         var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = new Padding(0) };
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
         sidebar.RowStyles.Add(this.catchRow);
         sidebar.RowStyles.Add(this.battleRow);
-        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-        sidebar.Controls.Add(this.dashboard, 0, 0);
+        sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        sidebar.Controls.Add(this.arena, 0, 0);
         sidebar.Controls.Add(this.encounterCheck, 0, 1);
         sidebar.Controls.Add(Section("Live-Kämpfe", this.battles), 0, 2);
         sidebar.Controls.Add(teamPanel, 0, 3);
@@ -606,6 +612,23 @@ internal sealed class CompanionForm : PlayerWindow
         tool.Activate();
     }
 
+    private void ShowMap()
+    {
+        if (this.closing) return;
+        if (this.map is null || this.map.IsDisposed)
+        {
+            this.map = new RubyMapForm
+            {
+                StartPosition = FormStartPosition.Manual,
+                Location = this.PointToScreen(new Point(16, 54)),
+            };
+            this.map.Map.SetCartridge(this.activeRom);
+        }
+        this.map.Map.Render(this.runtime.Status());
+        if (!this.map.Visible) this.map.Show(this);
+        this.dock.FocusGame();
+    }
+
     private void OpenWiki()
     {
         if (this.closing) return;
@@ -807,7 +830,7 @@ internal sealed class CompanionForm : PlayerWindow
         this.nextCheckpointAttempt = DateTimeOffset.MinValue;
         this.gameError = null;
         this.shutdownError = null;
-        this.dashboard.SetCartridge(null);
+        if (this.map is { IsDisposed: false } map) map.Map.SetCartridge(null);
         this.launching = true;
         this.Render();
         try
@@ -864,7 +887,7 @@ internal sealed class CompanionForm : PlayerWindow
                 return (this.emulator.Start(gameRom, bridge, resume: resume), gameRom);
             });
             if (this.closing) return;
-            this.dashboard.SetCartridge(path);
+            if (this.map is { IsDisposed: false } openMap) openMap.Map.SetCartridge(path);
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
             this.dockUntil = DateTimeOffset.UtcNow.AddSeconds(12);
@@ -1026,8 +1049,9 @@ internal sealed class CompanionForm : PlayerWindow
         this.pendingEndButton.Visible = pendingEnd is not null;
         this.pendingEndButton.Visible = pendingEnd is not null;
         if (this.runEnd is { IsDisposed: false } end && end.IncidentId != pendingEnd?.Id) end.Close();
+        if (this.map is { Visible: true, IsDisposed: false } map) map.Map.Render(view);
         if (!running) return;
-        this.dashboard.Render(view);
+        this.arena.Render(view.Snapshot, sharedPlayer, view.Run?.Phase == RunPhase.Active);
         this.RenderEncounterCheck(view);
         int battleHeight = this.battles.Render(view);
         float rowHeight = battleHeight == 0 ? 0 : Math.Min(160, battleHeight + 33);

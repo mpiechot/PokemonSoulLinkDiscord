@@ -10,21 +10,17 @@ internal sealed class RubyRunDashboard : TableLayoutPanel
     private static readonly CultureInfo German = CultureInfo.GetCultureInfo("de-DE");
     private readonly HoennMap map = new() { Dock = DockStyle.Fill };
     private readonly RichTextBox locations = new();
-    private readonly ArenaPanel arena;
-    private ClientView? view;
     private Color[] legendColors = [];
 
-    public RubyRunDashboard(DiscordIcons icons)
+    public RubyRunDashboard()
     {
-        this.arena = new ArenaPanel(icons) { Dock = DockStyle.Fill };
         this.Dock = DockStyle.Fill;
         this.BackColor = DashboardTheme.Surface;
         this.Padding = new Padding(7);
         this.ColumnCount = 1;
-        this.RowCount = 3;
+        this.RowCount = 2;
         this.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         this.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
-        this.RowStyles.Add(new RowStyle(SizeType.Absolute, 86));
 
         this.locations.Dock = DockStyle.Fill;
         this.locations.Multiline = true;
@@ -36,23 +32,15 @@ internal sealed class RubyRunDashboard : TableLayoutPanel
         this.locations.ForeColor = DashboardTheme.Muted;
         this.locations.TabStop = false;
         this.locations.AccessibleName = "Spielerpositionen und Geld";
-        this.arena.ProgressChange += (number, complete) =>
-        {
-            if (this.view?.Run is { } run) this.ArenaChanged?.Invoke(run.Id, number, complete);
-        };
         this.Controls.Add(this.map, 0, 0);
         var legend = DashboardScrollHost.ForText(this.locations);
         legend.Dock = DockStyle.Fill;
         legend.TabStop = false;
         this.Controls.Add(legend, 0, 1);
-        this.Controls.Add(this.arena, 0, 2);
     }
-
-    public event Action<Guid, int, bool>? ArenaChanged;
 
     public void Render(ClientView view)
     {
-        this.view = view;
         var peers = view.Run?.Players ?? [];
         var positions = peers.Select(p =>
         {
@@ -94,12 +82,45 @@ internal sealed class RubyRunDashboard : TableLayoutPanel
             }
             this.locations.Select(0, 0);
         }
-        this.arena.Render(view.Snapshot, peers.FirstOrDefault(p => p.Id == view.LocalPlayerId), view.Run?.Phase == RunPhase.Active);
     }
 
     public void SetCartridge(string? path)
     {
         if (path is null) this.map.SetArtwork(null, null);
         else this.map.SetArtwork(RubyMapArtwork.Read(path), RubyMapArtwork.ReadLabels(path), attempted: true);
+    }
+}
+
+internal sealed class RubyMapForm : ToolWindow
+{
+    internal RubyMapForm() : base("Hoenn-Karte", new Size(552, 402), resizable: true)
+    {
+        this.Body.Controls.Add(this.Map);
+        this.TopMost = true;
+        this.MinimumSize = new Size(350, 290);
+    }
+
+    internal RubyRunDashboard Map { get; } = new();
+
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            parameters.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+            return parameters;
+        }
+    }
+
+    protected override void WndProc(ref Message message)
+    {
+        if (message.Msg == 0x0021)
+        {
+            message.Result = 3; // MA_NOACTIVATE
+            return;
+        }
+        base.WndProc(ref message);
     }
 }

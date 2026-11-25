@@ -110,14 +110,18 @@ internal static class DockSmokeTest
     {
         var layout = form.Controls.OfType<TableLayoutPanel>().Single();
         var game = Descendants(layout).OfType<EmulatorSurface>().Single();
-        var map = Descendants(layout).OfType<RubyRunDashboard>().Single();
         var roster = Descendants(layout).OfType<RosterGrid>().Single();
         var gameBounds = game.RectangleToScreen(game.ClientRectangle);
-        var mapBounds = map.RectangleToScreen(map.ClientRectangle);
         var rosterBounds = roster.RectangleToScreen(roster.ClientRectangle);
-        if (gameBounds.Right > rosterBounds.Left || gameBounds.Right > mapBounds.Left ||
-            gameBounds.Bottom < rosterBounds.Bottom || mapBounds.Bottom > rosterBounds.Top)
-            throw new InvalidOperationException($"The team must stay beside the full-height game. Game: {gameBounds}, map: {mapBounds}, team: {rosterBounds}.");
+        if (Descendants(layout).OfType<HoennMap>().Any() || gameBounds.Right > rosterBounds.Left ||
+            gameBounds.Bottom < rosterBounds.Bottom || rosterBounds.Height < gameBounds.Height / 2)
+            throw new InvalidOperationException($"The team must fill the sidebar beside the game. Game: {gameBounds}, team: {rosterBounds}.");
+        var mapButton = Descendants(layout).OfType<Button>().Single(button => button.Text == "Karte");
+        mapButton.PerformClick();
+        using var map = form.OwnedForms.OfType<RubyMapForm>().Single();
+        if (!map.Visible || !map.TopMost || map.ContainsFocus || SendMessage(map.Handle, 0x0021, 0, 0) != 3)
+            throw new InvalidOperationException("Opening or clicking the map must not activate the popup.");
+        map.Close();
         var menu = form.Controls.Find("ProgramMenu", true).Single();
         if (menu.Text != "SoulLink") throw new InvalidOperationException("The system menu must display the SoulLink label.");
         using var label = new Bitmap(menu.Width, menu.Height);
