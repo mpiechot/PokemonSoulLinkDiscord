@@ -18,12 +18,15 @@ $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $publishPath = [IO.Path]::GetFullPath((Join-Path $tempRoot ('soullink-publish-' + [Guid]::NewGuid().ToString('N'))))
 $mgbaBundle = if (-not $PublicBuild) { & (Join-Path $PSScriptRoot 'Build-SoulLinkMgbaBundle.ps1') }
+$privateArtwork = Join-Path $root 'artifacts/player-artwork'
+if ($PublicBuild -or -not (Test-Path -LiteralPath $privateArtwork -PathType Container)) { $privateArtwork = '' }
 Push-Location $root
 try {
     dotnet publish SoulLink.Player/SoulLink.Player.csproj -c Release -r win-x64 --self-contained true -o $publishPath -m:1 `
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true `
         -p:DebugType=None -p:DebugSymbols=false -p:UseSharedCompilation=false "-p:MgbaBundlePath=$mgbaBundle" `
         "-p:PlayerUpdateVersion=$UpdateVersion" "-p:PlayerUpdateServer=$UpdateServer" "-p:PlayerUpdatePublicKey=$UpdatePublicKey" `
+        "-p:PlayerArtworkDirectory=$privateArtwork" `
         "-p:SoulLinkPublicBuild=$($PublicBuild.IsPresent.ToString().ToLowerInvariant())"
     if ($LASTEXITCODE -ne 0) { throw 'Windows player build failed.' }
     $source = Join-Path $publishPath 'SoulLink.Player.exe'

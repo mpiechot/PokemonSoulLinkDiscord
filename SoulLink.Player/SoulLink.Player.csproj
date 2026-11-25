@@ -17,6 +17,8 @@
     <EmbeddedResource Include="$(ApplicationIcon)" LogicalName="SoulLink.Player.SoulLink.ico" />
     <EmbeddedResource Include="..\PokeSoulLinkBot\Resources\*.png" LogicalName="SoulLink.Player.Icons.%(Filename)%(Extension)" />
     <EmbeddedResource Include="Resources\*.png" LogicalName="SoulLink.Player.Icons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(PlayerArtworkDirectory)\*.png" LogicalName="SoulLink.Player.PrivateIcons.%(Filename)%(Extension)"
+      Condition="'$(PlayerArtworkDirectory)' != '' and '$(SoulLinkPublicBuild)' != 'true'" />
   </ItemGroup>
   <ItemGroup Condition="'$(PlayerUpdateVersion)' != ''">
     <AssemblyMetadata Include="SoulLinkUpdateVersion" Value="$(PlayerUpdateVersion)" />

@@ -225,7 +225,9 @@ internal sealed class DiscordIcons : IDisposable
     public Image? Get(string name)
     {
         if (this.icons.TryGetValue(name, out var icon)) return icon;
-        using var stream = typeof(DiscordIcons).Assembly.GetManifestResourceStream($"SoulLink.Player.Icons.{name}.png");
+        var assembly = typeof(DiscordIcons).Assembly;
+        using var stream = assembly.GetManifestResourceStream($"SoulLink.Player.PrivateIcons.{name}.png") ??
+            assembly.GetManifestResourceStream($"SoulLink.Player.Icons.{name}.png");
         if (stream is null) return null;
         using var original = Image.FromStream(stream);
         return this.icons[name] = new Bitmap(original);

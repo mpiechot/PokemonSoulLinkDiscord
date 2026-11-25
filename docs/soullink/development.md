@@ -57,6 +57,8 @@ The reverse proxy forwards the authenticated admin and join API, the health rout
 
 The normal player product is `SoulLink.Player`, a Windows Forms companion that reuses `ClientRuntime` without starting the web host. Publish the self-contained file with `./scripts/Publish-SoulLinkPlayer.ps1` from PowerShell 7. Each local build updates `artifacts/player/SoulLink.exe`. Close the existing player if Windows has the EXE open. Publish staging and package checks use temporary directories that the scripts remove. The desktop client exports its embedded read-only Lua bridge to a stable per-user path and supports host-prepared EXE copies. See the [player guide](player.md). [#110](https://github.com/mpiechot/PokemonSoulLinkDiscord/issues/110) tracks signing and trusted distribution.
 
+Group builds can embed an alternate icon set from `artifacts/player-artwork` using the same PNG filenames as the built-in icons. The optional directory is local to the build machine. The default group build downloads Pokémon and type artwork on demand. The public build uses the embedded default icons and local sprite files.
+
 Player registrations live separately under `LocalApplicationData/SoulLink/Player`; developer/demo registrations do not become the player's default profile. Synthetic frame markers are rejected unless the explicit development-harness option is enabled. A stale local bridge hides its cached party, and the browser diagnostic page clears party/run/online indicators when its API disappears. `node --test SoulLink.Client.Tests/offline-ui.test.cjs` reproduces and guards the reported stale-demo symptom.
 
 ### Optional developer diagnostics
