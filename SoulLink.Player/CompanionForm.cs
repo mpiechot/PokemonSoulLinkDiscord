@@ -749,7 +749,7 @@ internal sealed class CompanionForm : PlayerWindow
                 this.emulator.SelectExternal(picker.FileName);
             }
             if (this.emulator.IsAlreadyRunning())
-                throw new InvalidOperationException("mGBA ist bereits geöffnet. Schließe es und klicke auf „Spiel starten“.");
+                throw new InvalidOperationException("Die von SoulLink verwendete mGBA-Instanz läuft noch. Beende sie bei Bedarf im Task-Manager und klicke erneut auf „Spiel starten“.");
 
             path ??= chooseRom ? null : this.rom.Read();
             if (resume && !this.emulator.HasResumeState(path))

@@ -512,6 +512,50 @@ internal static class DockSmokeTest
             throw new InvalidOperationException("The distinct types displayed for Geodude and Pidgeot must have separate symbols.");
     }
 
+    internal static void VerifyEmulatorProcessCheck(string home)
+    {
+        string fixture = Path.Combine(home, "EmulatorProcessProbe");
+        var emulator = new PortableMgba(fixture);
+        string unrelated = CreateProcessFixture(Path.Combine(fixture, "Other", "mGBA.exe"));
+        string configured = CreateProcessFixture(emulator.ExecutablePath ?? Path.Combine(fixture, "Selected", "mGBA.exe"));
+        if (!emulator.Bundled) emulator.SelectExternal(configured);
+
+        VerifyWhileRunning(unrelated, expected: false);
+        VerifyWhileRunning(configured, expected: true);
+        if (emulator.IsAlreadyRunning()) throw new InvalidOperationException("An exited mGBA still blocked launch.");
+
+        static string CreateProcessFixture(string path)
+        {
+            string directory = Path.GetDirectoryName(path)!;
+            Directory.CreateDirectory(directory);
+            File.Copy(Path.Combine(Environment.SystemDirectory, "ping.exe"), path, overwrite: true);
+            File.WriteAllText(Path.Combine(directory, "portable.ini"), "");
+            return path;
+        }
+
+        void VerifyWhileRunning(string path, bool expected)
+        {
+            using var process = Process.Start(new ProcessStartInfo(path)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                ArgumentList = { "-t", "127.0.0.1" },
+            }) ?? throw new InvalidOperationException("The mGBA process fixture could not start.");
+            try
+            {
+                if (process.HasExited) throw new InvalidOperationException("The mGBA process fixture exited early.");
+                if (emulator.IsAlreadyRunning() != expected)
+                    throw new InvalidOperationException(expected ? "The configured mGBA did not block a duplicate launch."
+                        : "An unrelated mGBA triggered the already-running warning.");
+            }
+            finally
+            {
+                if (!process.HasExited) process.Kill();
+                if (!process.WaitForExit(5000)) throw new InvalidOperationException("The mGBA process fixture did not stop.");
+            }
+        }
+    }
+
     internal static void VerifyTestPlayers(string home)
     {
         string scope = "Local\\SoulLink.Smoke." + Guid.NewGuid().ToString("N");

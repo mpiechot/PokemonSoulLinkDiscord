@@ -94,6 +94,7 @@ internal static class Program
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
             try
             {
+                DockSmokeTest.VerifyEmulatorProcessCheck(home);
                 using var artworkTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 DockSmokeTest.VerifyArtworkAsync(home, artworkTimeout.Token).GetAwaiter().GetResult();
                 DockSmokeTest.VerifyScrollDesign();

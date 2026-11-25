@@ -148,9 +148,7 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
 
     public bool IsAlreadyRunning()
     {
-        if (isolated && this.Bundled) return false;
-        string testDirectory = Path.Combine(home, "TestPlayers") + Path.DirectorySeparatorChar;
-        string? selected = this.ExecutablePath;
+        if (this.ExecutablePath is not { } selected) return false;
         var processes = Process.GetProcessesByName("mGBA");
         try
         {
@@ -158,14 +156,11 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
             {
                 try
                 {
-                    if (process.HasExited) continue;
-                    string? running = process.MainModule?.FileName;
-                    if (isolated ? string.Equals(running, selected, StringComparison.OrdinalIgnoreCase) :
-                        running?.StartsWith(testDirectory, StringComparison.OrdinalIgnoreCase) != true)
+                    if (string.Equals(process.MainModule?.FileName, selected, StringComparison.OrdinalIgnoreCase) && !process.HasExited)
                         return true;
                 }
                 catch (InvalidOperationException) { }
-                catch (System.ComponentModel.Win32Exception) { return true; }
+                catch (System.ComponentModel.Win32Exception) { }
             }
             return false;
         }
