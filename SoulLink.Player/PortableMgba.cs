@@ -97,7 +97,11 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
     }
 
     internal string TradeCheckpointPrefix(string rom) =>
-        Path.Combine(this.StateDirectory() ?? Path.GetDirectoryName(Path.GetFullPath(rom))!, Path.GetFileName(rom) + ".soullink-trade-");
+        Path.Combine(this.SaveDirectory(rom), Path.GetFileName(rom) + ".soullink-trade-");
+
+    internal string SlotOnePath(string rom) => Path.Combine(this.SaveDirectory(rom), Path.GetFileNameWithoutExtension(rom) + ".ss1");
+
+    private string SaveDirectory(string rom) => this.StateDirectory() ?? Path.GetDirectoryName(Path.GetFullPath(rom))!;
 
     private string? StateDirectory()
     {

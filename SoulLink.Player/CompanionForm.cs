@@ -81,6 +81,10 @@ internal sealed class CompanionForm : PlayerWindow
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
     private Task? runtimeStartup;
+    private string? activeRom;
+    private Guid? initialCheckpointRun;
+    private DateTimeOffset nextCheckpointAttempt;
+    private bool savingInitialCheckpoint;
     private PokemonTradeForm? pokemonTrade;
     private PokemonTradeOfferForm? tradeOffer;
     private Guid lastTradeOffer;
@@ -457,7 +461,13 @@ internal sealed class CompanionForm : PlayerWindow
             return;
         }
 
-        await this.SwitchProfileAsync(dialog.SelectedProfile);
+        bool resume = false;
+        if (dialog.LoadSavedProfile)
+        {
+            try { resume = this.emulator.HasResumeState(this.rom.ForProfile(dialog.SelectedProfile).Read()); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+        await this.SwitchProfileAsync(dialog.SelectedProfile, resume: resume);
     }
 
     private async Task OpenHostingAsync()
@@ -792,6 +802,9 @@ internal sealed class CompanionForm : PlayerWindow
         this.dock.Dispose();
         this.game?.Dispose();
         this.game = null;
+        this.activeRom = null;
+        this.initialCheckpointRun = null;
+        this.nextCheckpointAttempt = DateTimeOffset.MinValue;
         this.gameError = null;
         this.shutdownError = null;
         this.dashboard.SetCartridge(null);
@@ -843,12 +856,12 @@ internal sealed class CompanionForm : PlayerWindow
                 await this.StartRuntimeAsync();
                 if (this.closing) return;
             }
-            this.game = await Task.Run(() =>
+            (this.game, this.activeRom) = await Task.Run(() =>
             {
                 string gameRom = this.emulator.PrepareRom(path);
                 string bridge = BridgeInstaller.Install(this.bridgeDirectory, this.runtime.Status().BridgePort,
                     this.runtime.BeginLocalItemSession(), this.emulator.TradeCheckpointPrefix(gameRom));
-                return this.emulator.Start(gameRom, bridge, resume: resume);
+                return (this.emulator.Start(gameRom, bridge, resume: resume), gameRom);
             });
             if (this.closing) return;
             this.dashboard.SetCartridge(path);
@@ -886,6 +899,7 @@ internal sealed class CompanionForm : PlayerWindow
         this.Render();
         bool playing = this.game is { HasExited: false };
         if (!playing && !view.Registered) this.refresh.Stop();
+        if (playing) _ = this.TrySaveInitialCheckpointAsync(view);
         var pending = OwnDeaths(view);
         if (this.activeDeath is { } popup && pending.FirstOrDefault(d => d.IncidentId == popup.IncidentId) is { } update)
             popup.UpdateTrace(update);
@@ -894,6 +908,34 @@ internal sealed class CompanionForm : PlayerWindow
             this.ReviewRunEnd(activate: false);
         else if (playing && !this.deathDialogOpen && pending.FirstOrDefault(d => !this.shownDeaths.Contains(d.IncidentId)) is { } incident)
             this.ReviewDeath(incident, view.Run?.Id);
+    }
+
+    internal async Task TrySaveInitialCheckpointAsync(ClientView view)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (this.closing || this.savingInitialCheckpoint || now < this.nextCheckpointAttempt ||
+            this.activeRom is not { } cartridge || !this.runtime.CanSaveState || this.runtime.TradeUsesGame ||
+            !view.Registered || view.IsLocalRun || view.Run is not { Phase: RunPhase.Lobby or RunPhase.Active } run ||
+            this.initialCheckpointRun == run.Id || view.Snapshot is not { InBattle: false, Position.Valid: true } ||
+            !run.Players.Any(player => player.Id == view.LocalPlayerId && player.Connection == "Ready")) return;
+
+        this.savingInitialCheckpoint = true;
+        try
+        {
+            var state = new FileInfo(this.emulator.SlotOnePath(cartridge));
+            if (!state.Exists || state.Length == 0)
+            {
+                await this.runtime.SaveSlotOneAsync(this.updateLifetime.Token);
+                this.stateFeedback = "Run-Start in Slot 1 gesichert.";
+                this.stateFeedbackUntil = DateTimeOffset.UtcNow.AddSeconds(5);
+            }
+            this.initialCheckpointRun = run.Id;
+        }
+        catch (Exception error) when (RunDialogs.IsActionError(error) || error is OperationCanceledException)
+        {
+            this.nextCheckpointAttempt = DateTimeOffset.UtcNow.AddSeconds(5);
+        }
+        finally { this.savingInitialCheckpoint = false; }
     }
 
     private async Task StartRuntimeAsync()

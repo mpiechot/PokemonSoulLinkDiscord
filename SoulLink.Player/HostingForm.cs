@@ -642,6 +642,7 @@ internal sealed class ProfilePicker : ToolWindow
         {
             if (this.choices.SelectedItem is not Row row) return;
             this.SelectedProfile = row.Id;
+            this.LoadSavedProfile = true;
             this.DialogResult = DialogResult.OK;
         };
         var card = new ToolCard { Dock = DockStyle.Fill };
@@ -673,6 +674,8 @@ internal sealed class ProfilePicker : ToolWindow
     }
 
     internal Guid SelectedProfile { get; private set; }
+
+    internal bool LoadSavedProfile { get; private set; }
 
     internal bool OpenGroupRuns { get; private set; }
 

@@ -1043,6 +1043,15 @@ public sealed class AutomationTests : IDisposable
         var request = new JoinRequest(run.Invitation, "Player", Guid.NewGuid(), new string('A', 64), "AXVD");
         var first = this.engine.Join(request);
         Assert.Equal(first, this.engine.Join(request));
+        var session = this.engine.Connect(first, new Hello(request.ClientId));
+        Assert.True(this.Send(new TestClient(first, session), 1, true, Snapshot(1)).Accepted);
+        this.engine.ChangeRun("guild", run.Id, "start");
+        Assert.Equal(first, this.engine.Join(request));
+        Assert.Throws<UnauthorizedAccessException>(() => this.engine.Join(request with
+        {
+            ClientId = Guid.NewGuid(),
+            Token = new string('B', 64),
+        }));
         Assert.DoesNotContain(request.Token, Protocol.Serialize(this.engine.View(first)));
     }
 

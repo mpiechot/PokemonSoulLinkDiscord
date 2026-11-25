@@ -51,6 +51,17 @@ internal static class DockSmokeTest
                         await Task.Delay(50, timeout.Token);
                     if (runtime.Status().Snapshot is not { Pokemon.Count: 0, Position.Valid: true })
                         throw new InvalidOperationException("The startup script must close while an empty team on the field is readable.");
+                    var player = new ClientPlayerView("Fixture", Guid.NewGuid(), "", "Ready");
+                    var lobby = new ClientRunView("Fixture", RunPhase.Lobby, Guid.NewGuid(), [player], [], []);
+                    var ready = runtime.Status() with { Run = lobby, Registered = true, LocalPlayerId = player.Id, IsLocalRun = false };
+                    string slot = emulator.SlotOnePath(path);
+                    await form.TrySaveInitialCheckpointAsync(ready);
+                    if (new FileInfo(slot) is not { Exists: true, Length: > 0 })
+                        throw new InvalidOperationException("A synchronized player without a starter must receive a slot 1 checkpoint.");
+                    var existing = File.GetLastWriteTimeUtc(slot);
+                    await form.TrySaveInitialCheckpointAsync(ready with { Run = lobby with { Phase = RunPhase.Active } });
+                    if (File.GetLastWriteTimeUtc(slot) != existing)
+                        throw new InvalidOperationException("Starting the run must retain the lobby checkpoint.");
                 }
                 if (detached)
                 {
