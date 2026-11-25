@@ -185,6 +185,19 @@ internal static class DockSmokeTest
             elseif testFrame == 360 then
                 readCore():write32(0x02024D24, 0x00010000)
                 readCore():write32(0x03001BAC, 0)
+            elseif testFrame == 390 then
+                readCore():write32(0x02025D38, 0x00010003)
+                startBattle()
+                readCore():write32(0x020239F8, 0x0200) -- Wally tutorial.
+                readCore():write32(0x02024AD8, 392) -- Ralts.
+            elseif testFrame == 450 then
+                readCore():write32(0x02024D24, 0x00070000)
+                readCore():write32(0x03001BAC, 0)
+            elseif testFrame == 480 then
+                startBattle()
+            elseif testFrame == 540 then
+                readCore():write32(0x02024D24, 0x00070000)
+                readCore():write32(0x03001BAC, 0)
             end
         end
         """;
@@ -228,7 +241,19 @@ internal static class DockSmokeTest
         if (trainer.Battle!.CatchEncounter || SaveTime() != secondSave)
             throw new InvalidDataException("Slot 2 changed before the trainer battle ended.");
         await WaitFor("trainer victory", snapshot => !snapshot.InBattle);
-        if (SaveTime() <= secondSave) throw new InvalidDataException("Trainer victory did not update slot 2.");
+        DateTime trainerSave = SaveTime();
+        if (trainerSave <= secondSave) throw new InvalidDataException("Trainer victory did not update slot 2.");
+
+        var tutorial = await WaitFor("Wally tutorial", snapshot => snapshot.InBattle && snapshot.Battle?.Key != trainer.Battle.Key);
+        if (tutorial.Battle is not null || tutorial.WildBattles is not [{ Outcome: 4 }])
+            throw new InvalidDataException("The tutorial exposed a battle or changed the recorded wild encounters.");
+        await WaitFor("Wally tutorial ending", snapshot => !snapshot.InBattle && snapshot.Frame > tutorial.Frame);
+        if (SaveTime() != trainerSave) throw new InvalidDataException("The watched catch triggered a battle autosave.");
+
+        var nextEncounter = await WaitFor("normal encounter after the tutorial", snapshot => snapshot.Battle is { CatchEncounter: true });
+        var caught = await WaitFor("normal catch after the tutorial", snapshot => snapshot.Frame > nextEncounter.Frame && !snapshot.InBattle);
+        if (caught.WildBattles is not [{ Outcome: 4 }, { Species: 280, Outcome: 7 }])
+            throw new InvalidDataException("The tutorial changed the normal wild catch result.");
 
         DateTime SaveTime() => new FileInfo(autoSlot) is { Exists: true, Length: > 0 } file ? file.LastWriteTimeUtc
             : throw new InvalidDataException("A completed battle did not produce a slot 2 save.");

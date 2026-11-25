@@ -28,6 +28,7 @@ return function(readCore, extensions)
     local faintDirty = false
     local canStartWild, wildBattle, wildResults, wildDirty = false, nil, {}, false
     local battleStarted, liveBattle, battleDirty = nil, "null", false
+    local tutorialBattle = false
     local autosaveInBattle, autosavePending = false, false
     local nextHit
     local gymLineups, rubyTypes
@@ -337,7 +338,7 @@ return function(readCore, extensions)
             error("Waiting for a loaded save or a new game on the field.", 0)
         end
         local pokemon = {}
-        local battleHealth = battle and readBattlePartyHealth(profile, count) or {}
+        local battleHealth = battle and not tutorialBattle and readBattlePartyHealth(profile, count) or {}
         for slot = 0, count - 1 do
             table.insert(pokemon, string.format('{"hex":"%s","container":"Party","slot":%d,"liveHp":%s}',
                 hex(profile.party + slot * 100, 100), slot, battleHealth[slot] or "null"))
@@ -404,13 +405,23 @@ return function(readCore, extensions)
         overworld = overworld,
         trade = trade,
         observe = function(frame, tick)
+            local inBattle = (read8(profile.main + 0x43D) & 2) ~= 0
+            if inBattle and profile == reference and (tutorialBattle or (read32(profile.battle.flags) & 0x0200) ~= 0) then
+                -- Wally's scripted throw reports a caught outcome without giving the player a Pokémon.
+                tutorialBattle = true
+                canStartWild, wildBattle, battleStarted, nextHit = false, nil, nil, nil
+                autosaveInBattle, autosavePending = false, false
+                if liveBattle ~= "null" then liveBattle, battleDirty = "null", true end
+                return
+            end
+            tutorialBattle = false
             pcall(captureBattle, profile, frame)
             pcall(observeWildBattle, profile, frame)
-            if tick % 5 == 0 or battleStarted == nil or (read8(profile.main + 0x43D) & 2) == 0 then
+            if tick % 5 == 0 or battleStarted == nil or not inBattle then
                 pcall(observeLiveBattle, profile, frame)
             end
         end,
-        autosave = localActions and function() autosaveAfterBattle(profile) end or nil,
+        autosave = localActions and function() if not tutorialBattle then autosaveAfterBattle(profile) end end or nil,
         snapshot = snapshot,
         dirty = function() return faintDirty or wildDirty or battleDirty end,
         acknowledged = function() faintDirty, wildDirty, battleDirty = false, false, false end,
