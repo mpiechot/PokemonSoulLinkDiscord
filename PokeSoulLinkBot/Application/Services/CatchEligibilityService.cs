@@ -1,5 +1,6 @@
 using PokeSoulLinkBot.Application.Interfaces;
 using PokeSoulLinkBot.Core.Models;
+using SoulLink;
 
 namespace PokeSoulLinkBot.Application.Services;
 
@@ -123,15 +124,7 @@ public sealed class CatchEligibilityService : ICatchEligibilityService
     }
 
     private static string NormalizePokemonName(string pokemonName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(pokemonName);
-
-        return pokemonName.Trim()
-            .ToLowerInvariant()
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .Replace("_", string.Empty, StringComparison.Ordinal);
-    }
+        => CatchCheckRules.Normalize(pokemonName);
 
     private async Task<HashSet<string>> GetStoredCatchFamilyAsync(
         string pokemonName,

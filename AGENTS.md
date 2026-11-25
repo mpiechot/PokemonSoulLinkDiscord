@@ -43,6 +43,7 @@ Beim Umsetzen einzelner Aufgaben soll das grosse Ganze im Blick bleiben: Der Bot
 - Vor einem Commit wird der Diff geprueft, insbesondere auf unbeabsichtigte Formatierungs-, Whitespace- oder Line-Ending-Aenderungen. Line Endings muessen dem im Repository gesetzten Standard entsprechen.
 - Manuelle Datei-Aenderungen werden direkt mit CRLF geschrieben oder unmittelbar nach dem Patch auf CRLF normalisiert. Vor dem Commit wird mit `git ls-files --eol` geprueft, dass geaenderte Textdateien nicht mit gemischten Line Endings im Worktree liegen.
 - Vor Abschluss einer Aufgabe werden relevante Formatierungs-, Analyse- und Testbefehle ausgefuehrt, soweit sie im Projekt verfuegbar und praktikabel sind.
+- Windows-Spielerbuilds fuer den Nutzer mit `scripts/Publish-SoulLinkPlayer.ps1` immer unter `artifacts/player/SoulLink.exe` aktualisieren und denselben Pfad verlinken.
 - Alle relevanten Tests muessen vor Abschluss gruen sein. Falls ein Test nicht ausgefuehrt werden kann, wird der Grund dokumentiert.
 - Bestehende Nutzer- oder Fremdaenderungen werden nicht ueberschrieben oder zurueckgesetzt, ausser dies wurde ausdruecklich beauftragt.
 - Commits sollen fokussiert und nachvollziehbar sein. Commit- und PR-Beschreibungen nennen kurz Zweck, wichtigste Aenderungen und ausgefuehrte Verifikation.
