@@ -59,6 +59,7 @@ internal sealed class CompanionForm : PlayerWindow
     private bool closing;
     private bool closeApproved;
     private bool dockingEnabled = true;
+    private Rectangle? moveStart;
     private bool startupScriptingClosed;
     private DateTimeOffset dockUntil;
     private Process? game;
@@ -773,9 +774,32 @@ internal sealed class CompanionForm : PlayerWindow
         this.WindowState = this.WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized;
     }
 
+    internal void MaximizeAtTopEdge(Point release, Screen screen)
+    {
+        if (this.WindowState != FormWindowState.Normal ||
+            release.Y - screen.Bounds.Top is < 0 || release.Y - screen.Bounds.Top > this.LogicalToDeviceUnits(4)) return;
+        this.MaximizedBounds = screen.WorkingArea;
+        this.WindowState = FormWindowState.Maximized;
+    }
+
     protected override void WndProc(ref Message message)
     {
         base.WndProc(ref message);
+        const int moving = 0x0216, enterMove = 0x0231, exitMove = 0x0232;
+        if (message.Msg == enterMove)
+            this.moveStart = null;
+        else if (message.Msg == moving)
+            this.moveStart ??= this.Bounds;
+        else if (message.Msg == exitMove)
+        {
+            if (this.moveStart is Rectangle original && original.Location != this.Location)
+            {
+                var release = Cursor.Position;
+                this.MaximizeAtTopEdge(release, Screen.FromPoint(release));
+            }
+            this.moveStart = null;
+        }
+
         if (message.Msg != 0x0084 || message.Result != 1 || this.WindowState != FormWindowState.Normal) return;
         long coordinates = message.LParam.ToInt64();
         var point = this.PointToClient(new Point((short)(coordinates & 0xFFFF), (short)((coordinates >> 16) & 0xFFFF)));

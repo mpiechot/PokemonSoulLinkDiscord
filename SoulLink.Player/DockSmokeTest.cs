@@ -1181,8 +1181,12 @@ internal static class DockSmokeTest
             {
                 VerifyReusablePokemonDetails(form);
                 VerifyPlayerIcon(form);
-                form.WindowState = FormWindowState.Maximized;
-                if (form.Region is not null)
+                var screen = Screen.FromControl(form);
+                form.MaximizeAtTopEdge(new Point(screen.Bounds.Left, screen.Bounds.Top + 100), screen);
+                if (form.WindowState != FormWindowState.Normal)
+                    throw new InvalidOperationException("Dragging away from the top edge must retain the normal window.");
+                form.MaximizeAtTopEdge(screen.Bounds.Location, screen);
+                if (form.WindowState != FormWindowState.Maximized || form.Region is not null)
                 {
                     throw new InvalidOperationException("The maximized player must use the full rectangular frame.");
                 }
