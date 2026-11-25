@@ -125,8 +125,9 @@ internal sealed class CompanionForm : PlayerWindow
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 33));
 
-        var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(0, 0, 0, 5) };
+        var bar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, Margin = new Padding(0, 0, 0, 5) };
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108));
+        bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -138,6 +139,8 @@ internal sealed class CompanionForm : PlayerWindow
         brand.Font = new Font("Segoe UI Semibold", 12);
         brand.Dock = DockStyle.Fill;
         brand.Click += (_, _) => this.programMenu.Show(brand, new Point(0, brand.Height));
+        var wiki = Button("PokéWiki", (_, _) => this.OpenWiki());
+        this.hints.SetToolTip(wiki, "Öffnet das deutsche PokéWiki im Browser");
         this.programMenu.BackColor = DashboardTheme.Panel;
         this.programMenu.ForeColor = DashboardTheme.Text;
         this.programMenu.Renderer = new ToolStripProfessionalRenderer(new ProgramMenuColors());
@@ -240,9 +243,10 @@ internal sealed class CompanionForm : PlayerWindow
         foreach (var button in new[] { minimize, maximize, close }) this.hints.SetToolTip(button, button.AccessibleName);
         chrome.Controls.AddRange([minimize, maximize, close]);
         bar.Controls.Add(brand, 0, 0);
-        bar.Controls.Add(this.status, 1, 0);
-        bar.Controls.Add(navigation, 2, 0);
-        bar.Controls.Add(chrome, 3, 0);
+        bar.Controls.Add(wiki, 1, 0);
+        bar.Controls.Add(this.status, 2, 0);
+        bar.Controls.Add(navigation, 3, 0);
+        bar.Controls.Add(chrome, 4, 0);
 
         this.surface.Dock = DockStyle.Fill;
         this.surface.BackColor = Color.FromArgb(8, 14, 21);
@@ -564,6 +568,19 @@ internal sealed class CompanionForm : PlayerWindow
         if (this.closing) return;
         if (!tool.Visible) tool.Show(this);
         tool.Activate();
+    }
+
+    private void OpenWiki()
+    {
+        if (this.closing) return;
+        try
+        {
+            using var browser = Process.Start(new ProcessStartInfo("https://www.pokewiki.de/") { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            ToolWindow.Notice(this, "PokéWiki", "Der Standardbrowser konnte nicht geöffnet werden.");
+        }
     }
 
     private async Task ChangeGameStateAsync(bool load)

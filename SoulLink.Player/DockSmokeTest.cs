@@ -1148,6 +1148,9 @@ internal static class DockSmokeTest
             form.Show();
             Application.DoEvents();
             VerifyRoundedWindow(form);
+            var wiki = Descendants(form).OfType<Button>().Single(button => button.Text == "PokéWiki");
+            if (!wiki.Visible || !wiki.Enabled || !form.ClientRectangle.Contains(form.RectangleToClient(wiki.RectangleToScreen(wiki.ClientRectangle))))
+                throw new InvalidOperationException("PokéWiki must be reachable from the launcher toolbar.");
             if (profile is null)
             {
                 VerifyPlayerIcon(form);
