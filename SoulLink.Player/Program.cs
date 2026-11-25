@@ -65,7 +65,7 @@ internal static class Program
         string home = smokeTest || smokeGame || smokeClose || customHome ? Path.GetFullPath(args[1]) :
             instance is { IsTest: true } ? Path.Combine(playerHome, "TestPlayers", instance.Slot.ToString()) : playerHome;
         Directory.CreateDirectory(home);
-        if (!smoke) PlayerDiagnostics.Start(home);
+        PlayerDiagnostics.Start(home, observeUnhandled: !smoke);
         var profiles = new PlayerProfileLibrary(home);
         if (!smokeTest && !smokeGame && !smokeClose && !customHome)
         {
@@ -90,6 +90,7 @@ internal static class Program
             return;
         }
         using var runtime = CreateRuntime(home, profile, localTracking: !smokeTest);
+        runtime.Diagnostic += (code, error) => PlayerDiagnostics.Report(code, error);
         var rom = RomSelection.ForProfile(home, profile?.Id);
         if (smokeTest)
         {

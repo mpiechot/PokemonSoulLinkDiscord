@@ -807,7 +807,7 @@ internal static class DockSmokeTest
 
     internal static void VerifyPlayerDiagnostics(string home)
     {
-        var diagnostics = new PlayerDiagnostics(home);
+        var diagnostics = new PlayerDiagnostics(Path.Combine(home, "DiagnosticsProbe"));
         const string secret = "Private invitation, token, and ROM path.";
         diagnostics.Write("test.failure", new InvalidOperationException(secret));
         string log = Path.Combine(diagnostics.DirectoryPath, "player.jsonl");

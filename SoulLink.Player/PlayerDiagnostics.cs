@@ -15,10 +15,11 @@ internal sealed class PlayerDiagnostics(string home)
     private static PlayerDiagnostics? current;
     internal string DirectoryPath { get; } = Path.Combine(home, "Logs");
 
-    public static void Start(string home)
+    public static void Start(string home, bool observeUnhandled)
     {
         current = new PlayerDiagnostics(home);
         Report("player.started");
+        if (!observeUnhandled) return;
         AppDomain.CurrentDomain.UnhandledException += (_, args) => Report("process.unhandled", args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) => Report("task.unobserved", args.Exception);
         Application.ThreadException += (_, args) =>
