@@ -680,7 +680,7 @@ internal sealed class ProfilePicker : ToolWindow
     {
         var saved = profiles.List().Select(p => new Row(p.Id, p.Label ?? p.Server));
         Row[] rows = includeLocal ? [new(Guid.Empty, "Lokaler Spieltest"), .. saved] : [.. saved];
-        this.choices.DataSource = rows;
+        this.choices.Items.AddRange(rows);
         if (rows.Length > 0) this.choices.SelectedIndex = Math.Max(0, Array.FindIndex(rows, row => row.Id == selected));
     }
 

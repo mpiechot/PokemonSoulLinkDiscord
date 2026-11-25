@@ -1077,6 +1077,16 @@ internal static class DockSmokeTest
         VerifyChoices(null, RomSelection.ForProfile(launcherHome, null), ["Run beitreten"]);
         var saved = profiles.AddInvitation("https://example.invalid", "STARTUP", "Rubin-Runde");
         profiles.Choose(saved.Id);
+        using (var picker = new ProfilePicker(profiles, saved.Id, runtime.Status(), ProfilePickerMode.Both))
+        {
+            picker.Show();
+            var runs = Descendants(picker).OfType<DashboardComboBox>().Single();
+            if (runs.Items.Count != 2 || runs.SelectedIndex != 1 || runs.GetItemText(runs.SelectedItem) != "Rubin-Runde")
+                throw new InvalidOperationException("The run picker must select the saved run after populating the choices.");
+            Descendants(picker).OfType<Button>().Single(button => button.Text == "Run laden").PerformClick();
+            if (picker.DialogResult != DialogResult.OK || picker.SelectedProfile != saved.Id)
+                throw new InvalidOperationException("The run picker did not open the selected run.");
+        }
         var rom = RomSelection.ForProfile(launcherHome, saved.Id);
         string cartridge = Path.Combine(launcherHome, "Resume probe.gba");
         var header = new byte[0xBD];
