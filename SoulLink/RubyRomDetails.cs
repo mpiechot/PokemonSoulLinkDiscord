@@ -29,9 +29,7 @@ public static class RubyRomDetails
     public static PokemonRomDetails Read(Stream rom, int species)
     {
         if (!SpeciesCatalog.IsValid(species)) throw new InvalidDataException("Unbekannte Pokémon-Art.");
-        Span<byte> header = stackalloc byte[29];
-        ReadAt(rom, 0xA0, header);
-        if (!header[..16].SequenceEqual("POKEMON RUBYAXVD"u8) || header[28] > 1)
+        if (GameProfiles.Identify(rom) is not RubyGameProfile)
             throw new InvalidDataException("Für diese ROM sind keine Pokémon-Tabellen hinterlegt.");
 
         Span<byte> stats = stackalloc byte[6];

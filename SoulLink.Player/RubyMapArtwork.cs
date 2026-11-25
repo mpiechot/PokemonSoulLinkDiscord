@@ -26,8 +26,7 @@ internal static class RubyMapArtwork
         try
         {
             using var rom = File.OpenRead(path);
-            if (rom.Length < LandmarkLists + 0x170 || !ReadAt(rom, 0xA0, 16).AsSpan().SequenceEqual("POKEMON RUBYAXVD"u8) ||
-                ReadAt(rom, 0xBC, 1)[0] > 1) return null;
+            if (rom.Length < LandmarkLists + 0x170 || GameProfiles.Identify(rom)?.Edition != "ruby") return null;
             var names = new Dictionary<int, string>();
             var landmarks = new Dictionary<(int Area, int Cell), RubyMapLandmark[]>();
             var regions = ReadAt(rom, RegionEntries, 0x2C0);
@@ -81,7 +80,7 @@ internal static class RubyMapArtwork
         try
         {
             using var rom = File.OpenRead(path);
-            if (rom.Length < TileMapEnd) return null;
+            if (rom.Length < TileMapEnd || GameProfiles.Identify(rom)?.Edition != "ruby") return null;
             byte[] palette = ReadAt(rom, PaletteOffset, TilesOffset - PaletteOffset);
             byte[] tiles = Decompress(ReadAt(rom, TilesOffset, TileMapOffset - TilesOffset));
             byte[] tileMap = Decompress(ReadAt(rom, TileMapOffset, TileMapEnd - TileMapOffset));

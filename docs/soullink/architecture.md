@@ -2,17 +2,17 @@
 
 The existing executable co-hosts the Discord lifecycle and ASP.NET Core SignalR. `BotHost.CreateBuilder` remains available for composition tests; `RunAsync` creates the web host using the same service registrations.
 
-- `SoulLink`: transport DTOs, Gen III parsing, map/species catalogs, transactional SQLite store, lifecycle and observation engine, bounded JSON Lines framing and shared status presentation.
+- `SoulLink`: transport DTOs, transactional SQLite store, lifecycle and observation engine, bounded JSON Lines framing and shared status presentation. `GameProfiles` matches the cartridge identity with its profile. The Rubin profile decodes and validates the native records before the run engine applies encounter and link rules.
 - `PokeSoulLinkBot/Automation`: SignalR authorization boundary, optional administration API, Discord commands/context routing, asynchronous durable notification dispatcher.
 - `SoulLink.Client`: loopback bridge listener, raw-frame validation, authenticated SignalR session and local diagnostic UI. The desktop player uses a scoped loopback channel for manual PC item grants.
-- `integration/mgba/soullink.lua`: reads fixed, documented Ruby reference structures once per 60 emulated frames and emits complete inventories. The only outbound socket connects to `127.0.0.1`.
+- `integration/mgba/soullink.lua`: owns the loopback socket, reconnect, epochs and local command framing. The registry in `integration/mgba/games.lua` selects the profile owning the inventory reads, field and battle sampling, and any edition-specific local actions.
 - `SoulLink.Demo`: synthetic Pokémon generator and a real three-player integration harness, with isolated server/client processes and databases.
 
 ## Consistency
 
 Each SQLite run is stored independently and queried by ID/guild. Its document contains frozen membership, observed Pokémon and encounters. Registration hashes are separately indexed. Accepted observations commit run state, event receipts and notification outbox entries in one SQLite transaction. The store serializes transactions within the process, and SQLite enforces unique selected contexts and receipts. This initial implementation favors simple ordering over per-run concurrent writes.
 
-Persistent IDs use server GUIDs. Game identity is the original trainer's full 32-bit ID plus 32-bit PID; species, nickname, position and evolution do not contribute. An exact cloned identity cannot be distinguished and is rejected when seen twice in one inventory.
+Persistent IDs use server GUIDs. In Rubin, the game profile represents identity as the original trainer's full 32-bit ID plus 32-bit PID. Species, nickname, position and evolution do not contribute. An exact cloned identity cannot be distinguished and is rejected when seen twice in one inventory.
 
 The initial full inventory is a baseline, including preexisting Pokémon. Subsequent new identities can fill one encounter slot per player/region section. A group is complete only after every frozen participant has a member. The completed membership is not replaced by extra catches. Eggs are tracked but do not become encounters; hatching an imported egg does not retroactively create a catch.
 

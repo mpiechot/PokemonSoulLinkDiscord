@@ -160,7 +160,7 @@ public static class AutomationHosting
             return Results.Ok(new { accepted = true });
         });
         admin.MapPost("/runs", (CreateRun request, AutomationEngine engine) =>
-            engine.Initialize(request.Guild, request.Channel, request.Name, request.DeathRule));
+            engine.Initialize(request.Guild, request.Channel, request.Name, request.DeathRule, request.Edition));
         admin.MapPost("/runs/{id:guid}/{action}", (Guid id, string action, RunAction request, AutomationEngine engine) =>
             engine.ChangeRun(request.Guild, id, action, request.Reason));
         admin.MapPost("/runs/{id:guid}/players/{player:guid}/rebaseline", (Guid id, Guid player, RunAction request, AutomationEngine engine) =>

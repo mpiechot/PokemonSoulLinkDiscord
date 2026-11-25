@@ -90,7 +90,7 @@ public sealed record PokemonState
 
 public sealed record GameSnapshot
 {
-    public string GameCode { get; init; } = "AXVD";
+    public string GameCode { get; init; } = GameProfiles.DefaultGameCode;
     public string LayoutId { get; init; } = "";
     public string Epoch { get; init; } = "";
     public long Frame { get; init; }
@@ -129,7 +129,7 @@ public sealed class AutomationRun
     public string GuildId { get; set; } = "";
     public ulong ChannelId { get; set; }
     public string Name { get; set; } = "";
-    public string Edition { get; set; } = "ruby";
+    public string Edition { get; set; } = GameProfiles.DefaultEdition;
     public RunPhase Phase { get; set; } = RunPhase.Lobby;
     public bool Selected { get; set; } = true;
     public string Invitation { get; set; } = "";
@@ -223,7 +223,8 @@ public sealed record EventDetails(EventPokemon? Pokemon = null, EventPokemon[]? 
     bool? AreaAvailable = null, BattleTrace? Battle = null, string? Reason = null, bool? HasLink = null);
 public sealed record Notification(Guid Id, Guid RunId, ulong ChannelId, string Message);
 
-public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.ConfirmFaint);
+public sealed record CreateRun(string Guild, string Name, ulong Channel = 0, DeathRule DeathRule = DeathRule.ConfirmFaint,
+    string Edition = GameProfiles.DefaultEdition);
 public sealed record RunAction(string Guild, string? Reason = null);
 public sealed record RunGroup(Guid Id, string Name)
 {
@@ -257,7 +258,7 @@ public sealed record RunTimelineEvent(TimelineEventKind Kind, DateTimeOffset? At
     };
 }
 public sealed record CreateGroupRequest(string Name);
-public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint);
+public sealed record GroupRunRequest(string Name, DeathRule DeathRule = DeathRule.ConfirmFaint, string Edition = GameProfiles.DefaultEdition);
 public sealed record DiscordRunImportResult(int Imported, int AlreadyImported)
 {
     public const int MaxArchiveBytes = 20 * 1024 * 1024;

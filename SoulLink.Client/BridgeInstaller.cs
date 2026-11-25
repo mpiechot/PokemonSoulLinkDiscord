@@ -7,10 +7,13 @@ public static class BridgeInstaller
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "soullink.lua");
-        using var source = typeof(BridgeInstaller).Assembly.GetManifestResourceStream("SoulLink.ReadOnlyBridge.lua")
-            ?? throw new InvalidOperationException("Die mGBA-Brücke fehlt in dieser Anwendung.");
-        using var reader = new StreamReader(source);
-        string content = reader.ReadToEnd();
+        const string profilePrefix = "SoulLink.GameProfile.";
+        var sources = typeof(BridgeInstaller).Assembly.GetManifestResourceNames()
+            .Where(name => name.StartsWith(profilePrefix, StringComparison.Ordinal) && name.EndsWith(".lua", StringComparison.Ordinal))
+            .Select(name => $"[\"profiles.{name[profilePrefix.Length..^4]}\"] = (function()\n{ReadScript(name)}\nend)(),");
+        string content = "local SOULLINK_GAMES = (function()\nlocal modules = {\n" + string.Join('\n', sources) +
+            "\n}\nlocal function require(name) return assert(modules[name], name) end\n" + ReadScript("SoulLink.GameRegistry.lua") +
+            "\nend)()\n" + ReadScript("SoulLink.ReadOnlyBridge.lua");
         if (port is not null)
         {
             if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
@@ -20,19 +23,16 @@ public static class BridgeInstaller
         {
             if (itemSession.Length != 32 || !itemSession.All(Uri.IsHexDigit))
                 throw new ArgumentException("Invalid local item session.", nameof(itemSession));
-            using var renderer = typeof(BridgeInstaller).Assembly.GetManifestResourceStream("SoulLink.OverworldBridge.lua")
-                ?? throw new InvalidOperationException("Die mGBA-Mitspieleranzeige fehlt in dieser Anwendung.");
-            using var rendererReader = new StreamReader(renderer);
-            content = $"SOULLINK_ITEM_SESSION = \"{itemSession}\"\nlocal SOULLINK_OVERWORLD = (function()\n{rendererReader.ReadToEnd()}\nend)()\n" + content;
+            string features = "local SOULLINK_FEATURES = { ruby = {\n" +
+                $"overworld = (function()\n{ReadScript("SoulLink.RubyOverworld.lua")}\nend)(),\n";
             if (tradeCheckpointPrefix is not null)
             {
-                using var trade = typeof(BridgeInstaller).Assembly.GetManifestResourceStream("SoulLink.TradeBridge.lua")
-                    ?? throw new InvalidOperationException("Die Poké-Tausch-Brücke fehlt in dieser Anwendung.");
-                using var tradeReader = new StreamReader(trade);
                 string pathBytes = string.Concat(System.Text.Encoding.UTF8.GetBytes(tradeCheckpointPrefix)
                     .Select(value => FormattableString.Invariant($"\\{value:D3}")));
-                content = $"local SOULLINK_TRADE_CHECKPOINT = \"{pathBytes}\"\nlocal SOULLINK_TRADE = (function()\n{tradeReader.ReadToEnd()}\nend)()\n" + content;
+                features = $"local SOULLINK_TRADE_CHECKPOINT = \"{pathBytes}\"\n" + features +
+                    $"trade = (function()\n{ReadScript("SoulLink.RubyTrade.lua")}\nend)(),\n";
             }
+            content = $"SOULLINK_ITEM_SESSION = \"{itemSession}\"\n" + features + "} }\n" + content;
         }
         if (!File.Exists(path) || File.ReadAllText(path) != content)
         {
@@ -41,5 +41,13 @@ public static class BridgeInstaller
             File.Move(temporary, path, true);
         }
         return path;
+    }
+
+    private static string ReadScript(string name)
+    {
+        using var source = typeof(BridgeInstaller).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Ein Teil der mGBA-Brücke fehlt ({name}).");
+        using var reader = new StreamReader(source);
+        return reader.ReadToEnd();
     }
 }

@@ -15,12 +15,12 @@ internal sealed class LocalRunTracker : IDisposable
     private bool started;
     private long sequence;
 
-    public LocalRunTracker(TimeProvider clock, string? database = null)
+    public LocalRunTracker(TimeProvider clock, GameProfile profile, string? database = null)
     {
         if (database is null)
             database = this.temporaryDatabase = Path.Combine(Path.GetTempPath(), $"soullink-preview-{Guid.NewGuid():N}.sqlite");
         this.engine = new AutomationEngine(new AutomationStore(database), clock);
-        var run = this.engine.Runs(Guild).SingleOrDefault() ?? this.engine.Initialize(Guild, 0, "Lokaler Spieltest", DeathRule.ConfirmFaint);
+        var run = this.engine.Runs(Guild).SingleOrDefault() ?? this.engine.Initialize(Guild, 0, "Lokaler Spieltest", DeathRule.ConfirmFaint, profile.Edition);
         this.started = run.Phase != RunPhase.Lobby;
         if (run.Players.SingleOrDefault() is { } player)
         {
@@ -29,7 +29,7 @@ internal sealed class LocalRunTracker : IDisposable
         }
         else
         {
-            this.registration = this.engine.Join(new JoinRequest(run.Invitation, "Du", Guid.NewGuid(), new string('0', 64), "AXVD"));
+            this.registration = this.engine.Join(new JoinRequest(run.Invitation, "Du", Guid.NewGuid(), new string('0', 64), profile.GameCode));
         }
         this.session = this.engine.Connect(this.registration, new Hello(this.registration.ClientId));
         this.sequence = this.session.NextSequence;

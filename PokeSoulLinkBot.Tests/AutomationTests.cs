@@ -18,6 +18,20 @@ public sealed class AutomationTests : IDisposable
     }
 
     [Fact]
+    public void RunEditionUsesTheRegisteredGameProfile()
+    {
+        var run = this.engine.Initialize("editions", 0, "Rubin", edition: "rubin");
+        Assert.Equal("ruby", run.Edition);
+        Assert.Throws<InvalidDataException>(() => this.engine.Initialize("editions", 0, "Saphir", edition: "sapphire"));
+        Assert.Throws<InvalidDataException>(() => this.engine.Join(new JoinRequest(run.Invitation, "Foreign", Guid.NewGuid(), new string('A', 64), "AXPD")));
+
+        var player = this.Join(run, "Local");
+        var observation = Snapshot(1);
+        Assert.Throws<InvalidDataException>(() => this.Send(player, 1, true, observation with { GameCode = "AXPD" }));
+        Assert.True(this.Send(player, 1, true, observation).Accepted);
+    }
+
+    [Fact]
     public void AppearanceBelongsToTheRegisteredPlayerAndSupportsExistingProfiles()
     {
         var run = this.engine.Initialize("appearance", 0, "Rubin");

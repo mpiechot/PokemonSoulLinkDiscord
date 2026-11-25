@@ -20,7 +20,7 @@ internal static class DashboardProjection
                 var player = playerById[pair.Key];
                 return (player.Id, player.Name, Pokemon: player.Pokemon.Single(p => p.Id == pair.Value));
             }).ToArray();
-            return new DashboardLink(RubyNames.Area(encounter.Area), StatusPresenter.LinkState(encounter, members.Select(m => m.Pokemon)),
+            return new DashboardLink(GameProfiles.AreaName(run.Edition, encounter.Area), StatusPresenter.LinkState(encounter, members.Select(m => m.Pokemon)),
                 members.Select(m => new DashboardLinkMember(m.Name, ProjectPokemon(m.Pokemon), m.Id)).ToArray(), encounter.Area, encounter.Id);
         }).ToArray();
         var caught = run.Players.SelectMany(p => p.Pokemon)

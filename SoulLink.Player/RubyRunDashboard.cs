@@ -4,7 +4,8 @@ using SoulLink.Client;
 
 namespace SoulLink.Player;
 
-internal sealed class RunDashboard : TableLayoutPanel
+/// <summary>Displays the Rubin PokéNav region map and arena data.</summary>
+internal sealed class RubyRunDashboard : TableLayoutPanel
 {
     private static readonly CultureInfo German = CultureInfo.GetCultureInfo("de-DE");
     private readonly HoennMap map = new() { Dock = DockStyle.Fill };
@@ -13,7 +14,7 @@ internal sealed class RunDashboard : TableLayoutPanel
     private ClientView? view;
     private Color[] legendColors = [];
 
-    public RunDashboard(DiscordIcons icons)
+    public RubyRunDashboard(DiscordIcons icons)
     {
         this.arena = new ArenaPanel(icons) { Dock = DockStyle.Fill };
         this.Dock = DockStyle.Fill;
@@ -96,5 +97,9 @@ internal sealed class RunDashboard : TableLayoutPanel
         this.arena.Render(view.Snapshot, peers.FirstOrDefault(p => p.Id == view.LocalPlayerId), view.Run?.Phase == RunPhase.Active);
     }
 
-    public void SetMapArtwork(Bitmap? image, RubyMapLabels? labels = null, bool attempted = false) => this.map.SetArtwork(image, labels, attempted);
+    public void SetCartridge(string? path)
+    {
+        if (path is null) this.map.SetArtwork(null, null);
+        else this.map.SetArtwork(RubyMapArtwork.Read(path), RubyMapArtwork.ReadLabels(path), attempted: true);
+    }
 }

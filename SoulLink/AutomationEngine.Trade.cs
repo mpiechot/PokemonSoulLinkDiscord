@@ -20,7 +20,7 @@ public sealed partial class AutomationEngine
         run.Trade = new PokemonTrade
         {
             EncounterId = encounter.Id,
-            Link = RubyNames.Area(encounter.Area),
+            Link = GameProfiles.AreaName(run.Edition, encounter.Area),
             Expires = this.clock.GetUtcNow().AddMinutes(2),
             From = from,
             To = to,
@@ -68,7 +68,7 @@ public sealed partial class AutomationEngine
         try
         {
             if (raw is null) throw new InvalidDataException("Ein Pokémon ist nicht zum Tausch bereit. Pokémon mit Briefen können hier nicht getauscht werden.");
-            var parsed = Gen3Parser.ParseTrade(raw);
+            var parsed = TradeProfile(run).DecodeTrade(raw);
             if (parsed.Identity != own.Outgoing.Identity || parsed.Species != own.Outgoing.Species)
                 throw new InvalidDataException("Das ausgewählte Pokémon hat sich inzwischen geändert.");
             own.Prepared = raw with { LiveHp = null };
@@ -102,7 +102,7 @@ public sealed partial class AutomationEngine
         var trade = RequireTrade(run, registration, id);
         var (own, other) = Sides(trade, registration);
         if (trade.Phase != PokemonTradePhase.Committing || own.Received is not null) return false;
-        var received = Gen3Parser.ParseTrade(raw);
+        var received = TradeProfile(run).DecodeTrade(raw);
         if (received.Identity != other.Outgoing.Identity || raw.Container != own.Prepared!.Container)
             throw new InvalidDataException("Die Bestätigung passt nicht zum vereinbarten Tausch.");
         own.Received = received;
@@ -185,8 +185,12 @@ public sealed partial class AutomationEngine
         var run = tx.Run(registration.RunId);
         if (!run.Players.Any(p => p.Id == registration.PlayerId && p.ClientId == registration.ClientId))
             throw new UnauthorizedAccessException("Invalid player registration.");
+        _ = TradeProfile(run);
         return run;
     }
+
+    private static GameProfile TradeProfile(AutomationRun run) => GameProfiles.ForEdition(run.Edition) is { SupportsTrade: true } profile
+        ? profile : throw new InvalidOperationException("Für diese Edition ist kein Poké-Tausch verfügbar.");
 
     private static PokemonTrade RequireTrade(AutomationRun run, Registration registration, Guid id) =>
         run.Trade is { } trade && trade.Id == id && trade.Includes(registration.PlayerId)

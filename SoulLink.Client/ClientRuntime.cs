@@ -72,6 +72,8 @@ public sealed partial class ClientRuntime : BackgroundService
     private LocalRunTracker? localTracker;
     private string? localRomHash;
     private string? romPath;
+    private string? selectedGameCode;
+    private string? localGameCode;
     private uint? localTrainerId;
     private bool bridgeReconnected;
     private readonly TaskCompletionSource<int> bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -128,12 +130,13 @@ public sealed partial class ClientRuntime : BackgroundService
             this.bridgeSeen = this.clock.GetUtcNow();
             if (this.enableLocalRun)
             {
-                if (this.localTrainerId != frame.TrainerId)
+                if (this.localTrainerId != frame.TrainerId || this.localGameCode != frame.GameCode)
                 {
                     this.ClearLocalRun();
                     this.localTrainerId = frame.TrainerId;
+                    this.localGameCode = frame.GameCode;
                 }
-                this.localTracker ??= new LocalRunTracker(this.clock,
+                this.localTracker ??= new LocalRunTracker(this.clock, GameProfiles.ForGameCode(snapshot.GameCode)!,
                     this.localRunDirectory is { } directory && this.localRomHash is { } rom && this.localTrainerId is uint trainer
                         ? Path.Combine(directory, $"{rom}-{trainer:X8}.sqlite") : null);
                 if (this.localTracker.Observe(snapshot)) this.localView = this.localTracker.View();
@@ -144,15 +147,18 @@ public sealed partial class ClientRuntime : BackgroundService
     public async Task SelectLocalGameAsync(string romPath)
     {
         string? romHash = null;
+        using var rom = File.OpenRead(romPath);
+        string? gameCode = GameProfiles.Identify(rom)?.GameCode;
         if (this.enableLocalRun && this.localRunDirectory is not null)
         {
-            using var rom = File.OpenRead(romPath);
             romHash = Convert.ToHexString(await SHA256.HashDataAsync(rom).ConfigureAwait(false));
         }
         lock (this.stateGate)
         {
             this.ClearLocalRun();
             this.romPath = romPath;
+            this.selectedGameCode = gameCode;
+            this.localGameCode = null;
             this.localRomHash = romHash;
             this.localTrainerId = null;
         }
@@ -164,6 +170,8 @@ public sealed partial class ClientRuntime : BackgroundService
         {
             this.ClearLocalRun();
             this.romPath = null;
+            this.selectedGameCode = null;
+            this.localGameCode = null;
             this.localRomHash = null;
             this.localTrainerId = null;
         }
@@ -236,7 +244,7 @@ public sealed partial class ClientRuntime : BackgroundService
         try
         {
             using var rom = File.OpenRead(path);
-            return RubyRomDetails.Read(rom, species);
+            return GameProfiles.ReadPokemonDetails(rom, species);
         }
         catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException)
         {
@@ -353,9 +361,12 @@ public sealed partial class ClientRuntime : BackgroundService
         try
         {
             if (this.settings.Registration is not null) throw new InvalidOperationException("Already registered. Use a separate SettingsPath for another player or run.");
+            string gameCode;
+            lock (this.stateGate) gameCode = this.selectedGameCode ?? this.latest?.GameCode ?? GameProfiles.DefaultGameCode;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var response = await http.PostAsJsonAsync(form.Server.TrimEnd('/') + "/api/soullink/join",
-                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token, "AXVD", Marker: form.Marker, Color: form.Color),
+                new JoinRequest(form.Invitation.Trim(), form.Name.Trim(), this.settings.ClientId, this.settings.Token,
+                    gameCode, Marker: form.Marker, Color: form.Color),
                 Protocol.Json, cancellationToken);
             if (!response.IsSuccessStatusCode) throw new InvalidOperationException("Join rejected. Check invitation, player name, edition and lobby state.");
             var registration = await response.Content.ReadFromJsonAsync<Registration>(Protocol.Json, cancellationToken)

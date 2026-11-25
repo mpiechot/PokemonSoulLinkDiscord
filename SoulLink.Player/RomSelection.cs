@@ -1,13 +1,10 @@
+using SoulLink;
+
 namespace SoulLink.Player;
 
 /// <summary>Remembers the locally chosen ROM for one prepared player profile.</summary>
 internal sealed class RomSelection(string settingsPath)
 {
-    private static readonly RomProfile[] Supported =
-    [
-        new("POKEMON RUBY", "AXVD", [0, 1]),
-    ];
-
     public static RomSelection ForProfile(string home, Guid? id) =>
         new(Path.Combine(home, $"rom-{id?.ToString("N") ?? "local"}.txt"));
 
@@ -29,16 +26,9 @@ internal sealed class RomSelection(string settingsPath)
 
     public static bool IsSupported(string path)
     {
-        if (!Path.GetExtension(path).Equals(".gba", StringComparison.OrdinalIgnoreCase)) return false;
+        string extension = Path.GetExtension(path);
+        if (!GameProfiles.SupportsRomExtension(extension)) return false;
         using var stream = File.OpenRead(path);
-        Span<byte> header = stackalloc byte[0xBD];
-        if (stream.Length < header.Length) return false;
-        stream.ReadExactly(header);
-        string title = System.Text.Encoding.ASCII.GetString(header[0xA0..0xAC]).TrimEnd('\0', ' ');
-        string code = System.Text.Encoding.ASCII.GetString(header[0xAC..0xB0]);
-        byte revision = header[0xBC];
-        return Supported.Any(profile => profile.Title == title && profile.Code == code && profile.Revisions.Contains(revision));
+        return GameProfiles.Identify(stream)?.RomExtension.Equals(extension, StringComparison.OrdinalIgnoreCase) == true;
     }
-
-    private sealed record RomProfile(string Title, string Code, byte[] Revisions);
 }

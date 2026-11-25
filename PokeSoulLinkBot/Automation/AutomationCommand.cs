@@ -38,7 +38,7 @@ public sealed class AutomationCommand : ISlashCommand
         if (this.name == "run-init")
         {
             builder.AddOption("name", ApplicationCommandOptionType.String, "Run name.", isRequired: true)
-                .AddOption("edition", ApplicationCommandOptionType.String, "Edition (currently ruby / AXVD).")
+                .AddOption("edition", ApplicationCommandOptionType.String, "Supported SoulLink edition.")
                 .AddOption("death-rule", ApplicationCommandOptionType.String, "confirm-faint (default), disabled or zero-hp-outside-battle.");
         }
         else if (this.name == "run-load")
@@ -68,11 +68,7 @@ public sealed class AutomationCommand : ISlashCommand
 
         if (this.name == "run-init")
         {
-            string edition = command.Data.Options.FirstOrDefault(o => o.Name == "edition")?.Value?.ToString() ?? "ruby";
-            if (edition != "ruby" && edition != "rubin" && edition != "AXVD")
-            {
-                throw new InvalidDataException("Only Ruby AXVD is currently supported.");
-            }
+            string edition = command.Data.Options.FirstOrDefault(o => o.Name == "edition")?.Value?.ToString() ?? GameProfiles.DefaultEdition;
 
             string rule = command.Data.Options.FirstOrDefault(o => o.Name == "death-rule")?.Value?.ToString() ?? "confirm-faint";
             var deathRule = rule switch
@@ -87,7 +83,8 @@ public sealed class AutomationCommand : ISlashCommand
                 guild,
                 command.Channel.Id,
                 CommandOptionHelper.GetRequiredStringOption(command, "name"),
-                deathRule);
+                deathRule,
+                edition);
             await response.SendAsync($"Lobby **{run.Name}** created. Invitation: `{run.Invitation}`\nJoin with the local client, then `/soullink action:start`. Existing manual runs remain available.", ephemeral: true);
             return;
         }

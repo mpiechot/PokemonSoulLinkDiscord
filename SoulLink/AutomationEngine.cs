@@ -14,11 +14,13 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public List<AutomationRun> Runs(string guild) => store.Execute(tx => tx.Runs(guild));
 
-    public AutomationRun Initialize(string guild, ulong channel, string name, DeathRule deathRule = DeathRule.Disabled)
+    public AutomationRun Initialize(string guild, ulong channel, string name, DeathRule deathRule = DeathRule.Disabled,
+        string edition = GameProfiles.DefaultEdition)
     {
         ValidateName(name);
         if (string.IsNullOrWhiteSpace(guild)) throw new InvalidDataException("A guild is required.");
-        return store.Execute(tx => CreateRunInScope(tx, guild, channel, name, deathRule));
+        var profile = GameProfiles.ForEdition(edition) ?? throw new InvalidDataException("Unsupported SoulLink edition.");
+        return store.Execute(tx => CreateRunInScope(tx, guild, channel, name, deathRule, profile.Edition));
     }
 
     public RunGroup[] Groups() => store.Execute(tx => tx.Groups());
@@ -48,10 +50,11 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         string name = request.Name?.Trim() ?? "";
         ValidateName(name);
         if (!Enum.IsDefined(request.DeathRule)) throw new InvalidDataException("Ungültige Todesregel.");
+        var profile = GameProfiles.ForEdition(request.Edition) ?? throw new InvalidDataException("Unsupported SoulLink edition.");
         return store.Execute(tx =>
         {
             _ = tx.Group(groupId);
-            return ToHostRun(CreateRunInScope(tx, RunGroup.ScopeFor(groupId), 0, name, request.DeathRule));
+            return ToHostRun(CreateRunInScope(tx, RunGroup.ScopeFor(groupId), 0, name, request.DeathRule, profile.Edition));
         });
     }
 
@@ -193,7 +196,8 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     private static HostRun ToHostRun(AutomationRun run) => new(run.Id, run.Name, run.Phase, run.Selected, run.Invitation,
         run.Players.Count, run.Players.Count(p => p.LastSnapshot is not null && p.Connection != "OutOfSync"));
 
-    private static AutomationRun CreateRunInScope(AutomationStore.StoreTransaction tx, string guild, ulong channel, string name, DeathRule deathRule)
+    private static AutomationRun CreateRunInScope(AutomationStore.StoreTransaction tx, string guild, ulong channel, string name,
+        DeathRule deathRule, string edition = GameProfiles.DefaultEdition)
     {
         foreach (var previous in tx.Runs(guild).Where(r => r.Selected))
             Deselect(tx, previous);
@@ -202,6 +206,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             GuildId = guild,
             ChannelId = channel,
             Name = name,
+            Edition = edition,
             DeathRule = deathRule,
             Invitation = Convert.ToHexString(RandomNumberGenerator.GetBytes(12)),
         };
@@ -315,7 +320,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         ValidateAppearance(request.Marker, request.Color);
         if (request.ClientId == Guid.Empty || request.Token.Length != 64 || !HexToken().IsMatch(request.Token))
             throw new InvalidDataException("Invalid client registration.");
-        if (request.GameCode != "AXVD") throw new InvalidDataException("Only the German Ruby AXVD read-only adapter is currently enabled.");
+        var profile = GameProfiles.ForGameCode(request.GameCode) ?? throw new InvalidDataException("Unsupported SoulLink game code.");
         return store.Execute(tx =>
         {
             string hash = HashToken(request.Token);
@@ -323,11 +328,13 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             if (existing is not null)
             {
                 if (existing.ClientId != request.ClientId) throw new UnauthorizedAccessException("Client mismatch.");
+                RequireRunEdition(tx.Run(existing.RunId), profile);
                 return existing;
             }
 
             var run = tx.Runs().SingleOrDefault(r => r.Invitation == request.Invitation && r.Selected && r.Phase == RunPhase.Lobby)
                 ?? throw new UnauthorizedAccessException("Invitation invalid, expired, or lobby already started.");
+            RequireRunEdition(run, profile);
             if (run.Players.Count >= 12 || run.Players.Any(p => string.Equals(p.Name, request.Name, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Player name already used or lobby full.");
             var player = new AutomationPlayer { ClientId = request.ClientId, Name = request.Name, Marker = request.Marker, Color = request.Color };
@@ -468,11 +475,14 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     public ObservationResult Observe(Registration registration, Observation observation)
     {
-        ValidateSnapshot(observation.Snapshot);
+        var profile = GameProfiles.ForGameCode(observation.Snapshot.GameCode)
+            ?? throw new InvalidDataException("Unsupported SoulLink game code.");
+        profile.ValidateObservation(observation.Snapshot);
         if (observation.EventId == Guid.Empty) throw new InvalidDataException("Event ID required.");
         return store.Execute(tx =>
         {
             var run = tx.Run(registration.RunId);
+            RequireRunEdition(run, profile);
             var player = run.Players.Single(p => p.Id == registration.PlayerId);
             if (!this.sessions.TryGetValue(player.Id, out var session) || session.Id != observation.SessionId)
                 throw new UnauthorizedAccessException("Session expired; reconnect before continuing.");
@@ -519,9 +529,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
                 var tracked = player.Pokemon.SingleOrDefault(p => p.State.Identity == state.Identity);
                 if (tracked is null)
                 {
-                    // The verified Ruby bridge reports the interval from choosing the starter to receiving the Pokédex.
-                    bool starter = player.Pokemon.Count == 0 && snapshot.RubyStarterWindow && snapshot.Pokemon.Count == 1 &&
-                        state is { Container: Placement.Party, Slot: 0, MetArea: 16, IsEgg: false };
+                    bool starter = player.Pokemon.Count == 0 && profile.IsStarter(snapshot, state);
                     tracked = new TrackedPokemon { State = state, Imported = import || starter };
                     player.Pokemon.Add(tracked);
                     if (starter) this.RecordStarter(tx, run, player, tracked);
@@ -676,7 +684,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             if (encounter?.GroupId is not null) throw new InvalidOperationException("A completed link cannot be marked as a missed encounter.");
             encounter ??= new Encounter { Area = area };
             if (encounter.Failed) return false;
-            this.FailEncounter(tx, run, encounter, $"{RubyNames.Area(area)}: Erstfang als verpasst bestätigt.");
+            this.FailEncounter(tx, run, encounter, $"{GameProfiles.AreaName(run.Edition, area)}: Erstfang als verpasst bestätigt.");
             tx.Save(run);
             return true;
         });
@@ -719,35 +727,10 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
 
     private static string HashToken(string token) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
 
-    private static void ValidateSnapshot(GameSnapshot snapshot)
+    private static void RequireRunEdition(AutomationRun run, GameProfile profile)
     {
-        if (snapshot.GameCode != "AXVD" || snapshot.Epoch.Length is < 1 or > 80 || snapshot.LayoutId.Length is < 1 or > 80 ||
-            snapshot.Frame < 0 || snapshot.PlaySeconds < 0 || snapshot.Area is < 0 or > 255 ||
-            snapshot.Money is < 0 or > 999_999 ||
-            snapshot.MapGroup is < 0 or > 255 || snapshot.MapNumber is < 0 or > 255 || snapshot.Pokemon.Count > 426 ||
-            snapshot.WildBattles is { Length: > 16 } || snapshot.WildBattles?.Any(battle =>
-                battle is null || battle.Area is < 0 or >= 255 || battle.Started < 0 || battle.Ended <= battle.Started ||
-                battle.Ended > snapshot.Frame || battle.Outcome is < 1 or > 10 ||
-                battle.Species is int foe && !SpeciesCatalog.IsValid(foe)) == true ||
-            snapshot.Battle is { } combat && (!snapshot.InBattle || !combat.IsValid()) ||
-            snapshot.Position is { Valid: false } || snapshot.Faints is { Length: > 6 } ||
-            snapshot.Faints?.Any(f => f is null || f.PartySlot is < 0 or > 5 || f.Move is < 1 or > 354 ||
-                f.OpponentSpecies.HasValue && !SpeciesCatalog.IsValid(f.OpponentSpecies.Value) ||
-                f.Trainer is { Length: > 12 } || f.Trainer?.Any(char.IsControl) == true) == true)
-            throw new InvalidDataException("Invalid game snapshot.");
-        if (snapshot.Pokemon.Select(p => p.Identity).Distinct().Count() != snapshot.Pokemon.Count ||
-            snapshot.Pokemon.Where(p => p.Container == Placement.Party).Count() > 6 ||
-            snapshot.Pokemon.Select(p => (p.Container, p.Box, p.Slot)).Distinct().Count() != snapshot.Pokemon.Count)
-            throw new InvalidDataException("Duplicate Pokémon identities or invalid inventory slots.");
-        foreach (var pokemon in snapshot.Pokemon)
-        {
-            if (!IdentityFormat().IsMatch(pokemon.Identity) || !SpeciesCatalog.IsValid(pokemon.Species) || pokemon.Nickname.Length > 20 ||
-                !Enum.IsDefined(pokemon.Container) || pokemon.Nickname.Any(char.IsControl) ||
-                pokemon.MetArea is < 0 or > 255 || pokemon.Experience > 2_000_000 ||
-                (pokemon.Container == Placement.Party && (pokemon.Box is not null || pokemon.Slot is < 0 or > 5 || pokemon.Level is null or < 1 or > 100 || pokemon.Hp is null or < 0 || pokemon.MaxHp is null or < 1 || pokemon.Hp > pokemon.MaxHp)) ||
-                (pokemon.Container == Placement.Box && (pokemon.Box is null or < 0 or > 13 || pokemon.Slot is < 0 or > 29)))
-                throw new InvalidDataException("Invalid Pokémon state.");
-        }
+        if (GameProfiles.ForEdition(run.Edition) != profile)
+            throw new InvalidDataException("This game does not match the run edition.");
     }
 
     private ObservationResult OutOfSync(AutomationStore.StoreTransaction tx, AutomationRun run, AutomationPlayer player, string reason)
@@ -775,7 +758,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
             if (encounter is { Failed: true } or { Dead: true } or { GroupId: not null } ||
                 encounter?.Members.ContainsKey(player.Id) == true) continue;
             encounter ??= new Encounter { Area = battle.Area };
-            this.FailEncounter(tx, run, encounter, $"{player.Name}: Erstfang in {RubyNames.Area(battle.Area)} verpasst.", player);
+            this.FailEncounter(tx, run, encounter, $"{player.Name}: Erstfang in {GameProfiles.AreaName(run.Edition, battle.Area)} verpasst.", player);
         }
     }
 
@@ -799,7 +782,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     {
         int area = pokemon.State.MetArea;
         var encounter = run.Encounters.SingleOrDefault(e => e.Area == area);
-        string place = RubyNames.Area(area);
+        string place = GameProfiles.AreaName(run.Edition, area);
         int speciesId = pokemon.State.Species;
         string species = RubyNames.Pokemon(speciesId);
         bool areaAvailable = encounter is null || !encounter.Failed && !encounter.Dead && !encounter.Members.ContainsKey(player.Id);
@@ -854,7 +837,7 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
         if (IsLiveLink(encounter)) run.PendingEnd = null;
         var members = DescribeLink(run, encounter).ToArray();
         string memberList = string.Join(" · ", members.Select(m => $"{m.Player}: {RubyNames.Pokemon(m.Species)}"));
-        this.Event(tx, run, "linked", $"{RubyNames.Area(encounter.Area)} · {memberList}.", area: encounter.Area,
+        this.Event(tx, run, "linked", $"{GameProfiles.AreaName(run.Edition, encounter.Area)} · {memberList}.", area: encounter.Area,
             details: new EventDetails(Members: members));
     }
 
@@ -979,8 +962,6 @@ public sealed partial class AutomationEngine(AutomationStore store, TimeProvider
     [GeneratedRegex("^[0-9A-Fa-f]{64}$")]
     private static partial Regex HexToken();
 
-    [GeneratedRegex("^[0-9A-F]{8}:[0-9A-F]{8}$")]
-    private static partial Regex IdentityFormat();
 
     private sealed class LiveSession(Guid id, Guid runId, DateTimeOffset lastSeen)
     {

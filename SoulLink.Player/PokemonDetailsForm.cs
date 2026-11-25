@@ -55,9 +55,9 @@ internal sealed class PokemonDetailsForm : ToolWindow
     {
         try
         {
-            if (romPath is null) throw new InvalidDataException("Wähle eine Rubin-ROM, um Attacken und Entwicklungen zu sehen.");
+            if (romPath is null) throw new InvalidDataException("Wähle eine ROM, um Attacken und Entwicklungen zu sehen.");
             using var rom = File.OpenRead(romPath);
-            return (RubyRomDetails.Read(rom, species), null);
+            return (GameProfiles.ReadPokemonDetails(rom, species), null);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException)
         {

@@ -99,7 +99,7 @@ internal static class DockSmokeTest
     {
         var layout = form.Controls.OfType<TableLayoutPanel>().Single();
         var game = Descendants(layout).OfType<EmulatorSurface>().Single();
-        var map = Descendants(layout).OfType<RunDashboard>().Single();
+        var map = Descendants(layout).OfType<RubyRunDashboard>().Single();
         var roster = Descendants(layout).OfType<RosterGrid>().Single();
         var gameBounds = game.RectangleToScreen(game.ClientRectangle);
         var mapBounds = map.RectangleToScreen(map.ClientRectangle);
@@ -125,6 +125,8 @@ internal static class DockSmokeTest
     private const string WildBattleFixture = """
 
         local testFrame = 0
+        local function read16(address) return readCore():read16(address) end
+        local function read32(address) return readCore():read32(address) end
         local function testWildBattle()
             -- The last PC grant lets the test start after all existing item assertions.
             if testFrame == 0 then
@@ -289,7 +291,7 @@ internal static class DockSmokeTest
                     string source = File.ReadAllText(bridge);
                     File.WriteAllText(bridge, source
                         .Replace("local function onFrame()", WildBattleFixture + "\nlocal function onFrame()", StringComparison.Ordinal)
-                        .Replace("    receiveLocalAction()", "    receiveLocalAction()\n    if activeProfile then testWildBattle() end", StringComparison.Ordinal));
+                        .Replace("    receiveLocalAction()", "    receiveLocalAction()\n    if activeGame then testWildBattle() end", StringComparison.Ordinal));
                 }
                 using var process = emulator.Start(rom.Read()!, bridge, testState, softwareDisplay: true);
                 try

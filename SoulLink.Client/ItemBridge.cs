@@ -137,7 +137,7 @@ internal sealed class ItemBridge
         lock (this.gate)
         {
             this.ready = this.session is { } expected && frame.ItemSession == expected &&
-                frame.LayoutId == "ruby-axvd-reference-v2" && frame.TrainerId is uint trainer &&
+                GameProfiles.ForGameCode(frame.GameCode)?.SupportsLocalActions(frame.LayoutId) == true && frame.TrainerId is uint trainer &&
                 IsEpoch(frame.Epoch)
                 ? new ReadyBridge(stream, expected, frame.Epoch, trainer, frame.InBattle,
                     frame.Pokemon.Any(p => p.Container == Placement.Party), DateTimeOffset.UtcNow)

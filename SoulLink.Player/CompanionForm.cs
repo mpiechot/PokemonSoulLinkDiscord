@@ -24,7 +24,7 @@ internal sealed class CompanionForm : PlayerWindow
     private readonly Control sidebar;
     private readonly EmulatorSurface surface = new();
     private readonly EmulatorDock dock;
-    private readonly RunDashboard dashboard;
+    private readonly RubyRunDashboard dashboard;
     private readonly RunFeed feed;
     private readonly BattlePanel battles;
     private readonly RowStyle battleRow = new(SizeType.Absolute, 0);
@@ -283,7 +283,7 @@ internal sealed class CompanionForm : PlayerWindow
         this.launcher.BringToFront();
         this.surface.SizeChanged += (_, _) => this.dock.Resize();
         this.surface.GameClicked += () => this.dock.FocusGame();
-        this.dashboard = new RunDashboard(this.discordIcons);
+        this.dashboard = new RubyRunDashboard(this.discordIcons);
         this.dashboard.ArenaChanged += async (runId, number, complete) =>
             await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
         this.feed = new RunFeed(this.discordIcons, this.spriteCache) { Dock = DockStyle.Fill, BackColor = DashboardTheme.Surface };
@@ -732,7 +732,7 @@ internal sealed class CompanionForm : PlayerWindow
         this.game = null;
         this.gameError = null;
         this.shutdownError = null;
-        this.dashboard.SetMapArtwork(null);
+        this.dashboard.SetCartridge(null);
         this.launching = true;
         this.Render();
         try
@@ -748,7 +748,7 @@ internal sealed class CompanionForm : PlayerWindow
                 using var picker = new OpenFileDialog
                 {
                     Title = "ROM für diesen Run auswählen",
-                    Filter = "Game Boy Advance (*.gba)|*.gba",
+                    Filter = $"Pokémon-ROM ({GameProfiles.RomFilePattern})|{GameProfiles.RomFilePattern}",
                     InitialDirectory = path is null ? AppContext.BaseDirectory : Path.GetDirectoryName(path),
                     CheckFileExists = true,
                 };
@@ -779,7 +779,7 @@ internal sealed class CompanionForm : PlayerWindow
                 return this.emulator.Start(gameRom, bridge, resume: resume);
             });
             if (this.closing) return;
-            this.dashboard.SetMapArtwork(RubyMapArtwork.Read(path), RubyMapArtwork.ReadLabels(path), attempted: true);
+            this.dashboard.SetCartridge(path);
             this.dockingEnabled = true;
             this.startupScriptingClosed = false;
             this.dockUntil = DateTimeOffset.UtcNow.AddSeconds(12);

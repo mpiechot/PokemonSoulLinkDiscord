@@ -15,7 +15,7 @@ public static class EncounterCatchChecks
         var encounter = run.Encounters.SingleOrDefault(link => link.Area == area);
         string? locationProblem = encounter switch
         {
-            { Failed: true } or { Dead: true } => $"Fangort gesperrt: {RubyNames.Area(area)}",
+            { Failed: true } or { Dead: true } => $"Fangort gesperrt: {GameProfiles.AreaName(run.Edition, area)}",
             _ when encounter?.Members.ContainsKey(player.Id) == true => "Du hast hier schon gefangen.",
             _ when player.FirstWildAreas.Contains(area) => "Dein Erstencounter ist bereits vorbei.",
             _ => null,

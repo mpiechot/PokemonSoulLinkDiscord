@@ -240,7 +240,8 @@ public sealed class AutomationHub : Hub
         var registration = this.Registration();
         var run = this.engine.View(registration);
         run.DisplayTrade = AutomationEngine.VisibleTrade(run, registration.PlayerId);
-        run.TradeAvailable = this.options.Value.Enabled && this.options.Value.EnableReadTracking;
+        run.TradeAvailable = this.options.Value.Enabled && this.options.Value.EnableReadTracking &&
+            GameProfiles.ForEdition(run.Edition)?.SupportsTrade == true;
         run.Trade = null;
         if (run.PendingEnd?.PlayerId != registration.PlayerId)
         {
