@@ -1228,7 +1228,7 @@ internal static class DockSmokeTest
         chart.Show();
         Application.DoEvents();
         VerifyRoundedWindow(chart);
-        if (chart.FormBorderStyle != FormBorderStyle.None || Descendants(chart).OfType<ToolCard>().Count() != 7 ||
+        if (chart.FormBorderStyle != FormBorderStyle.None || Descendants(chart).OfType<ToolCard>().Count(card => card.Visible) != 7 ||
             !Descendants(chart).OfType<Button>().Any(button => button.AccessibleName == "Schließen"))
             throw new InvalidOperationException("The type chart must use the themed tool frame and matchup cards.");
 
@@ -1250,16 +1250,26 @@ internal static class DockSmokeTest
         if (types["Feuer"].AccessibleDescription != "Ausgewählt" || types["Normal"].AccessibleDescription is not null ||
             !strong.SetEquals(["Eis", "Käfer", "Pflanze", "Stahl"]) || !weak.SetEquals(["Boden", "Gestein", "Wasser"]))
             throw new InvalidOperationException("Changing the selected type must refresh both directions of the Ruby matchups.");
+
+        var secondType = Descendants(chart).OfType<DashboardComboBox>().Single();
+        secondType.SelectedIndex = secondType.FindStringExact("Flug");
+        if (!matchups["4×  Sehr schwach gegen"].Controls.OfType<Button>().Select(button => button.Text).SequenceEqual(["Gestein"]) ||
+            !immunities.Controls.OfType<Button>().Select(button => button.Text).SequenceEqual(["Boden"]) ||
+            !matchups["¼×  Stark resistent gegen"].Controls.OfType<Button>().Select(button => button.Text).ToHashSet().SetEquals(["Käfer", "Pflanze"]))
+            throw new InvalidOperationException("Fire and Flying must combine weaknesses, resistances and immunities.");
         SaveToolPreview(chart, home, "type-chart");
 
         chart.Width = Math.Min(chart.Width, chart.LogicalToDeviceUnits(550));
         types["Stahl"].PerformClick();
         Application.DoEvents();
-        foreach (var row in matchups.Values.Append(selector))
+        foreach (var row in matchups.Values.Append(selector).Where(row => row.Visible))
         {
             if (row.Controls.Cast<Control>().Any(control => !row.ClientRectangle.Contains(control.Bounds)))
                 throw new InvalidOperationException($"The narrow type chart clipped a type in {row.AccessibleName}.");
         }
+        secondType.SelectedIndex = 0;
+        if (matchups["4×  Sehr schwach gegen"].Visible || matchups["¼×  Stark resistent gegen"].Visible)
+            throw new InvalidOperationException("Removing the second type must restore the single-type chart.");
     }
 
     internal static void VerifyScrollDesign()

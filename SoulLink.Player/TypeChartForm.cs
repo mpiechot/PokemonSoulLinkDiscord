@@ -33,11 +33,15 @@ internal sealed class TypeChartForm : ToolWindow
     private readonly ToolCard choices = new();
     private readonly FlowLayoutPanel selection = new() { Dock = DockStyle.Fill, AccessibleName = "Pokémon-Typen" };
     private readonly Label selectionHeading = SectionHeading("Typ auswählen");
-    private readonly TableLayoutPanel results = new() { ColumnCount = 2, RowCount = 4 };
+    private readonly TableLayoutPanel secondaryRow = new() { Dock = DockStyle.Bottom, ColumnCount = 2, RowCount = 1, Height = 34 };
+    private readonly DashboardComboBox secondary = new() { Dock = DockStyle.Fill, AccessibleName = "Zweiter Typ", DisplayMember = nameof(SecondaryType.Name) };
+    private readonly TableLayoutPanel results = new() { ColumnCount = 2, RowCount = 6 };
+    private readonly Label attackTitle = SectionHeading("Angriff");
     private readonly DashboardScrollHost scroll;
     private readonly Button[] selectors;
-    private readonly FlowLayoutPanel[] attack;
-    private readonly FlowLayoutPanel[] defense;
+    private readonly Dictionary<int, FlowLayoutPanel> attack;
+    private readonly Dictionary<int, FlowLayoutPanel> defense;
+    private int primary;
 
     public TypeChartForm(RubySprites sprites) : base("Typen · Pokémon Rubin", new Size(780, 656))
     {
@@ -52,15 +56,26 @@ internal sealed class TypeChartForm : ToolWindow
             return button;
         }).ToArray();
 
+        this.secondary.Items.Add(new SecondaryType(-1, "Kein zweiter Typ"));
+        this.secondary.Items.AddRange(Matchups.Select((type, index) => new SecondaryType(index, type.Name)).ToArray());
+        this.secondary.SelectedIndex = 0;
+        this.secondaryRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128));
+        this.secondaryRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        this.secondaryRow.Controls.Add(SectionHeading("Zweiter Typ"), 0, 0);
+        this.secondaryRow.Controls.Add(this.secondary, 1, 0);
         this.choices.Controls.Add(this.selection);
+        this.choices.Controls.Add(this.secondaryRow);
         this.choices.Controls.Add(this.selectionHeading);
         this.results.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         this.results.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         for (int i = 0; i < this.results.RowCount; i++) this.results.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        this.attack = this.AddMatchupColumn(0, "Angriff", ["2×  Sehr effektiv gegen", "½×  Wenig effektiv gegen", "0×  Wirkungslos gegen"],
-            [DashboardTheme.Accent, DashboardTheme.Gold, DashboardTheme.Muted]);
-        this.defense = this.AddMatchupColumn(1, "Verteidigung", ["2×  Schwach gegen", "½×  Resistent gegen", "0×  Immun gegen"],
-            [DashboardTheme.Danger, DashboardTheme.Accent, DashboardTheme.Muted]);
+        this.attack = this.AddMatchupColumn(0, this.attackTitle,
+            [(2, "2×  Sehr effektiv gegen", DashboardTheme.Accent), (3, "½×  Wenig effektiv gegen", DashboardTheme.Gold),
+                (5, "0×  Wirkungslos gegen", DashboardTheme.Muted)]);
+        this.defense = this.AddMatchupColumn(1, SectionHeading("Verteidigung"),
+            [(1, "4×  Sehr schwach gegen", DashboardTheme.Danger), (2, "2×  Schwach gegen", DashboardTheme.Danger),
+                (3, "½×  Resistent gegen", DashboardTheme.Accent), (4, "¼×  Stark resistent gegen", DashboardTheme.Accent),
+                (5, "0×  Immun gegen", DashboardTheme.Muted)]);
         this.document.Controls.AddRange([this.choices, this.results]);
         this.scroll = new DashboardScrollHost(this.document, this.Measure) { Dock = DockStyle.Fill, AccessibleName = "Typenübersicht" };
         this.Body.Controls.Add(this.scroll);
@@ -70,11 +85,13 @@ internal sealed class TypeChartForm : ToolWindow
             this.scroll.ResizeDocument();
         };
         this.sprites.Changed += this.RefreshIcons;
+        this.secondary.SelectedIndexChanged += (_, _) => this.RenderMatchups();
         this.SelectType(0);
     }
 
     private void SelectType(int index)
     {
+        this.primary = index;
         for (int i = 0; i < this.selectors.Length; i++)
         {
             this.selectors[i].BackColor = i == index ? DashboardTheme.Border : DashboardTheme.Panel;
@@ -82,25 +99,42 @@ internal sealed class TypeChartForm : ToolWindow
             this.selectors[i].AccessibleDescription = i == index ? "Ausgewählt" : null;
         }
 
-        var selected = Matchups[index];
-        SetTypes(this.attack[0], selected.Strong.Select(Index));
-        SetTypes(this.attack[1], selected.Weak.Select(Index));
-        SetTypes(this.attack[2], selected.Immune.Select(Index));
-        SetTypes(this.defense[0], Incoming(index, type => type.Strong));
-        SetTypes(this.defense[1], Incoming(index, type => type.Weak));
-        SetTypes(this.defense[2], Incoming(index, type => type.Immune));
+        this.RenderMatchups();
+    }
+
+    private void RenderMatchups()
+    {
+        int second = (this.secondary.SelectedItem as SecondaryType)?.Index ?? -1;
+        if (second == this.primary)
+        {
+            this.secondary.SelectedIndex = 0;
+            return;
+        }
+
+        var selected = Matchups[this.primary];
+        this.attackTitle.Text = second < 0 ? "Angriff" : $"Angriff · {selected.Name}";
+        SetTypes(this.attack[2], selected.Strong.Select(Index));
+        SetTypes(this.attack[3], selected.Weak.Select(Index));
+        SetTypes(this.attack[5], selected.Immune.Select(Index));
+        var incoming = Enumerable.Range(0, Matchups.Length).ToLookup(i =>
+            Effectiveness(Matchups[i], this.primary) * (second < 0 ? 2 : Effectiveness(Matchups[i], second)));
+        SetTypes(this.defense[1], incoming[16]);
+        SetTypes(this.defense[2], incoming[8]);
+        SetTypes(this.defense[3], incoming[2]);
+        SetTypes(this.defense[4], incoming[1]);
+        SetTypes(this.defense[5], incoming[0]);
+        this.defense[1].Parent!.Visible = this.defense[4].Parent!.Visible = second >= 0;
         this.RefreshIcons();
         this.scroll.ResizeDocument();
     }
 
-    private FlowLayoutPanel[] AddMatchupColumn(int column, string title, string[] headings, Color[] colors)
+    private Dictionary<int, FlowLayoutPanel> AddMatchupColumn(int column, Label titleLabel, (int Row, string Heading, Color Color)[] cards)
     {
-        var titleLabel = SectionHeading(title);
         titleLabel.Dock = DockStyle.Fill;
         titleLabel.Margin = new Padding(column == 0 ? 4 : 10, 0, 0, 0);
         this.results.Controls.Add(titleLabel, column, 0);
-        var rows = new FlowLayoutPanel[headings.Length];
-        for (int i = 0; i < headings.Length; i++)
+        var rows = new Dictionary<int, FlowLayoutPanel>();
+        foreach (var (row, text, color) in cards)
         {
             var card = new ToolCard
             {
@@ -108,12 +142,13 @@ internal sealed class TypeChartForm : ToolWindow
                 Padding = new Padding(12),
                 Margin = new Padding(column == 0 ? 0 : 6, 0, column == 0 ? 6 : 0, 8),
             };
-            var heading = SectionHeading(headings[i]);
-            heading.ForeColor = colors[i];
-            rows[i] = new FlowLayoutPanel { Dock = DockStyle.Fill, AccessibleName = headings[i] };
-            card.Controls.Add(rows[i]);
+            var heading = SectionHeading(text);
+            heading.ForeColor = color;
+            var types = new FlowLayoutPanel { Dock = DockStyle.Fill, AccessibleName = text };
+            rows.Add(row, types);
+            card.Controls.Add(types);
             card.Controls.Add(heading);
-            this.results.Controls.Add(card, column, i + 1);
+            this.results.Controls.Add(card, column, row);
         }
 
         return rows;
@@ -133,16 +168,20 @@ internal sealed class TypeChartForm : ToolWindow
         }
 
         int selectorRows = (this.selectors.Length + columns - 1) / columns;
-        int choicesHeight = this.choices.Padding.Vertical + this.selectionHeading.Height + (selectorRows * (buttonHeight + gap));
+        int choicesHeight = this.choices.Padding.Vertical + this.selectionHeading.Height + this.secondaryRow.Height +
+            (selectorRows * (buttonHeight + gap));
         this.choices.SetBounds(0, 0, width, choicesHeight);
 
         int titleHeight = this.LogicalToDeviceUnits(35);
         this.results.RowStyles[0].Height = titleHeight;
         int matchupsHeight = titleHeight;
-        for (int i = 0; i < this.attack.Length; i++)
+        bool dual = this.secondary.SelectedIndex > 0;
+        for (int row = 1; row < this.results.RowCount; row++)
         {
-            int height = Math.Max(this.SizeChips(this.attack[i], width / 2), this.SizeChips(this.defense[i], width / 2));
-            this.results.RowStyles[i + 1].Height = height;
+            int height = dual || row is not (1 or 4) ? this.SizeChips(this.defense[row], width / 2) : 0;
+            if (this.attack.TryGetValue(row, out var attackRow))
+                height = Math.Max(height, this.SizeChips(attackRow, width / 2));
+            this.results.RowStyles[row].Height = height;
             matchupsHeight += height;
         }
 
@@ -198,10 +237,10 @@ internal sealed class TypeChartForm : ToolWindow
 
     private void RefreshIcons()
     {
-        foreach (var button in this.selectors.Concat(this.attack.Concat(this.defense).SelectMany(row => row.Controls.OfType<Button>())))
+        foreach (var button in this.selectors.Concat(this.attack.Values.Concat(this.defense.Values).SelectMany(row => row.Controls.OfType<Button>())))
         {
             int index = (int)button.Tag!;
-            string? type = DashboardTheme.RubyType((byte)(index < 9 ? index : index + 1));
+            string? type = DashboardTheme.RubyType((byte)RubyId(index));
             if (type is not null) button.Image = this.sprites.TypeIcon(type).Image;
         }
     }
@@ -215,8 +254,15 @@ internal sealed class TypeChartForm : ToolWindow
     // Ruby's internal type IDs leave a gap at 9.
     private static int Index(int type) => type < 9 ? type : type - 1;
 
-    private static IEnumerable<int> Incoming(int index, Func<TypeMatchup, int[]> relation) =>
-        Enumerable.Range(0, Matchups.Length).Where(i => relation(Matchups[i]).Any(target => Index(target) == index));
+    private static int RubyId(int index) => index < 9 ? index : index + 1;
+
+    // Use units of half damage to keep combined type multipliers exact.
+    private static int Effectiveness(TypeMatchup attack, int defender)
+    {
+        int target = RubyId(defender);
+        return attack.Immune.Contains(target) ? 0 : attack.Strong.Contains(target) ? 4 : attack.Weak.Contains(target) ? 1 : 2;
+    }
 
     private sealed record TypeMatchup(string Name, int[] Strong, int[] Weak, int[] Immune);
+    private sealed record SecondaryType(int Index, string Name);
 }
