@@ -2,6 +2,8 @@
 
 Ein Doppelklick auf **SoulLink.exe** zeigt die Startauswahl. **Run fortsetzen** lädt für den zuletzt gestarteten Run den neusten Spielstand aus Slot 1, Slot 2 oder einem Poké-Tausch-Sicherungspunkt. Bei gleichem Zeitstempel hat Slot 1 Vorrang. **Run laden** zeigt deine gespeicherten Run-Profile. Mit **Run beitreten** fügst du eine Einladung ein und wählst beim ersten Start deine lokale `.gba`-Datei, deinen Spielernamen und dein Karten-Icon.
 
+Der normale Windows-Player bringt mGBA mit. Für den mit `-PublicBuild` erstellten Player entpackst du zuerst den [getesteten portablen mGBA-Build 9187](https://s3.amazonaws.com/mgba/build/mGBA-build-2026-11-20-win64-9187-e6c17152dec0caaebd8a4b949c96a24d56debf44.7z). Wähle beim ersten Spielstart die `mGBA.exe` aus diesem Ordner. SoulLink speichert den Pfad für weitere Starts. Die portable Version braucht keine Installation. [Weitere mGBA-Entwicklungsbuilds](https://mgba.io/downloads.html#development-downloads)
+
 SoulLink merkt sich pro Run die Anmeldung und die ROM-Auswahl. Wenn du deine ROM auf die EXE ziehst, übernimmt SoulLink diese Auswahl direkt.
 
 Im Spiel wie gewohnt fortsetzen oder neu anfangen. mGBA erscheint in der Mitte mit seiner eigenen Menüleiste. Ein Klick ins Spiel gibt ihm den Tastaturfokus. Das Menü **SoulLink** oben links enthält **Spiel starten**, **mGBA lösen** und **Einrichtung**. Unten zeigen die farbigen Punkte den Status von Run-Server und Spieldaten an. Beim Darüberfahren erscheint ein kurzer Hinweis.
@@ -65,6 +67,8 @@ Für einen neuen Run bekommst du eine Einladung als Text. Derselbe Dialog öffne
 ## Für Gastgeber
 
 Für einen Server ohne Discord öffnest du **SoulLink → Gastgeber**. Gib die HTTPS-Adresse und den Admin-Schlüssel ein und klicke auf **Verbinden**. Wähle eine Gruppe oder lege eine neue an. Links kannst du einen Run anlegen oder auswählen. Rechts stehen die Aktionen zum ausgewählten Run. Über **Einladung kopieren** erhältst du den Text zum Weitergeben. SoulLink merkt sich dabei die Einladung. **Selbst beitreten** öffnet den Run direkt auf deinem Rechner.
+
+Für KeePass hinterlegst du den Admin-Schlüssel als Passwort. Gib in SoulLink zuerst die Serveradresse ein und ordne dem KeePass-Eintrag unter **Auto-Type** den Fenstertitel `SoulLink – Gastgeber | https://soullink.example.org` mit deiner eigenen Adresse zu. Setze als Sequenz `{PASSWORD}`. Klicke ins Feld **Admin-Schlüssel** und drücke `Strg` + `Alt` + `A`, anschließend **Verbinden**. Einfügen aus anderen Passwortmanagern funktioniert mit `Strg` + `V`. [KeePass Auto-Type](https://keepass.info/help/base/autotype.html)
 
 Für alte Discord-Runs wählst du in der Gastgeberverwaltung die Zielgruppe und klickst auf **Discord-Runs importieren**. Wähle die `runs.json` oder ihre `.json.bak` bis 20 MB. Die importierten Runs erscheinen direkt in der Run-Liste der Gruppe. Dort kannst du auch abgeschlossene Runs auswählen und bei Discord-Archiven Spiel, Startdatum, Enddatum und einen vorhandenen Endgrund nachsehen. Über **Run laden → Alle Runs der Gruppe** kommst du ebenfalls in diese Übersicht.
 

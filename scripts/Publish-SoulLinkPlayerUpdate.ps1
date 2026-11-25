@@ -1,7 +1,7 @@
 #requires -Version 7.0
 param(
     [Parameter(Mandatory)][ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')][string]$Version,
-    [string]$Server = 'https://soullink.marcopiechotta.de',
+    [Parameter(Mandatory)][string]$Server,
     [string]$KeyFile = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'SoulLink\ReleaseSigning\key.dpapi'),
     [string]$PlayerDirectory,
     [string]$Archive,

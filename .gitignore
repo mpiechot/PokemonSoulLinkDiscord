@@ -418,14 +418,23 @@ FodyWeavers.xsd
 *.msp
 
 # Custom ignores
-PokeSoulLinkBot/appsettings.json
+PokeSoulLinkBot/appsettings*.json
+!PokeSoulLinkBot/appsettings.example.json
 
 # Local SoulLink credentials, live databases, ROMs and saves
 **/client.local.json
+**/runs.json
+**/runs.json.bak
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 *.gba
+*.gb
+*.gbc
 *.sav
-*.ss0
-*.ss1
+*.ss
+*.ss[0-9]
+*.pem
+*.key
+*.dpapi
+*.p12

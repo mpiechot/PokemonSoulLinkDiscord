@@ -594,8 +594,20 @@ internal static class DockSmokeTest
             var workspace = form.Controls.Find("HostWorkspace", true).Single();
             if (!signIn.Visible || workspace.Visible || form.Session is not null)
                 throw new InvalidOperationException("The host workspace was visible before authentication.");
-            var key = Descendants(form).OfType<TextBox>().Single(box => box.UseSystemPasswordChar);
-            key.Text = new string('b', 64);
+            var serverInput = (TextBox)form.Controls.Find("HostServer", true).Single();
+            var key = (TextBox)form.Controls.Find("HostAdminKey", true).Single();
+            if (!key.UseSystemPasswordChar || form.ActiveControl != key || form.Text != $"SoulLink – Gastgeber | {server}" ||
+                !serverInput.Parent!.SelectNextControl(serverInput, forward: true, tabStopOnly: true, nested: true, wrap: false) ||
+                form.ActiveControl != key)
+            {
+                throw new InvalidOperationException("The host sign-in must expose a masked, focusable field in a server-specific window.");
+            }
+            key.SelectedText = new string('b', 64);
+            serverInput.Text = "https://example.invalid";
+            if (key.Text.Length != 0 || form.Text != "SoulLink – Gastgeber | https://example.invalid")
+                throw new InvalidOperationException("Changing the server must clear the entered key and update the password manager target.");
+            serverInput.Text = server;
+            key.SelectedText = new string('b', 64);
             const string groupsPath = "/api/soullink/admin/groups";
             await ConnectAndWait(form, ReplyAsync(groupsPath, key.Text, "401 Unauthorized", ""));
             if (!signIn.Visible || workspace.Visible || status.ForeColor != DashboardTheme.Danger)

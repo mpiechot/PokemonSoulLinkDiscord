@@ -2,7 +2,7 @@
 
 ## Build and verify
 
-The server and integration harness target .NET 10. The Windows player and diagnostic client target .NET 9. The Linux release includes its own patched .NET 10 and ASP.NET Core runtime. SignalR/SQLite packages are pinned, including the native SQLite bundle.
+The server, Windows player, diagnostic client and integration harness target .NET 10 LTS. The Linux release includes its own patched .NET 10 and ASP.NET Core runtime. SignalR/SQLite packages are pinned, including the native SQLite bundle.
 
 ```powershell
 dotnet restore PokeSoulLinkBot/PokeSoulLinkBot.slnx
@@ -33,19 +33,21 @@ Use .NET configuration (environment variables replace `:` with `__`):
 
 ### Linux release and updates
 
-Run `./scripts/Publish-SoulLinkServer.ps1` to produce `artifacts/server/soullink-linux-x64.tar.gz`. The archive contains the application and its runtime. Configure the `soullink` service account and the included `scripts/soullink.service` separately on the target. Set `SoulLink__AdminKey` in the root-readable `/etc/soullink/server.env` file. The service uses Discord-free mode by default and listens on loopback.
+Run `./scripts/Publish-SoulLinkServer.ps1` to produce `artifacts/server/soullink-linux-x64.tar.gz`. The archive contains the application, its runtime, and a `deploy/` directory with the unit, update script, configuration templates and installation guide. See [Self-hosting](self-hosting.md) for a first installation with your own domain, group and run invitation.
 
-Apply each release with `sudo bash Update-SoulLinkServer.sh /path/to/soullink-linux-x64.tar.gz`. The updater checks the archive's launcher, takes an SQLite backup, applies versioned migrations transactionally, switches the release symlink and checks the service. It retains the previous release and the database backup. If startup fails after migration, inspect the service log before choosing a rollback. Restoring the pre-update backup can discard activity recorded after the update.
+Apply each release with its bundled `deploy/Update-SoulLinkServer.sh` and the server archive. The updater checks the archive's launcher, takes an SQLite backup, applies versioned migrations transactionally, switches the release symlink and checks the service. It retains the previous release and the database backup. If startup fails after migration, inspect the service log before choosing a rollback. Restoring the pre-update backup can discard activity recorded after the update.
 
 ### Windows player releases
 
 Deploy the server build with the player-update routes once. Then run the following on the Windows release account, with the local SoulLink player closed.
 
 ```powershell
-./scripts/Publish-SoulLinkPlayerUpdate.ps1 -Version 1.0.0 -SshHost marco-netcup
+$releaseKey = Join-Path $env:LOCALAPPDATA 'SoulLink\ReleaseSigning\own-server.dpapi'
+./scripts/Publish-SoulLinkPlayerUpdate.ps1 -Version 1.0.0 `
+    -Server https://soullink.example.org -KeyFile $releaseKey -SshHost my-soullink-server
 ```
 
-The first release creates a Windows account-protected signing key under `%LOCALAPPDATA%\SoulLink\ReleaseSigning`. Keep using that account and key for subsequent releases. Distribute the first player from `artifacts/player/SoulLink.exe` once to bootstrap updates. For each subsequent release, increase the version and run the same command. Without `-SshHost` the command builds and signs the executable and writes the stable archive at `artifacts/server/soullink-player-release.zip`. A different HTTPS release host can be configured with `-Server`.
+Use your own HTTPS origin and SSH alias. The first release creates a Windows account-protected signing key at the configured path. Keep using that account and key for subsequent releases of that installation. Distribute the first player from `artifacts/player/SoulLink.exe` once to bootstrap updates. For each subsequent release, increase the version and run the same command. Without `-SshHost` the command writes the signed archive at `artifacts/server/soullink-player-release.zip` for a manual upload.
 
 The publisher uploads the signed bundle to the server and publishes the manifest after the corresponding package is available. The player feed is stored next to the automation database and has no database migration or service restart for player-only releases. The Windows player verifies package size, SHA-256, signature and version using its embedded public key, then replaces the existing executable after a normal shutdown. This update signature is independent of Windows Authenticode and SmartScreen.
 

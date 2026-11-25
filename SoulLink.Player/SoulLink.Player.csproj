@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <RuntimeFrameworkVersion>9.0.21</RuntimeFrameworkVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeFrameworkVersion Condition="'$(SelfContained)' == 'true'">10.0.15</RuntimeFrameworkVersion>
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -21,5 +21,8 @@
     <AssemblyMetadata Include="SoulLinkUpdateVersion" Value="$(PlayerUpdateVersion)" />
     <AssemblyMetadata Include="SoulLinkUpdateServer" Value="$(PlayerUpdateServer)" />
     <AssemblyMetadata Include="SoulLinkUpdatePublicKey" Value="$(PlayerUpdatePublicKey)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(SoulLinkPublicBuild)' == 'true'">
+    <AssemblyMetadata Include="SoulLinkPublicBuild" Value="true" />
   </ItemGroup>
 </Project>

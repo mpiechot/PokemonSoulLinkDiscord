@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using SoulLink;
 using SoulLink.Client;
@@ -6,6 +7,9 @@ namespace SoulLink.Player;
 
 internal static class Program
 {
+    private static readonly bool UseRemoteArtwork = !typeof(Program).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+        .Any(metadata => metadata is { Key: "SoulLinkPublicBuild", Value: "true" });
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -115,7 +119,8 @@ internal static class Program
                 profileLoaded = profile is not null,
                 profileName = profile?.Name,
                 bridgeIncluded = File.Exists(bridge),
-                emulatorIncluded = emulator.Available,
+                emulatorIncluded = emulator.Bundled,
+                remoteArtworkEnabled = UseRemoteArtwork,
                 browserStarted = false,
             }));
             return;
@@ -146,7 +151,8 @@ internal static class Program
             string profileKey = profile?.Id.ToString("N") ?? "local";
             using var runtime = CreateRuntime(home, profile, localTracking: true);
             using var form = new CompanionForm(runtime, emulator, RomSelection.ForProfile(home, profile?.Id), Path.Combine(home, "Bridge", profileKey),
-                requestedRom, profile, sprites, Path.Combine(home, "Artwork"), profiles, testSlot, session, restoreHosting, launchOnOpen, resumeOnOpen);
+                requestedRom, profile, sprites, UseRemoteArtwork ? Path.Combine(home, "Artwork") : null,
+                profiles, testSlot, session, restoreHosting, launchOnOpen, resumeOnOpen);
             Application.Run(form);
             if (form.PendingUpdate is { } update)
             {

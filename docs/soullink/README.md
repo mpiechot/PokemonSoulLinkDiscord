@@ -16,7 +16,7 @@ $env:SoulLink__AdminKey
 
 Öffne **SoulLink → Gastgeber**, verwende `http://127.0.0.1:5080` und den ausgegebenen Schlüssel. Klicke auf **Verbinden** und lege eine Gruppe und darin einen Run an. Mit **Selbst beitreten** öffnet sich der Run auf deinem Rechner. Beende den lokalen Server bei Bedarf mit **Strg+C** im Terminal.
 
-Für Mitspieler auf anderen Rechnern braucht ihr einen gemeinsamen HTTPS-Run-Server mit WebSocket-Unterstützung. Die Linux-Veröffentlichung und der Update-Ablauf sind in der [Betriebsanleitung](development.md#linux-release-and-updates) beschrieben. Sobald der Server erreichbar ist, könnt ihr der [Anleitung für zwei Spieler](player.md#zu-zweit-ohne-discord-testen) folgen.
+Für Mitspieler auf anderen Rechnern braucht ihr einen gemeinsamen HTTPS-Run-Server mit WebSocket-Unterstützung. Die [Self-Hosting-Anleitung](self-hosting.md) führt vom Linux-Paket bis zur ersten Einladung und beschreibt Updates und Backups.
 
 ## Entwicklungsdemo ohne ROM und ohne Discord
 

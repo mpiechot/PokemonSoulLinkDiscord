@@ -2,7 +2,6 @@
 set -euo pipefail
 
 archive=$(realpath "${1:?Pass the Linux server archive}")
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 test_root=$(mktemp -d)
 export SOULLINK_RELEASE_ROOT="$test_root/app"
 export SOULLINK_STATE_ROOT="$test_root/state"
@@ -63,7 +62,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-bash "$script_dir/Update-SoulLinkServer.sh" "$archive"
+tar -xzf "$archive" -C "$test_root" ./deploy
+for file in soullink.service server.env.example Caddyfile.example SELF-HOSTING.md; do
+    test -s "$test_root/deploy/$file"
+done
+grep -qx 'SoulLink__AdminKey=' "$test_root/deploy/server.env.example"
+grep -qx 'User=soullink' "$test_root/deploy/soullink.service"
+bash "$test_root/deploy/Update-SoulLinkServer.sh" "$archive"
 prior=$(readlink "$SOULLINK_RELEASE_ROOT/current")
 api="$SOULLINK_TEST_URL/api/soullink/admin"
 auth="X-SoulLink-Admin: $SOULLINK_TEST_KEY"
@@ -74,7 +79,7 @@ group=$(curl --fail --silent -H "$auth" -H 'Content-Type: application/json' \
 curl --fail --silent -H "$auth" -H 'Content-Type: application/json' \
     -d '{"name":"Run vor dem Update"}' "$api/groups/$group/runs" >/dev/null
 
-bash "$script_dir/Update-SoulLinkServer.sh" "$archive"
+bash "$test_root/deploy/Update-SoulLinkServer.sh" "$archive"
 test "$(readlink "$SOULLINK_RELEASE_ROOT/current")" != "$prior"
 backup=$(find "$SOULLINK_STATE_ROOT/backups" -name 'soullink.sqlite' -type f)
 test -f "$backup"

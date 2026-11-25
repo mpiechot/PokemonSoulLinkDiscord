@@ -9,6 +9,6 @@
     <ProjectReference Include="..\SoulLink\SoulLink.csproj" />
     <ProjectReference Include="..\PokeSoulLinkBot\PokeSoulLinkBot.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\SoulLink.Client\SoulLink.Client.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="9.0.23" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.15" />
   </ItemGroup>
 </Project>

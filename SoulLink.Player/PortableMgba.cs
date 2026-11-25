@@ -4,12 +4,34 @@ using System.Security.Cryptography;
 
 namespace SoulLink.Player;
 
-/// <summary>Installs and starts the bundled copy without changing the system mGBA installation.</summary>
+/// <summary>Starts the bundled or explicitly selected portable mGBA.</summary>
 internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = false, bool isolated = false)
 {
-    public bool Available => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
+    private readonly string externalSelection = Path.Combine(home, "mgba-path.txt");
 
-    internal string ExecutablePath => Path.Combine(home, "mGBA-9187", "mGBA.exe");
+    public bool Bundled => typeof(PortableMgba).Assembly.GetManifestResourceInfo("SoulLink.mGBA.zip") is not null;
+
+    public bool Available => this.Bundled || this.ExecutablePath is not null;
+
+    internal string? ExecutablePath => this.Bundled ? Path.Combine(home, "mGBA-9187", "mGBA.exe") : this.ReadExternalSelection();
+
+    public void SelectExternal(string path)
+    {
+        if (!IsPortable(path)) throw new InvalidDataException("Wähle mGBA.exe aus einem entpackten portablen mGBA-Archiv.");
+        string temporary = this.externalSelection + ".tmp";
+        File.WriteAllText(temporary, Path.GetFullPath(path));
+        File.Move(temporary, this.externalSelection, overwrite: true);
+    }
+
+    private string? ReadExternalSelection()
+    {
+        string? path = File.Exists(this.externalSelection) ? File.ReadAllText(this.externalSelection) : null;
+        return IsPortable(path) ? path : null;
+    }
+
+    private static bool IsPortable(string? path) => !string.IsNullOrEmpty(path) && Path.IsPathFullyQualified(path) &&
+        string.Equals(Path.GetFileName(path), "mGBA.exe", StringComparison.OrdinalIgnoreCase) && File.Exists(path) &&
+        File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "portable.ini"));
 
     public Process Start(string rom, string bridge, string? initialState = null, bool softwareDisplay = false, bool resume = false)
     {
@@ -20,7 +42,7 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
         }
         string executable = this.Install();
         string directory = Path.GetDirectoryName(executable)!;
-        if (softwareDisplay || preferSoftwareDisplay)
+        if (this.Bundled && (softwareDisplay || preferSoftwareDisplay))
         {
             // Hosted Windows workers may not expose an accelerated OpenGL context.
             File.WriteAllText(Path.Combine(directory, "qt.ini"), "[General]\ndisplayDriver=0\n");
@@ -79,7 +101,8 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
 
     private string? StateDirectory()
     {
-        string portableDirectory = Path.GetDirectoryName(this.ExecutablePath)!;
+        if (this.ExecutablePath is not { } executable) return null;
+        string portableDirectory = Path.GetDirectoryName(executable)!;
         string configuration = Path.Combine(portableDirectory, "config.ini");
         if (!File.Exists(configuration)) return null;
 
@@ -125,8 +148,9 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
 
     public bool IsAlreadyRunning()
     {
-        if (isolated) return false;
+        if (isolated && this.Bundled) return false;
         string testDirectory = Path.Combine(home, "TestPlayers") + Path.DirectorySeparatorChar;
+        string? selected = this.ExecutablePath;
         var processes = Process.GetProcessesByName("mGBA");
         try
         {
@@ -134,7 +158,10 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
             {
                 try
                 {
-                    if (!process.HasExited && process.MainModule?.FileName.StartsWith(testDirectory, StringComparison.OrdinalIgnoreCase) != true)
+                    if (process.HasExited) continue;
+                    string? running = process.MainModule?.FileName;
+                    if (isolated ? string.Equals(running, selected, StringComparison.OrdinalIgnoreCase) :
+                        running?.StartsWith(testDirectory, StringComparison.OrdinalIgnoreCase) != true)
                         return true;
                 }
                 catch (InvalidOperationException) { }
@@ -150,7 +177,8 @@ internal sealed class PortableMgba(string home, bool preferSoftwareDisplay = fal
 
     private string Install()
     {
-        string executable = this.ExecutablePath;
+        string executable = this.ExecutablePath ?? throw new InvalidDataException("Wähle zuerst eine portable mGBA-Version mit Lua-Unterstützung aus.");
+        if (!this.Bundled) return executable;
         string directory = Path.GetDirectoryName(executable)!;
         string installed = Path.Combine(directory, ".ready");
         if (File.Exists(installed) && File.Exists(executable)) return executable;

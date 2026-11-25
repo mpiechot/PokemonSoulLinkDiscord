@@ -456,8 +456,9 @@ finally
 Process Start(string folder, string dll, params string[] arguments)
 {
     var info = new ProcessStartInfo("dotnet") { WorkingDirectory = Path.Combine(root, folder), CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-    string framework = folder == "PokeSoulLinkBot" ? "net10.0" : "net9.0";
-    info.ArgumentList.Add(Path.Combine(root, folder, "bin", "Debug", framework, dll));
+    const string framework = "net10.0";
+    string configuration = Directory.GetParent(Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory))!.Name;
+    info.ArgumentList.Add(Path.Combine(root, folder, "bin", configuration, framework, dll));
     foreach (string argument in arguments) info.ArgumentList.Add(argument);
     var process = Process.Start(info) ?? throw new InvalidOperationException("Could not start demo process.");
     process.OutputDataReceived += (_, e) => { if (e.Data?.Contains("fail:", StringComparison.OrdinalIgnoreCase) == true) Console.WriteLine(e.Data); };

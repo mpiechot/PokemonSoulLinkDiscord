@@ -737,6 +737,17 @@ internal sealed class CompanionForm : PlayerWindow
         this.Render();
         try
         {
+            if (!this.emulator.Available)
+            {
+                using var picker = new OpenFileDialog
+                {
+                    Title = "Portable mGBA.exe mit Lua-Unterstützung auswählen",
+                    Filter = "mGBA (mGBA.exe)|mGBA.exe",
+                    CheckFileExists = true,
+                };
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                this.emulator.SelectExternal(picker.FileName);
+            }
             if (this.emulator.IsAlreadyRunning())
                 throw new InvalidOperationException("mGBA ist bereits geöffnet. Schließe es und klicke auf „Spiel starten“.");
 

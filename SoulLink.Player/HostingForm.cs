@@ -10,6 +10,7 @@ internal sealed record HostingSession(string Server, string Key, Guid? GroupId =
 
 internal sealed class HostingForm : ToolWindow
 {
+    private const string WindowTitle = "SoulLink – Gastgeber";
     private const string Connecting = "Verbinde mit dem Run-Server …";
     private readonly PlayerProfileLibrary profiles;
     private readonly Func<Guid, Guid?>? playerIdForRun;
@@ -54,6 +55,8 @@ internal sealed class HostingForm : ToolWindow
         this.restoreSession = session;
         this.canJoin = joinRun is not null;
         this.server.Text = session?.Server ?? currentServer;
+        this.server.Name = "HostServer";
+        this.key.Name = "HostAdminKey";
         this.key.UseSystemPasswordChar = true;
         this.key.Text = session?.Key ?? "";
         this.groups.DisplayMember = nameof(RunGroup.Name);
@@ -127,9 +130,24 @@ internal sealed class HostingForm : ToolWindow
         this.Body.Controls.Add(this.workspace);
         this.Body.Controls.Add(this.signIn);
         this.Body.Controls.Add(this.feedback);
-        this.server.TextChanged += (_, _) => this.UpdateActions();
+        this.server.TextChanged += (_, _) =>
+        {
+            string previousTitle = this.Text;
+            this.UpdateWindowTitle();
+            if (this.Text != previousTitle) this.key.Clear();
+            this.UpdateActions();
+        };
         this.key.TextChanged += (_, _) => this.UpdateActions();
         this.ClearServerView();
+        this.Shown += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(this.server.Text)) this.server.Focus();
+            else
+            {
+                this.key.Focus();
+                this.key.SelectAll();
+            }
+        };
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -164,6 +182,11 @@ internal sealed class HostingForm : ToolWindow
         serverLabel.Dock = DockStyle.Fill;
         var keyLabel = Heading("Admin-Schlüssel");
         keyLabel.Dock = DockStyle.Fill;
+        serverLabel.TabIndex = 0;
+        this.server.TabIndex = 1;
+        keyLabel.TabIndex = 2;
+        this.key.TabIndex = 3;
+        this.connect.TabIndex = 4;
         fields.Controls.Add(serverLabel, 0, 0);
         fields.Controls.Add(this.server, 0, 1);
         fields.Controls.Add(keyLabel, 0, 2);
@@ -374,6 +397,7 @@ internal sealed class HostingForm : ToolWindow
         this.signIn.Visible = !connected;
         this.workspace.Visible = connected;
         this.AcceptButton = connected ? null : this.connect;
+        this.UpdateWindowTitle();
         var size = this.LogicalToDeviceUnits(connected ? new Size(824, 626) : new Size(484, 332));
         if (size == this.ClientSize) return;
         var center = new Point(this.Left + this.Width / 2, this.Top + this.Height / 2);
@@ -383,6 +407,21 @@ internal sealed class HostingForm : ToolWindow
             var area = Screen.FromPoint(center).WorkingArea;
             this.Location = new Point(Math.Clamp(center.X - size.Width / 2, area.Left, Math.Max(area.Left, area.Right - size.Width)),
                 Math.Clamp(center.Y - size.Height / 2, area.Top, Math.Max(area.Top, area.Bottom - size.Height)));
+        }
+    }
+
+    private void UpdateWindowTitle()
+    {
+        // Native password managers can match the active sign-in window to the configured origin.
+        if (this.session is null && Uri.TryCreate(this.server.Text.Trim(), UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback) && uri.UserInfo.Length == 0)
+        {
+            var origin = new UriBuilder(uri.Scheme, uri.IdnHost, uri.IsDefaultPort ? -1 : uri.Port).Uri;
+            this.Text = $"{WindowTitle} | {origin.GetLeftPart(UriPartial.Authority)}";
+        }
+        else
+        {
+            this.Text = WindowTitle;
         }
     }
 

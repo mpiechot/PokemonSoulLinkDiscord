@@ -1,11 +1,23 @@
 #requires -Version 7.0
-param([string]$Executable, [switch]$PackageOnly, [switch]$ShutdownOnly)
+param([string]$Executable, [switch]$PackageOnly, [switch]$ShutdownOnly, [switch]$PublicBuild, [string]$ExternalMgba)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if (-not $Executable) { $Executable = Join-Path $root 'artifacts\player\SoulLink.exe' }
+if (-not $Executable) {
+    $relativeExecutable = if ($PublicBuild) { 'artifacts\player-public\SoulLink.exe' } else { 'artifacts\player\SoulLink.exe' }
+    $Executable = Join-Path $root $relativeExecutable
+}
+if ($PublicBuild -and -not $PackageOnly) {
+    if (-not $ExternalMgba) { throw 'Live public-build checks need -ExternalMgba pointing to a portable mGBA.exe.' }
+    $ExternalMgba = (Resolve-Path -LiteralPath $ExternalMgba).Path
+    if (-not (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $ExternalMgba) 'portable.ini'))) { throw 'Use a portable mGBA directory.' }
+}
 $tempRoot = if ($PackageOnly) { [IO.Path]::GetFullPath([IO.Path]::GetTempPath()) } else { Join-Path $root 'artifacts' }
 $testRoot = [IO.Path]::GetFullPath((Join-Path $tempRoot ('soullink-player-check-' + [Guid]::NewGuid().ToString('N'))))
 function Run-Player([string]$Path, [string[]]$Arguments) {
+    if ($PublicBuild -and $ExternalMgba -and $Arguments[0] -in '--smoke-game','--smoke-pc-items','--smoke-close') {
+        [IO.Directory]::CreateDirectory($Arguments[1]) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Arguments[1] 'mgba-path.txt'), $ExternalMgba)
+    }
     $startInfo = [Diagnostics.ProcessStartInfo]::new($Path)
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
@@ -123,7 +135,10 @@ try {
     $fresh = Join-Path $testRoot 'fresh'
     Run-Player $Executable @('--smoke-test', $fresh)
     $result = Get-Content (Join-Path $fresh 'smoke-result.json') -Raw | ConvertFrom-Json
-    if ($result.client.registered -or $result.client.isDemo -or $result.client.snapshot -or $result.client.run -or -not $result.bridgeIncluded -or -not $result.emulatorIncluded -or $result.browserStarted) { throw 'Player did not start cleanly.' }
+    if ($result.client.registered -or $result.client.isDemo -or $result.client.snapshot -or $result.client.run -or -not $result.bridgeIncluded -or $result.browserStarted) { throw 'Player did not start cleanly.' }
+    if ($result.emulatorIncluded -ne (-not $PublicBuild) -or $result.remoteArtworkEnabled -ne (-not $PublicBuild)) {
+        throw 'The player did not match its intended emulator and artwork configuration.'
+    }
     $prepared = Join-Path $testRoot 'Prepared.exe'
     Run-Player $Executable @('--prepare-player', $prepared, 'https://example.invalid', 'PACKAGE-CHECK')
     $preparedHome = Join-Path $testRoot 'prepared-startup'
@@ -131,7 +146,7 @@ try {
     $result = Get-Content (Join-Path $preparedHome 'smoke-result.json') -Raw | ConvertFrom-Json
     if (-not $result.profileLoaded -or $result.profileName -or $result.client.player -or $result.client.snapshot -or $result.client.isDemo) { throw 'Embedded run invitation should leave the player identity unset.' }
     if ($PackageOnly) {
-        Write-Host 'Single-file player verified: clean startup and embedded mGBA, bridge and invitation.'
+        Write-Host 'Single-file player verified: clean startup, emulator mode, artwork policy, bridge and invitation.'
         return
     }
     for ($revision = 0; $revision -le 1; $revision++) {

@@ -24,11 +24,6 @@ public sealed class PokedexPresenter
             .AddField("Pokemon", entry.PokemonName, true)
             .AddField("Requested Pokemon", requestedPokemonName, true);
 
-        if (!string.IsNullOrWhiteSpace(entry.ImageUrl))
-        {
-            builder.WithThumbnailUrl(entry.ImageUrl);
-        }
-
         return builder.Build();
     }
 
