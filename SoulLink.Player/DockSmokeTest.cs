@@ -1156,6 +1156,7 @@ internal static class DockSmokeTest
                 throw new InvalidOperationException("PokéWiki must be reachable from the launcher toolbar.");
             if (profile is null)
             {
+                VerifyReusablePokemonDetails(form);
                 VerifyPlayerIcon(form);
                 form.WindowState = FormWindowState.Maximized;
                 if (form.Region is not null)
@@ -1185,6 +1186,31 @@ internal static class DockSmokeTest
             form.Close();
             Application.DoEvents();
         }
+    }
+
+    private static void VerifyReusablePokemonDetails(CompanionForm player)
+    {
+        var first = new PokemonState { Species = 25, Hp = 15, MaxHp = 20 };
+        var second = new PokemonState { Species = 1, Hp = 17, MaxHp = 25 };
+        player.ShowPokemonAsync(player, Guid.Empty, first).GetAwaiter().GetResult();
+        var details = player.OwnedForms.OfType<PokemonDetailsForm>().Single();
+        var originalBounds = details.Bounds;
+        if (!details.Visible || details.Modal || details.Text != RubyNames.PokemonWithNickname(first))
+            throw new InvalidOperationException("The first team Pokémon must open a modeless detail window.");
+
+        var older = new TaskCompletionSource<PokemonRomDetails?>();
+        var loading = details.DisplayAsync(first, null, _ => older.Task);
+        player.ShowPokemonAsync(player, Guid.Empty, second).GetAwaiter().GetResult();
+        older.SetResult(null);
+        Application.DoEvents();
+        var content = Descendants(details).OfType<DashboardScrollView>().Single();
+        if (!loading.IsCompletedSuccessfully || player.OwnedForms.OfType<PokemonDetailsForm>().Single() != details ||
+            details.Bounds != originalBounds || details.Text != RubyNames.PokemonWithNickname(second) ||
+            content.AccessibleName?.Contains("KP: 17/25", StringComparison.Ordinal) != true)
+            throw new InvalidOperationException("Selecting another Pokémon must reuse the window and discard the previous lookup.");
+
+        Descendants(details).OfType<Button>().Single(button => button.Text == "Schließen").PerformClick();
+        if (!details.IsDisposed) throw new InvalidOperationException("The modeless detail window must close from its button.");
     }
 
     private static void VerifyPlayerIcon(Form form)

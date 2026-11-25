@@ -4,51 +4,69 @@ namespace SoulLink.Player;
 
 internal sealed class PokemonDetailsForm : ToolWindow
 {
-    public PokemonDetailsForm(PokemonState pokemon, string? romPath, Func<CancellationToken, Task<PokemonRomDetails?>>? partnerLookup)
-        : base(RubyNames.PokemonWithNickname(pokemon), new Size(450, 575))
+    private readonly DetailLines content = new() { Dock = DockStyle.Fill };
+    private CancellationTokenSource? loading;
+
+    public PokemonDetailsForm() : base("Pokémon", new Size(450, 575))
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1, Padding = new Padding(13) };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var content = new DetailLines { Dock = DockStyle.Fill };
-        layout.Controls.Add(content, 0, 0);
+        layout.Controls.Add(this.content, 0, 0);
         var close = DashboardTheme.Button("Schließen");
         close.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         close.DialogResult = DialogResult.Cancel;
+        close.Click += (_, _) => this.Close();
         layout.Controls.Add(close, 0, 1);
         this.CancelButton = close;
         this.Body.Controls.Add(layout);
+    }
+
+    public async Task DisplayAsync(PokemonState pokemon, string? romPath, Func<CancellationToken, Task<PokemonRomDetails?>>? partnerLookup)
+    {
+        this.CancelLookup();
+        this.SetTitle(RubyNames.PokemonWithNickname(pokemon));
+        this.content.ScrollToTop();
         if (partnerLookup is null)
         {
             var local = ReadLocal(pokemon.Species, romPath);
-            content.SetLines(BuildLines(pokemon, local.Details, local.Error));
+            this.content.SetLines(BuildLines(pokemon, local.Details, local.Error));
+            return;
         }
-        else
+
+        this.content.SetLines(BuildLines(pokemon, null, "Pokémon-Daten des Mitspielers werden geladen …"));
+        using var request = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        this.loading = request;
+        try
         {
-            content.SetLines(BuildLines(pokemon, null, "Pokémon-Daten des Mitspielers werden geladen …"));
-            this.Shown += async (_, _) =>
+            PokemonRomDetails? partner = null;
+            try { partner = await partnerLookup(request.Token); }
+            catch (OperationCanceledException) { }
+            if (this.loading != request || this.IsDisposed) return;
+            if (partner is not null)
             {
-                using var request = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                FormClosedEventHandler cancel = (_, _) => request.Cancel();
-                this.FormClosed += cancel;
-                try
-                {
-                    PokemonRomDetails? partner = null;
-                    try { partner = await partnerLookup(request.Token); }
-                    catch (OperationCanceledException) { }
-                    if (this.IsDisposed || !this.Visible) return;
-                    if (partner is not null)
-                    {
-                        content.SetLines(BuildLines(pokemon, partner, null));
-                        return;
-                    }
-                    var local = ReadLocal(pokemon.Species, romPath);
-                    string? reference = local.Details is not null ? "Ersatzdaten aus deiner Rubin-ROM." : local.Error;
-                    content.SetLines(BuildLines(pokemon, local.Details, reference));
-                }
-                finally { this.FormClosed -= cancel; }
-            };
+                this.content.SetLines(BuildLines(pokemon, partner, null));
+                return;
+            }
+
+            var local = ReadLocal(pokemon.Species, romPath);
+            string? reference = local.Details is not null ? "Ersatzdaten aus deiner Rubin-ROM." : local.Error;
+            this.content.SetLines(BuildLines(pokemon, local.Details, reference));
         }
+        finally { if (this.loading == request) this.loading = null; }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) this.CancelLookup();
+        base.Dispose(disposing);
+    }
+
+    private void CancelLookup()
+    {
+        var request = this.loading;
+        this.loading = null;
+        request?.Cancel();
     }
 
     private static (PokemonRomDetails? Details, string? Error) ReadLocal(int species, string? romPath)

@@ -6,6 +6,7 @@ internal class ToolWindow : PlayerWindow
 {
     private static readonly Font HeadingFont = new("Segoe UI Semibold", 11);
     private static readonly Font TitleFont = new("Segoe UI Semibold", 13);
+    private readonly Label caption;
     private readonly bool resizable;
 
     internal ToolWindow(string title, Size size, bool resizable = false)
@@ -23,18 +24,18 @@ internal class ToolWindow : PlayerWindow
         this.Padding = new Padding(16, 0, 16, 16);
 
         var header = new Panel { Dock = DockStyle.Top, Height = 54 };
-        var caption = Heading(title);
-        caption.Dock = DockStyle.Fill;
-        caption.Font = TitleFont;
-        caption.TextAlign = ContentAlignment.MiddleLeft;
-        caption.ForeColor = DashboardTheme.Accent;
-        caption.MouseDown += (_, args) => { if (args.Button == MouseButtons.Left) DragWindow(this.Handle); };
+        this.caption = Heading(title);
+        this.caption.Dock = DockStyle.Fill;
+        this.caption.Font = TitleFont;
+        this.caption.TextAlign = ContentAlignment.MiddleLeft;
+        this.caption.ForeColor = DashboardTheme.Accent;
+        this.caption.MouseDown += (_, args) => { if (args.Button == MouseButtons.Left) DragWindow(this.Handle); };
         var close = DashboardTheme.IconButton(DashboardIcon.Close, "Schließen", DashboardTheme.Panel, DashboardTheme.Border, DashboardTheme.Text);
         close.Dock = DockStyle.Right;
         close.Width = 36;
         header.Padding = new Padding(0, 9, 0, 9);
         close.Click += (_, _) => this.Close();
-        header.Controls.Add(caption);
+        header.Controls.Add(this.caption);
         header.Controls.Add(close);
 
         this.Controls.Add(this.Body);
@@ -42,6 +43,8 @@ internal class ToolWindow : PlayerWindow
     }
 
     internal Panel Body { get; } = new() { Dock = DockStyle.Fill };
+
+    protected void SetTitle(string title) => this.Text = this.caption.Text = title;
 
     protected override void WndProc(ref Message message)
     {

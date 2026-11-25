@@ -77,6 +77,7 @@ internal sealed class CompanionForm : PlayerWindow
     private RulesForm? rules;
     private GroupStatisticsForm? statistics;
     private TypeChartForm? typeChart;
+    private PokemonDetailsForm? pokemonDetails;
     private StatusEffectsForm? statusEffects;
     private RunEndForm? runEnd;
     private PokemonTradeForm? pokemonTrade;
@@ -307,9 +308,9 @@ internal sealed class CompanionForm : PlayerWindow
             await this.RunActionAsync(() => this.runtime.ChangeArenaAsync(runId, number, complete));
         this.feed = new RunFeed(this.discordIcons, this.spriteCache) { Dock = DockStyle.Fill, BackColor = DashboardTheme.Surface };
         this.battles = new BattlePanel(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
-        this.battles.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
+        this.battles.PokemonOpened += async (player, pokemon) => await this.ShowPokemonAsync(this, player, pokemon);
         this.team = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
-        this.team.PokemonOpened += (player, pokemon) => this.ShowPokemon(this, player, pokemon);
+        this.team.PokemonOpened += async (player, pokemon) => await this.ShowPokemonAsync(this, player, pokemon);
         var places = Button("Fangorte", (_, _) => this.ShowPlaces());
         places.Font = new Font("Segoe UI", 8.5f);
         places.Margin = new Padding(0);
@@ -641,7 +642,7 @@ internal sealed class CompanionForm : PlayerWindow
         if (this.closing) return;
         using var dialog = new ToolWindow(title, new Size(Math.Clamp(this.ClientSize.Width - 150, 680, 1320), 610));
         var roster = new RosterGrid(this.spriteCache, this.discordIcons.Get("unknown-pokemon")) { Dock = DockStyle.Fill };
-        roster.PokemonOpened += (player, pokemon) => this.ShowPokemon(dialog, player, pokemon);
+        roster.PokemonOpened += async (player, pokemon) => await this.ShowPokemonAsync(dialog, player, pokemon);
         dialog.Body.Controls.Add(roster);
         this.openRoster = roster;
         this.openRosterFilter = filter;
@@ -650,15 +651,34 @@ internal sealed class CompanionForm : PlayerWindow
         finally { this.openRoster = null; }
     }
 
-    private void ShowPokemon(Form owner, Guid player, PokemonState pokemon)
+    internal async Task ShowPokemonAsync(Form owner, Guid player, PokemonState pokemon)
     {
         if (this.closing) return;
         var view = this.runtime.Status();
         bool partner = player != Guid.Empty && player != view.LocalPlayerId;
-        using var dialog = new PokemonDetailsForm(pokemon, this.rom.Read(), partner && view.Run is { } run
-            ? token => this.runtime.PartnerPokemonDetailsAsync(run.Id, player, pokemon.Species, token) : null);
+        string? romPath = this.rom.Read();
+        Func<CancellationToken, Task<PokemonRomDetails?>>? lookup = partner && view.Run is { } run
+            ? token => this.runtime.PartnerPokemonDetailsAsync(run.Id, player, pokemon.Species, token) : null;
+        if (owner == this)
+        {
+            if (this.pokemonDetails is null || this.pokemonDetails.IsDisposed)
+            {
+                this.pokemonDetails = new PokemonDetailsForm
+                {
+                    StartPosition = FormStartPosition.Manual,
+                    Location = this.PointToScreen(new Point(this.LogicalToDeviceUnits(16), this.LogicalToDeviceUnits(54))),
+                };
+                this.dock.RestoreFocusAfterClosing(this.pokemonDetails);
+            }
+            var update = this.pokemonDetails.DisplayAsync(pokemon, romPath, lookup);
+            if (!this.pokemonDetails.Visible) this.ShowTool(this.pokemonDetails);
+            await update;
+            return;
+        }
+
+        using var dialog = new PokemonDetailsForm();
+        dialog.Shown += async (_, _) => await dialog.DisplayAsync(pokemon, romPath, lookup);
         dialog.ShowDialog(owner);
-        if (owner == this) this.dock.FocusGame();
     }
 
     private void ShowPlaces()
