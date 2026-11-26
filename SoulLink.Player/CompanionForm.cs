@@ -79,6 +79,7 @@ internal sealed class CompanionForm : PlayerWindow
     private RulesForm? rules;
     private GroupStatisticsForm? statistics;
     private TypeChartForm? typeChart;
+    private PokeWikiForm? pokeWiki;
     private PokemonDetailsForm? pokemonDetails;
     private KeyboardSettingsForm? keyboardSettings;
     private StatusEffectsForm? statusEffects;
@@ -152,8 +153,8 @@ internal sealed class CompanionForm : PlayerWindow
         brand.Font = new Font("Segoe UI Semibold", 12);
         brand.Dock = DockStyle.Fill;
         brand.Click += (_, _) => this.programMenu.Show(brand, new Point(0, brand.Height));
-        var wiki = Button("PokéWiki", (_, _) => this.OpenWiki());
-        this.hints.SetToolTip(wiki, "Öffnet das deutsche PokéWiki im Browser");
+        var wiki = Button("PokéWiki", async (_, _) => await this.OpenWikiAsync());
+        this.hints.SetToolTip(wiki, "Pokémon, Entwicklungen und Attacken in Rubin nachschlagen");
         var shortcuts = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
         shortcuts.Controls.AddRange([Button("Karte", (_, _) => this.ShowMap()), wiki]);
         this.programMenu.BackColor = DashboardTheme.Panel;
@@ -666,17 +667,47 @@ internal sealed class CompanionForm : PlayerWindow
         this.dock.FocusGame();
     }
 
-    private void OpenWiki()
+    private async Task OpenWikiAsync(int? species = null, Form? modalOwner = null)
     {
         if (this.closing) return;
+        string? cartridge = this.activeRom;
         try
         {
-            using var browser = Process.Start(new ProcessStartInfo("https://www.pokewiki.de/") { UseShellExecute = true });
+            cartridge ??= this.rom.Read();
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            ToolWindow.Notice(this, "PokéWiki", "Der Standardbrowser konnte nicht geöffnet werden.");
+            PlayerDiagnostics.Report("wiki.rom-selection.unavailable", error);
         }
+
+        var placeholder = this.discordIcons.Get("unknown-pokemon");
+        if (modalOwner is not null)
+        {
+            using var dialog = new PokeWikiForm(this.spriteCache, placeholder);
+            if (species is int chosen) dialog.SelectPokemon(chosen);
+            dialog.Shown += async (_, _) => await dialog.SetCartridgeAsync(cartridge);
+            dialog.ShowDialog(modalOwner);
+            return;
+        }
+
+        if (this.pokeWiki is null || this.pokeWiki.IsDisposed)
+        {
+            this.pokeWiki = new PokeWikiForm(this.spriteCache, placeholder);
+            this.dock.RestoreFocusAfterClosing(this.pokeWiki);
+            species ??= CurrentWikiSpecies(this.runtime.Status().Snapshot);
+        }
+
+        if (species is int selectedSpecies) this.pokeWiki.SelectPokemon(selectedSpecies);
+        this.ShowTool(this.pokeWiki);
+        await this.pokeWiki.SetCartridgeAsync(cartridge);
+    }
+
+    private static int? CurrentWikiSpecies(GameSnapshot? snapshot)
+    {
+        if (snapshot is { InBattle: true, Battle: { HideOpponent: false } battle } &&
+            battle.Combatants.FirstOrDefault(mon => (mon.Position & 1) != 0 && SpeciesCatalog.IsValid(mon.Species)) is { } opponent)
+            return opponent.Species;
+        return snapshot?.Pokemon.FirstOrDefault(mon => mon.Container == Placement.Party && !mon.IsEgg)?.Species;
     }
 
     private async Task ChangeGameStateAsync(bool load)
@@ -750,6 +781,7 @@ internal sealed class CompanionForm : PlayerWindow
                     StartPosition = FormStartPosition.Manual,
                     Location = this.PointToScreen(new Point(this.LogicalToDeviceUnits(16), this.LogicalToDeviceUnits(54))),
                 };
+                this.pokemonDetails.WikiRequested += species => this.OpenWikiAsync(species);
                 this.dock.RestoreFocusAfterClosing(this.pokemonDetails);
             }
             var update = this.pokemonDetails.DisplayAsync(pokemon, romPath, lookup);
@@ -759,6 +791,7 @@ internal sealed class CompanionForm : PlayerWindow
         }
 
         using var dialog = new PokemonDetailsForm();
+        dialog.WikiRequested += species => this.OpenWikiAsync(species, dialog);
         dialog.Shown += async (_, _) => await dialog.DisplayAsync(pokemon, romPath, lookup);
         dialog.ShowDialog(owner);
     }

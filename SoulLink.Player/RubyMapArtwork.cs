@@ -130,16 +130,22 @@ internal static class RubyMapArtwork
 
     private static byte[] Decompress(byte[] data)
     {
-        if (data.Length < 4 || data[0] != 0x10) throw new InvalidDataException("Invalid Ruby map compression.");
-        int length = data[1] | (data[2] << 8) | (data[3] << 16);
-        if (length is < 1 or > 16_384) throw new InvalidDataException("Invalid Ruby map size.");
+        using var input = new MemoryStream(data, writable: false);
+        return ReadLz77(input, 16_384);
+    }
+
+    internal static byte[] ReadLz77(Stream input, int limit)
+    {
+        if (Read() != 0x10) throw new InvalidDataException("Invalid Ruby LZ77 compression.");
+        int length = Read() | (Read() << 8) | (Read() << 16);
+        if (length < 1 || length > limit) throw new InvalidDataException("Invalid Ruby LZ77 size.");
         var result = new byte[length];
-        int read = 4;
         int write = 0;
         byte Read()
         {
-            if (read == data.Length) throw new InvalidDataException("Truncated Ruby map.");
-            return data[read++];
+            int value = input.ReadByte();
+            if (value < 0) throw new InvalidDataException("Truncated Ruby LZ77 data.");
+            return (byte)value;
         }
 
         while (write < result.Length)
@@ -155,7 +161,7 @@ internal static class RubyMapArtwork
                 byte first = Read();
                 int count = (first >> 4) + 3;
                 int offset = ((first & 15) << 8) + Read() + 1;
-                if (offset > write) throw new InvalidDataException("Invalid Ruby map reference.");
+                if (offset > write) throw new InvalidDataException("Invalid Ruby LZ77 reference.");
                 while (count-- > 0 && write < result.Length)
                 {
                     result[write] = result[write - offset];

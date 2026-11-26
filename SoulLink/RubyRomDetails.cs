@@ -32,10 +32,17 @@ public static class RubyRomDetails
         if (GameProfiles.Identify(rom) is not RubyGameProfile)
             throw new InvalidDataException("Für diese ROM sind keine Pokémon-Tabellen hinterlegt.");
 
-        Span<byte> stats = stackalloc byte[6];
+        return ReadTables(rom, species, out _, out _);
+    }
+
+    internal static PokemonRomDetails ReadTables(Stream rom, int species, out int type1, out int type2)
+    {
+        Span<byte> stats = stackalloc byte[8];
         ReadAt(rom, BaseStats + 28 * species, stats);
-        if (stats.Contains((byte)0)) throw new InvalidDataException("Die Pokémon-Werte in der ROM konnten nicht gelesen werden.");
+        if (stats[..6].Contains((byte)0)) throw new InvalidDataException("Die Pokémon-Werte in der ROM konnten nicht gelesen werden.");
         var bases = new PokemonStats(stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]);
+        type1 = stats[6];
+        type2 = stats[7];
         return new PokemonRomDetails(bases, ReadMoves(rom, species), ReadEvolutions(rom, species));
     }
 
@@ -73,28 +80,29 @@ public static class RubyRomDetails
             int parameter = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + 2)..]);
             int target = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + 4)..]);
             if (!SpeciesCatalog.IsValid(target)) throw new InvalidDataException("Ungültiges Entwicklungsziel in der ROM.");
-            string requirement = method switch
-            {
-                1 => "Levelaufstieg mit hoher Freundschaft",
-                2 => "Levelaufstieg mit hoher Freundschaft am Tag",
-                3 => "Levelaufstieg mit hoher Freundschaft in der Nacht",
-                4 => $"Ab Level {parameter}",
-                5 => "Durch Tausch",
-                6 => $"Tausch mit {ReadItem(rom, parameter)} als getragenem Item",
-                7 => $"Mit {ReadItem(rom, parameter)}",
-                8 => $"Level {parameter} bei höherem Angriff als Verteidigung",
-                9 => $"Level {parameter} bei gleichem Angriff und gleicher Verteidigung",
-                10 => $"Level {parameter} bei niedrigerem Angriff als Verteidigung",
-                11 or 12 => $"Ab Level {parameter}, abhängig vom Persönlichkeitswert",
-                13 => $"Ab Level {parameter}",
-                14 => $"Ab Level {parameter} mit einem freien Teamplatz",
-                15 => $"Levelaufstieg ab Schönheit {parameter}",
-                _ => "Entwicklungsbedingung unbekannt",
-            };
-            evolutions.Add(new RubyEvolution(target, requirement));
+            string? item = method is 6 or 7 ? ReadItem(rom, parameter) : null;
+            evolutions.Add(new RubyEvolution(target, EvolutionRequirement(method, parameter, item)));
         }
         return evolutions.ToArray();
     }
+
+    internal static string EvolutionRequirement(int method, int parameter, string? item) => method switch
+    {
+        1 => "Levelaufstieg ab 220 Freundschaft",
+        2 => "Levelaufstieg ab 220 Freundschaft, 12:00–23:59 Uhr im Spiel",
+        3 => "Levelaufstieg ab 220 Freundschaft, 00:00–11:59 Uhr im Spiel",
+        4 or 13 => $"Ab Level {parameter}",
+        5 => "Durch Tausch",
+        6 => $"Tausch mit {item} als getragenem Item",
+        7 => $"Mit {item}",
+        8 => $"Ab Level {parameter} bei höherem Angriff als Verteidigung",
+        9 => $"Ab Level {parameter} bei gleichem Angriff und gleicher Verteidigung",
+        10 => $"Ab Level {parameter} bei niedrigerem Angriff als Verteidigung",
+        11 or 12 => $"Ab Level {parameter}, abhängig vom verborgenen Persönlichkeitswert",
+        14 => $"Ab Level {parameter} zusätzlich zur Entwicklung mit freiem Teamplatz",
+        15 => $"Levelaufstieg ab Schönheit {parameter}",
+        _ => "Entwicklungsbedingung unbekannt",
+    };
 
     private static string ReadItem(Stream rom, int id)
     {
@@ -108,7 +116,7 @@ public static class RubyRomDetails
         return $"Item #{id}";
     }
 
-    private static void ReadAt(Stream rom, long offset, Span<byte> bytes)
+    internal static void ReadAt(Stream rom, long offset, Span<byte> bytes)
     {
         if (offset < 0 || offset > rom.Length - bytes.Length)
             throw new InvalidDataException("Die Pokémon-Tabelle liegt außerhalb der ROM.");
