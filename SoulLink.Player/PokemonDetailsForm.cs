@@ -5,7 +5,9 @@ namespace SoulLink.Player;
 internal sealed class PokemonDetailsForm : ToolWindow
 {
     private readonly DetailLines content = new() { Dock = DockStyle.Fill };
+    private readonly Button wiki = Action("Im PokéWiki");
     private CancellationTokenSource? loading;
+    private int species;
 
     public PokemonDetailsForm() : base("Pokémon", new Size(450, 575))
     {
@@ -14,17 +16,27 @@ internal sealed class PokemonDetailsForm : ToolWindow
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(this.content, 0, 0);
         var close = DashboardTheme.Button("Schließen");
-        close.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         close.DialogResult = DialogResult.Cancel;
         close.Click += (_, _) => this.Close();
-        layout.Controls.Add(close, 0, 1);
+        this.wiki.Enabled = false;
+        this.wiki.Click += async (_, _) =>
+        {
+            if (this.WikiRequested is { } open) await open(this.species);
+        };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        actions.Controls.AddRange([close, this.wiki]);
+        layout.Controls.Add(actions, 0, 1);
         this.CancelButton = close;
         this.Body.Controls.Add(layout);
     }
 
+    public event Func<int, Task>? WikiRequested;
+
     public async Task DisplayAsync(PokemonState pokemon, string? romPath, Func<CancellationToken, Task<PokemonRomDetails?>>? partnerLookup)
     {
         this.CancelLookup();
+        this.species = pokemon.Species;
+        this.wiki.Enabled = !pokemon.IsEgg && SpeciesCatalog.IsValid(pokemon.Species) && this.WikiRequested is not null;
         this.SetTitle(RubyNames.PokemonWithNickname(pokemon));
         this.content.ScrollToTop();
         if (partnerLookup is null)

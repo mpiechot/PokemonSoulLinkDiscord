@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -1228,6 +1229,7 @@ internal static class DockSmokeTest
                 throw new InvalidOperationException("PokéWiki must be reachable from the launcher toolbar.");
             if (profile is null)
             {
+                VerifyPokeWiki(form, wiki, home);
                 VerifyReusablePokemonDetails(form);
                 VerifyPlayerIcon(form);
                 var screen = Screen.FromControl(form);
@@ -1264,6 +1266,86 @@ internal static class DockSmokeTest
         }
     }
 
+    private static void VerifyPokeWiki(CompanionForm player, Button launch, string home)
+    {
+        VerifyWikiCartridgeSprite(home);
+        launch.PerformClick();
+        var wiki = player.OwnedForms.OfType<PokeWikiForm>().Single();
+        if (!wiki.Visible || wiki.Modal)
+            throw new InvalidOperationException("The toolbar must open a modeless Wiki inside the player.");
+        launch.PerformClick();
+        if (player.OwnedForms.OfType<PokeWikiForm>().Single() != wiki)
+            throw new InvalidOperationException("The player must reuse the open Wiki.");
+
+        var filter = Descendants(wiki).OfType<TextBox>().Single();
+        var species = Descendants(wiki).OfType<ListBox>().Single();
+        var moves = Descendants(wiki).OfType<DataGridView>().Single();
+        filter.Text = "#025";
+        if (species.Items.Count != 1 || species.SelectedItem is not RubyWikiPokemon { Name: "Pikachu" })
+            throw new InvalidOperationException("The offline Wiki must find Pikachu by Pokédex number.");
+        var thunderbolt = moves.Rows.Cast<DataGridViewRow>().Single(row => Equals(row.Cells[1].Value, "Donnerblitz"));
+        if (!Equals(thunderbolt.Cells[0].Value, "Level 26") ||
+            !thunderbolt.Cells[1].ToolTipText.Contains("Stärke 95", StringComparison.Ordinal) ||
+            !thunderbolt.Cells[1].ToolTipText.Contains("paralysieren (10 %)", StringComparison.Ordinal))
+            throw new InvalidOperationException("The Wiki must show version-specific move power and effect on hover.");
+        moves.CurrentCell = thunderbolt.Cells[1];
+        if (!Descendants(wiki).OfType<Label>().Any(label => label.Text.Contains("paralysieren (10 %)", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Selecting a move from the keyboard must also reveal its effect.");
+        SaveToolPreview(wiki, home, "pokewiki");
+
+        Descendants(wiki).OfType<Button>().Single(button => button.Text == "Raichu").PerformClick();
+        if (species.SelectedItem is not RubyWikiPokemon { Name: "Raichu" })
+            throw new InvalidOperationException("Evolution stages must link to their own Wiki entries.");
+
+        filter.Text = "Evoli";
+        var learning = Descendants(wiki).OfType<DashboardComboBox>().Single();
+        learning.SelectedIndex = 2;
+        if (moves.Rows.Count == 0 || !Equals(moves.Rows[0].Cells[0].Value, "Zucht"))
+            throw new InvalidOperationException("The Wiki must show the selected learning method.");
+        wiki.Close();
+        if (!wiki.IsDisposed) throw new InvalidOperationException("The Wiki must close without closing the player.");
+    }
+
+    private static void VerifyWikiCartridgeSprite(string home)
+    {
+        const int sprite = 0x200000;
+        const int palette = 0x201000;
+        byte[] fixture = new byte[0x202000];
+        "POKEMON RUBYAXVD"u8.CopyTo(fixture.AsSpan(0xA0));
+        BinaryPrimitives.WriteUInt32LittleEndian(fixture.AsSpan(0x1F52D0 + 25 * 8), 0x08000000 + sprite);
+        BinaryPrimitives.WriteUInt32LittleEndian(fixture.AsSpan(0x1F7530 + 25 * 8), 0x08000000 + palette);
+
+        byte[] tiles = new byte[2048];
+        tiles[0] = 0x10;
+        tiles[32] = 0x02;
+        byte[] colors = new byte[32];
+        BinaryPrimitives.WriteUInt16LittleEndian(colors.AsSpan(2), 0x001F);
+        BinaryPrimitives.WriteUInt16LittleEndian(colors.AsSpan(4), 0x03E0);
+        WriteLiteralLz(tiles, sprite);
+        WriteLiteralLz(colors, palette);
+        string path = Path.Combine(home, "wiki-sprite-probe.gba");
+        File.WriteAllBytes(path, fixture);
+
+        using var decoded = RubyWikiArtwork.Read(path, 25);
+        if (decoded is null || decoded.GetPixel(0, 0).A != 0 || decoded.GetPixel(1, 0).R != 255 ||
+            decoded.GetPixel(8, 0).G != 255 || RubyWikiArtwork.Read(path, 26) is not null)
+            throw new InvalidOperationException("The Wiki must decode cartridge portrait tiles, palette colors and transparency.");
+
+        void WriteLiteralLz(byte[] data, int offset)
+        {
+            fixture[offset] = 0x10;
+            fixture[offset + 1] = (byte)data.Length;
+            fixture[offset + 2] = (byte)(data.Length >> 8);
+            int cursor = offset + 4;
+            for (int i = 0; i < data.Length; i += 8)
+            {
+                fixture[cursor++] = 0;
+                data.AsSpan(i, 8).CopyTo(fixture.AsSpan(cursor));
+                cursor += 8;
+            }
+        }
+    }
+
     private static void VerifyReusablePokemonDetails(CompanionForm player)
     {
         var first = new PokemonState { Species = 25, Hp = 15, MaxHp = 20 };
@@ -1285,6 +1367,11 @@ internal static class DockSmokeTest
             content.AccessibleName?.Contains("KP: 17/25", StringComparison.Ordinal) != true)
             throw new InvalidOperationException("Selecting another Pokémon must reuse the window and discard the previous lookup.");
 
+        Descendants(details).OfType<Button>().Single(button => button.Text == "Im PokéWiki").PerformClick();
+        var wiki = player.OwnedForms.OfType<PokeWikiForm>().Single();
+        if (Descendants(wiki).OfType<ListBox>().Single().SelectedItem is not RubyWikiPokemon { Species: 1 })
+            throw new InvalidOperationException("The Pokémon details must open the matching Wiki entry.");
+        wiki.Close();
         Descendants(details).OfType<Button>().Single(button => button.Text == "Schließen").PerformClick();
         if (!details.IsDisposed) throw new InvalidOperationException("The modeless detail window must close from its button.");
     }
